@@ -1,0 +1,35 @@
+{
+  "mach_release": "2026.10.26+141dd7f.1",
+  "mach_revision": "141dd7f32da0edeeb5afdfc7765519448cf98948",
+  "compiler_revision": "4190bb0c90d374c6b4d0b0f2c7b45b604eda24b6",
+  "target": "x86_64-windows-msvc",
+  "static_crt": false,
+  "archive_sha256": "abe009a4abb88dab9a1659ca12515e35baa34478a2ed42103595ebf65f8f6b25",
+  "files": [
+    {
+      "file": "mach-LICENSE",
+      "source": "https://raw.githubusercontent.com/DouglasDwyer/mach-dxcompiler/141dd7f32da0edeeb5afdfc7765519448cf98948/LICENSE",
+      "sha256": "d7227ff78132e0dfb706c41bbecf803cf3b3d274c93722ebcbf307b3272323fe"
+    },
+    {
+      "file": "mach-LICENSE-APACHE",
+      "source": "https://raw.githubusercontent.com/DouglasDwyer/mach-dxcompiler/141dd7f32da0edeeb5afdfc7765519448cf98948/LICENSE-APACHE",
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    },
+    {
+      "file": "mach-LICENSE-MIT",
+      "source": "https://raw.githubusercontent.com/DouglasDwyer/mach-dxcompiler/141dd7f32da0edeeb5afdfc7765519448cf98948/LICENSE-MIT",
+      "sha256": "84cf02ebb6a2d05bbc7f9a151e9887f190e050cc7f5743869eedc0a9ada26a7f"
+    },
+    {
+      "file": "compiler-LICENSE.TXT",
+      "source": "https://raw.githubusercontent.com/hexops-graveyard/DirectXShaderCompiler/4190bb0c90d374c6b4d0b0f2c7b45b604eda24b6/LICENSE.TXT",
+      "sha256": "27a49e35d1da96eba18fba54bc882667ff0ff8c0254f16f2b6e165d605ba7df8"
+    },
+    {
+      "file": "compiler-ThirdPartyNotices.txt",
+      "source": "https://raw.githubusercontent.com/hexops-graveyard/DirectXShaderCompiler/4190bb0c90d374c6b4d0b0f2c7b45b604eda24b6/ThirdPartyNotices.txt",
+      "sha256": "19512a5d0a015ef16d167272c164da49a604614a786206212a80ad486ed0be6d"
+    }
+  ]
+}

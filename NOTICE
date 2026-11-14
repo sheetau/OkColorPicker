@@ -24,3 +24,8 @@ See licenses/clipremote-MIT.txt and docs/CSP_PROTOCOL.md.
 
 The vendored zgui-runtime invalidates dependent caches after device recovery;
 see vendor/zgui-runtime/README.md for the modification and source revision.
+
+The Windows binary statically links mach-dxcompiler through mach-dxcompiler-rs.
+This includes the DirectX Shader Compiler and its LLVM-derived components.
+See licenses/dxc/README.md, the original license and third-party notice texts in
+that directory, and sources.json for the exact source revisions and archive hash.

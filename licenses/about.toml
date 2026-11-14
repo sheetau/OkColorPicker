@@ -1,0 +1,250 @@
+# cargo-about 0.9.3 configuration for the Windows application.
+# These selections do not replace source/NOTICE obligations or release review.
+accepted = [
+    "MIT", "Apache-2.0", "BSD-3-Clause", "BSD-2-Clause", "ISC", "Zlib",
+    "Unicode-3.0", "BSL-1.0", "MPL-2.0", "CC0-1.0", "Unlicense", "0BSD",
+]
+targets = ["x86_64-pc-windows-msvc"]
+ignore-dev-dependencies = true
+ignore-build-dependencies = false
+
+# accesskit 0.24.1; preserve the upstream license expression.
+[accesskit.clarify]
+license = "MIT OR Apache-2.0"
+# Source commit: a55d3e1a18bb9ef0e4bccc9083fb13c3e0ad8969
+[[accesskit.clarify.git]]
+path = "LICENSE-MIT"
+license = "MIT"
+checksum = "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+
+# accesskit_consumer 0.38.0; preserve the upstream license expression.
+[accesskit_consumer.clarify]
+license = "MIT OR Apache-2.0"
+# Source commit: c88605b96d04431f9c3c792464a0f2f253480e94
+[[accesskit_consumer.clarify.git]]
+path = "LICENSE-MIT"
+license = "MIT"
+checksum = "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+
+# accesskit_windows 0.34.0; preserve the upstream license expression.
+[accesskit_windows.clarify]
+license = "MIT OR Apache-2.0"
+# Source commit: c88605b96d04431f9c3c792464a0f2f253480e94
+[[accesskit_windows.clarify.git]]
+path = "LICENSE-MIT"
+license = "MIT"
+checksum = "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+
+# any_spawner 0.3.0; preserve the upstream license expression.
+[any_spawner.clarify]
+license = "MIT"
+# Source commit: 9b2e313d20c89603ddc0deb7b1133e60c877faed
+[[any_spawner.clarify.git]]
+path = "LICENSE"
+license = "MIT"
+checksum = "76356e713a0d1ea0bde549f4236b01c750100ab31790019843faa5aec449310f"
+
+# dpi 0.1.2; preserve the upstream license expression.
+[dpi.clarify]
+license = "Apache-2.0 AND MIT"
+[[dpi.clarify.files]]
+path = "LICENSE"
+license = "Apache-2.0"
+checksum = "6dc0e068dcf3a5bc8e054205b85b7720e1d49265bbc64bf515d2cf79197df69a"
+
+[[dpi.clarify.files]]
+path = "LICENSE-LIBM-MIT"
+license = "MIT"
+checksum = "9eff396a99bafd208e7126602420d6864f6066c08b84485a5b032320a9c01997"
+
+# gpu-descriptor-types 0.2.0; preserve the upstream license expression.
+[gpu-descriptor-types.clarify]
+license = "MIT OR Apache-2.0"
+# Source commit: 9f2fb9546591322e7b77ee1e79385e01effd85e4
+[[gpu-descriptor-types.clarify.git]]
+path = "license/MIT"
+license = "MIT"
+checksum = "5226e27d5fbc683db56c52853cdb9d15b69abadb525a60f95c862c2dbd77cdc8"
+
+# gpu-descriptor 0.3.2; preserve the upstream license expression.
+[gpu-descriptor.clarify]
+license = "MIT OR Apache-2.0"
+# Source commit: bb28b4e55b742e0ea3e7a0968e7ee6287ba0e06a
+[[gpu-descriptor.clarify.git]]
+path = "license/MIT"
+license = "MIT"
+checksum = "5226e27d5fbc683db56c52853cdb9d15b69abadb525a60f95c862c2dbd77cdc8"
+
+# libm 0.2.16; preserve the upstream license expression.
+[libm.clarify]
+license = "MIT"
+[[libm.clarify.files]]
+path = "LICENSE.txt"
+license = "MIT"
+checksum = "3823dda7cf046602f4b4e77ec8e227863dc4736037cc85bb33d9f19febe16bb7"
+
+# or_poisoned 0.1.0; preserve the upstream license expression.
+[or_poisoned.clarify]
+license = "MIT"
+# Source commit: 6865c1f951bfa0bc5b107aa69286a110cd6f45ca
+[[or_poisoned.clarify.git]]
+path = "LICENSE"
+license = "MIT"
+checksum = "76356e713a0d1ea0bde549f4236b01c750100ab31790019843faa5aec449310f"
+
+# profiling 1.0.18; preserve the upstream license expression.
+[profiling.clarify]
+license = "MIT OR Apache-2.0"
+# Source commit: 8271551172eb6fa4cba47369aedd93790c623df9
+[[profiling.clarify.git]]
+path = "LICENSE-MIT"
+license = "MIT"
+checksum = "c8167fdeeed46d3f244d3f85c5bf998ce889343691c32be2c61a8bc4b5c08333"
+
+# reactive_graph 0.2.14; preserve the upstream license expression.
+[reactive_graph.clarify]
+license = "MIT"
+# Source commit: fbc9ed631ff8c19c5eed02a1d4459e202cff7043
+[[reactive_graph.clarify.git]]
+path = "LICENSE"
+license = "MIT"
+checksum = "76356e713a0d1ea0bde549f4236b01c750100ab31790019843faa5aec449310f"
+
+# reactive_stores 0.4.3; preserve the upstream license expression.
+[reactive_stores.clarify]
+license = "MIT"
+# Source commit: fbc9ed631ff8c19c5eed02a1d4459e202cff7043
+[[reactive_stores.clarify.git]]
+path = "LICENSE"
+license = "MIT"
+checksum = "76356e713a0d1ea0bde549f4236b01c750100ab31790019843faa5aec449310f"
+
+# reactive_stores_macro 0.4.4; preserve the upstream license expression.
+[reactive_stores_macro.clarify]
+license = "MIT"
+# Source commit: 584c3a2d884b0e4dba9e3f822a9b6982cff072c7
+[[reactive_stores_macro.clarify.git]]
+path = "LICENSE"
+license = "MIT"
+checksum = "76356e713a0d1ea0bde549f4236b01c750100ab31790019843faa5aec449310f"
+
+# svg_fmt 0.4.5; preserve the upstream license expression.
+[svg_fmt.clarify]
+license = "MIT OR Apache-2.0"
+# Source commit: 93f414cd572b5c2781df93dbdc068ed13443d05a
+[[svg_fmt.clarify.git]]
+path = "LICENSE"
+license = "MIT"
+checksum = "7e98bed7f100747aaae7d82ab94fbe6b76fd6b84b09a3aaa413bff8196d0fbb1"
+
+# windows-collections 0.3.2; preserve the upstream license expression.
+[windows-collections.clarify]
+license = "MIT OR Apache-2.0"
+[[windows-collections.clarify.files]]
+path = "license-mit"
+license = "MIT"
+checksum = "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
+
+# windows-core 0.62.2; preserve the upstream license expression.
+[windows-core.clarify]
+license = "MIT OR Apache-2.0"
+[[windows-core.clarify.files]]
+path = "license-mit"
+license = "MIT"
+checksum = "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
+
+# windows-future 0.3.2; preserve the upstream license expression.
+[windows-future.clarify]
+license = "MIT OR Apache-2.0"
+[[windows-future.clarify.files]]
+path = "license-mit"
+license = "MIT"
+checksum = "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
+
+# windows-implement 0.60.2; preserve the upstream license expression.
+[windows-implement.clarify]
+license = "MIT OR Apache-2.0"
+[[windows-implement.clarify.files]]
+path = "license-mit"
+license = "MIT"
+checksum = "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
+
+# windows-interface 0.59.3; preserve the upstream license expression.
+[windows-interface.clarify]
+license = "MIT OR Apache-2.0"
+[[windows-interface.clarify.files]]
+path = "license-mit"
+license = "MIT"
+checksum = "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
+
+# windows-link 0.2.1; preserve the upstream license expression.
+[windows-link.clarify]
+license = "MIT OR Apache-2.0"
+[[windows-link.clarify.files]]
+path = "license-mit"
+license = "MIT"
+checksum = "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
+
+# windows-numerics 0.3.1; preserve the upstream license expression.
+[windows-numerics.clarify]
+license = "MIT OR Apache-2.0"
+[[windows-numerics.clarify.files]]
+path = "license-mit"
+license = "MIT"
+checksum = "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
+
+# windows-result 0.4.1; preserve the upstream license expression.
+[windows-result.clarify]
+license = "MIT OR Apache-2.0"
+[[windows-result.clarify.files]]
+path = "license-mit"
+license = "MIT"
+checksum = "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
+
+# windows-strings 0.5.1; preserve the upstream license expression.
+[windows-strings.clarify]
+license = "MIT OR Apache-2.0"
+[[windows-strings.clarify.files]]
+path = "license-mit"
+license = "MIT"
+checksum = "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
+
+# windows-sys 0.52.0; preserve the upstream license expression.
+[windows-sys.clarify]
+license = "MIT OR Apache-2.0"
+[[windows-sys.clarify.files]]
+path = "license-mit"
+license = "MIT"
+checksum = "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
+
+# windows-targets 0.52.6; preserve the upstream license expression.
+[windows-targets.clarify]
+license = "MIT OR Apache-2.0"
+[[windows-targets.clarify.files]]
+path = "license-mit"
+license = "MIT"
+checksum = "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
+
+# windows-threading 0.2.1; preserve the upstream license expression.
+[windows-threading.clarify]
+license = "MIT OR Apache-2.0"
+[[windows-threading.clarify.files]]
+path = "license-mit"
+license = "MIT"
+checksum = "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
+
+# windows 0.62.2; preserve the upstream license expression.
+[windows.clarify]
+license = "MIT OR Apache-2.0"
+[[windows.clarify.files]]
+path = "license-mit"
+license = "MIT"
+checksum = "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"
+
+# windows_x86_64_msvc 0.52.6; preserve the upstream license expression.
+[windows_x86_64_msvc.clarify]
+license = "MIT OR Apache-2.0"
+[[windows_x86_64_msvc.clarify.files]]
+path = "license-mit"
+license = "MIT"
+checksum = "c2cfccb812fe482101a8f04597dfc5a9991a6b2748266c47ac91b6a5aae15383"

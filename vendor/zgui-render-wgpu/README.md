@@ -19,3 +19,9 @@ requires actual native presentation at maximized and restored extents.
 
 When updating zgui, refresh the source at the pinned revision, reapply this
 accessor and run all product checks, including the explicit GPU/native tests.
+
+## License files
+
+LICENSE and NOTICE contain the complete upstream texts. The upstream repository
+stores relative symlinks in this package; their contents are expanded here so a
+Windows checkout and a source archive retain the notices without symlink support.

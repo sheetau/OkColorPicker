@@ -200,5 +200,9 @@ hardware input, or interactive movement and resizing; verify those separately.
 
 ## Verification and publication
 
+Before assembling a distribution, collect and review the
+[license materials](../licenses/README.md), including notices for the statically
+linked compiler and corresponding source for covered dependencies.
+
 Check document links and `git diff --check` for documentation changes.
 Run the product checks above after Rust changes.
