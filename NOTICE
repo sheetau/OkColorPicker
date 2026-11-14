@@ -1,0 +1,6 @@
+OkColorPicker
+
+This product uses zgui, Copyright 2026 Leonard Seibold, under the Apache
+License, Version 2.0. The GPU composition test adapts the recording adapter
+pattern from zgui's translucent test. See licenses/zgui-NOTICE for upstream
+attributions and Cargo.lock for the precise dependency revision.

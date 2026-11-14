@@ -1,0 +1,14 @@
+# Private planning and local artifacts
+/plan.md
+/concepts
+/.history/
+/.vscode/
+/.idea/
+/output/
+/target/
+/.playwright-cli/
+**/__pycache__/
+*.pyc
+.env
+.env.*
+*.log
