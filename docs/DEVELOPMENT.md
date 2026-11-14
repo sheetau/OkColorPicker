@@ -155,6 +155,7 @@ cargo test -p okcolor-app --test composition --locked -- --ignored
 cargo test -p okcolor-app --test color_surface --locked -- --ignored
 cargo test -p okcolor-app --test picker --locked -- --ignored
 cargo test -p okcolor-app --test native_caption --locked -- --ignored
+cargo test -p okcolor-app --test native_input --locked -- --ignored
 cargo test -p okcolor-app --test native_recovery --locked -- --ignored
 cargo test -p okcolor-app --test wide_pipeline --locked -- --ignored
 cargo test -p okcolor-app --test wide_picker --locked -- --ignored
@@ -173,6 +174,12 @@ It checks native hit testing against painted bounds, capture, release-outside
 cancellation, and a maximize/restore round trip through winit and zgui. It also
 requires successfully presented frames at both maximized and restored extents. It sends
 messages only to the test window and does not inject desktop input.
+`native_input` sends pointer, wheel and queued arrow-key messages through the
+owned HWND, winit and the mounted Picker. It verifies captured dragging beyond
+the slice bounds, release history, focused numeric steps, unchanged recent colors
+after wheel input, window movement and a presented frame at the resized extent.
+It does not inject global input, modify the clipboard or load the user profile;
+hardware input and native IME behavior remain separate checks.
 `native_recovery` destroys its own logical DX12 device twice from a background
 thread after the UI has time to park. The production callback must wake it. After
 each replacement, the test requires a native presentation and matching mounted
