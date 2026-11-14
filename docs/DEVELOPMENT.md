@@ -198,6 +198,35 @@ composition styles, caption message forwarding, negative screen coordinates,
 and stale-layout rejection. Native tests do not establish the shell's Snap flyout,
 hardware input, or interactive movement and resizing; verify those separately.
 
+## Repeatable rendering measurements
+
+```powershell
+cargo test -p okcolor-app --test performance --release --locked -- --ignored --nocapture
+```
+
+Run this measurement alone on a DX12 adapter supporting timestamp queries.
+It dispatches mounted L/C/H/alpha and L-C slice drags across all three working
+gamuts at 100% and 200% scale. Each of the 30 workloads warms up for 20 updates,
+then measures 120 updates. Every measured event must change the color and produce
+a frame; the UI must stop rendering after release. The benchmark has no numeric
+speed threshold because adapters and system load vary.
+
+JSON lines report p50/p95/max wall time from event dispatch through GPU completion,
+including FP16 composition and the final scRGB pass. Each frame waits for its
+GPU submissions, so this is serialized workload cost, not pipelined throughput
+or native input-to-display latency. The separate GPU timing is the sum of zgui's
+timed passes: it excludes the final scRGB pass and copies, and vector spans can
+include CPU submission gaps. Only timestamp data is read back, never pixels.
+Renderer-accounted allocation bytes and the extra scRGB target are reported
+separately; they do not represent total driver/GPU residency or process memory.
+
+The harness uses the production picker and output shader on a headless surface.
+It excludes OS input, DirectComposition presentation, CSP and persistence, and
+does not establish physical display behavior. Record the adapter, toolchain,
+commit and font configuration with private results; compare equivalent settings.
+Keep measurement output under ignored `output/`. Native validation and idle
+CPU/GPU/process-memory measurements remain separate checks.
+
 ## Verification and publication
 
 For local Windows candidate packaging, follow [Distribution](DISTRIBUTION.md).
