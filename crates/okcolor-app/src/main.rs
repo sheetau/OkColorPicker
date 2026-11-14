@@ -1,6 +1,6 @@
+use okcolor_app::{fonts, graphics};
 use std::{cell::Cell, rc::Rc};
 use zgui::prelude::*;
-mod graphics;
 
 #[derive(Default)]
 struct FrameCount(Cell<u64>);
@@ -47,6 +47,7 @@ fn main() -> Result<(), zgui::Error> {
         // Request premultiplied composition while keeping the CSS scene opaque.
         .with_transparent(true)
         .with_renderer(graphics::factory())
+        .with_fonts(fonts::load())
         .with_stylesheet(STYLE)
         .with_probe(Rc::new(FrameCount::default()));
     eprintln!("Application configured");

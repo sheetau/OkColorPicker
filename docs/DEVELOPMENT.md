@@ -38,6 +38,13 @@ and `okcolor-app` for zgui and platform integration. zgui is pinned to an exact
 revision in the workspace manifest; retain `Cargo.lock` when updating it.
 See [Color contracts](COLOR_CONTRACT.md) for input, output, gamut and history semantics.
 
+Martian Mono is embedded under OFL. Martian Grotesk is an optional user-installed
+font; set `OKCOLOR_GROTESK_FONT` to a licensed local TTF file to register it under
+the application's family name. Keep machine-specific values outside the repository.
+The supplied Grotesk EULA requires a separate license for creative-software
+embedding, so it is not included in source or binaries. Label typography must
+include a system sans-serif fallback.
+
 ## Product checks
 
 ```powershell

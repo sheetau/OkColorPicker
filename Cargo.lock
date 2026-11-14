@@ -2481,6 +2481,7 @@ dependencies = [
 name = "okcolor-app"
 version = "0.1.0"
 dependencies = [
+ "okcolor-core",
  "wgpu",
  "zgui",
  "zgui-platform-headless",
