@@ -200,6 +200,10 @@ hardware input, or interactive movement and resizing; verify those separately.
 
 ## Verification and publication
 
+For local Windows candidate packaging, follow [Distribution](DISTRIBUTION.md).
+The packager builds the locked release executable and combines it with verified
+notices, corresponding source, instructions and checksums.
+
 Before assembling a distribution, collect and review the
 [license materials](../licenses/README.md), including notices for the statically
 linked compiler and corresponding source for covered dependencies.

@@ -1,0 +1,45 @@
+OkColorPicker — Windows x64 development candidate
+
+START
+
+1. Extract the entire ZIP to a folder.
+2. Install the latest Microsoft Visual C++ v14 x64 Redistributable if needed:
+   https://aka.ms/vc14/vc_redist.x64.exe
+   Microsoft download information:
+   https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist
+3. Run OkColorPicker.exe. Keep the notice and source files with this package.
+
+A DirectX 12-capable GPU and a current graphics driver are required. Development
+testing currently uses Windows 11 x64; other Windows versions are not validated.
+If Windows reports missing MSVCP140/VCRUNTIME140 DLLs, install or repair the
+official x64 runtime above. This package does not install it automatically.
+
+PICK COLORS
+
+Choose sRGB, Display P3 or Rec.2020 as the working gamut. Drag the lightness/chroma
+slice or use the L, C, H and alpha bars. Edit a numeric value and press Enter.
+Up/Down adjusts a focused number; the wheel works over the focused number.
+Shift makes larger steps and Ctrl makes finer steps. Escape cancels a draft or drag.
+
+Outside text entry, Ctrl+C/V copies or pastes a complete color. Ctrl+Z undoes;
+Ctrl+Shift+Z or Ctrl+Y redoes. Inside text entry, clipboard shortcuts edit the text.
+
+The picker preserves the original numeric color even when previewing or copying
+a mapped sRGB color. Check the preview status and Mapped/Clipped output setting.
+Wide-gamut monitor output and CSP integration are experimental. This candidate
+does not establish compatibility with a particular monitor or CSP installation.
+
+SAVED COLORS
+
+Committed colors, recent colors and preferences are saved in:
+%LOCALAPPDATA%\OkColorPicker\state.json
+Undo history lasts for the current session. Removing the extracted application
+folder leaves saved colors intact. Back up the profile before removing it.
+
+LICENSES AND SOURCE
+
+Open THIRD_PARTY_NOTICES.html for license terms and attributions. SOURCES.zip
+contains the application and Rust dependency source; SOURCE_INDEX.json identifies
+the exact source archives. DXC_SOURCES.json identifies the native compiler source.
+BUNDLE.json and PACKAGE.json contain file hashes and source/build identifiers.
+Martian Mono is embedded under OFL. Martian Grotesk is not bundled.
