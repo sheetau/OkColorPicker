@@ -74,6 +74,24 @@ fn mounted_picker_draws_and_drag_is_one_undo() {
                         "CSP status clipped vertically: {bounds:?}");
                     assert_eq!(model.saved_state_untracked(), saved_before_status);
                 }
+                model.companion.state.set(okcolor_csp::worker::State::Connected);
+                model.companion.hint.set("CSP color not confirmed; local color retained".into());
+                model.companion.can_resolve.set(true);
+                harness.settle(64);
+                for node in [refs.csp_pull,refs.csp_send] {
+                    let bounds=node.window_bounds().expect("CSP resolution control");
+                    assert!(bounds.origin.x.0>=0.0 && bounds.origin.x.0+bounds.size.width.0<=330.0,
+                        "CSP resolution control clipped horizontally: {bounds:?}");
+                    assert!(bounds.origin.y.0+bounds.size.height.0<=560.0,
+                        "CSP resolution control clipped vertically: {bounds:?}");
+                }
+                if let Ok(path)=std::env::var("OKCOLOR_TEST_CSP_RGBA") {
+                    let frames=frames.lock().unwrap();
+                    std::fs::write(path,frames.last().unwrap().bytes()).unwrap();
+                }
+                model.companion.state.set(okcolor_csp::worker::State::Idle);
+                model.companion.hint.set(String::new());model.companion.can_resolve.set(false);
+                harness.settle(64);
                 let bounds = refs.bars[0].window_bounds().expect("lightness bar");
                 assert!(bounds.size.width.0 > 70.0, "bar bounds {bounds:?}");
                 assert!(

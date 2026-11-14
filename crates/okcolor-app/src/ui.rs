@@ -10,6 +10,8 @@ use zgui::{prelude::*, reactive::RenderEffect};
 #[derive(Clone, Copy)]
 pub struct PickerRefs {
     pub companion: NodeRef,
+    pub csp_pull: NodeRef,
+    pub csp_send: NodeRef,
     pub maximize: NodeRef,
     pub recents: NodeRef,
     pub swatches: [NodeRef; 2],
@@ -22,6 +24,8 @@ impl Default for PickerRefs {
     fn default() -> Self {
         Self {
             companion: NodeRef::new(),
+            csp_pull: NodeRef::new(),
+            csp_send: NodeRef::new(),
             maximize: NodeRef::new(),
             recents: NodeRef::new(),
             swatches: std::array::from_fn(|_| NodeRef::new()),
@@ -177,6 +181,15 @@ pub fn Picker(model: PickerModel, refs: PickerRefs) -> impl IntoView {
                             okcolor_csp::worker::State::Failed(message)=>message,
                             _=>String::new(),
                         }}}
+                    }
+                    if move || !model.companion.hint.get().is_empty() {
+                        text {{move ||model.companion.hint.get()}}
+                    }
+                    if move ||model.companion.can_resolve.get() {
+                        row(class="csp-resolution") {
+                            control(node_ref=refs.csp_pull,tabindex=Focus::Sequential,on:click=move |_|model.companion.use_csp()) {"Use CSP color"}
+                            control(node_ref=refs.csp_send,tabindex=Focus::Sequential,on:click=move |_|model.companion.send_current()) {"Send this color"}
+                        }
                     }
                     text(class="warning") {{move || {
                         let message=model.message.get();

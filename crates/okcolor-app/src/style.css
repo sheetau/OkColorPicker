@@ -67,6 +67,8 @@ field:focus { background-color: #17131c; outline: 1px solid #685475; }
 .csp-connect { color: #9c94a8; }
 .csp-connect:hover { color: #e0d4ef; }
 .csp-connect:focus-visible { outline: 1px solid #9c94a8; }
+.csp-resolution { gap: 8px; }
+.csp-resolution > control { padding: 3px 6px; color: #d0bfdc; background-color: #211b27; }
 .grip { position: absolute; z-index: 30; }
 .grip.north { top: 0; left: 8px; right: 8px; height: 4px; }
 .grip.south { bottom: 0; left: 8px; right: 8px; height: 4px; }

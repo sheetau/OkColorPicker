@@ -55,7 +55,7 @@ fn main() -> Result<(), zgui::Error> {
     }
     application.run(move || {
         let model = PickerModel::restore(startup.state.clone());
-        model.companion.bind();
+        model.companion.bind(model);
         display.bind(model.display);
         model.storage_message.set(startup.warning.clone());
         if let Some(store) = startup.store.take() {

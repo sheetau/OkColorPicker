@@ -2,10 +2,24 @@ use crate::persistence::{RECENT_LIMIT, SavedState};
 use okcolor_core::{ColorFormat, Gamut, GamutMapping, History, Oklch, format_color, parse_color};
 use zgui::prelude::*;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EditOrigin {
+    Local,
+    Companion,
+}
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ColorEdit {
+    pub color: Oklch,
+    pub revision: u64,
+    pub origin: EditOrigin,
+}
+
 /// Each display dependency has its own signal; history is read only on commands.
 #[derive(Clone, Copy)]
 pub struct PickerModel {
     pub companion: crate::companion::Companion,
+    pub edit: RwSignal<ColorEdit>,
+    pub dragging: RwSignal<bool>,
     pub display: RwSignal<crate::display::DisplayStatus>,
     pub l: RwSignal<f64>,
     pub c: RwSignal<f64>,
@@ -51,6 +65,12 @@ impl PickerModel {
         let [l, c, h, alpha] = initial.components();
         Self {
             companion: crate::companion::Companion::default(),
+            edit: RwSignal::new(ColorEdit {
+                color: initial,
+                revision: 0,
+                origin: EditOrigin::Local,
+            }),
+            dragging: RwSignal::new(false),
             display: RwSignal::new(crate::display::DisplayStatus::default()),
             l: RwSignal::new(l),
             c: RwSignal::new(c),
@@ -116,6 +136,27 @@ impl PickerModel {
     }
 
     pub fn select(self, color: Oklch) -> bool {
+        self.select_from(color, EditOrigin::Local)
+    }
+
+    /// A remote commit uses the same Undo/recents contract without echoing back.
+    pub fn receive_rgb(self, rgb: [f64; 3]) -> bool {
+        if self.editing_text.get_untracked()
+            || self.dragging.get_untracked()
+            || rgb
+                .iter()
+                .any(|value| !value.is_finite() || !(0.0..=1.0).contains(value))
+        {
+            return false;
+        }
+        let [_, _, h, alpha] = self.current().components();
+        let Ok(color) = Oklch::from_rgb(rgb, Gamut::Srgb, alpha, h) else {
+            return false;
+        };
+        self.select_from(color, EditOrigin::Companion)
+    }
+
+    fn select_from(self, color: Oklch, origin: EditOrigin) -> bool {
         let before = self.current();
         let mut accepted = true;
         self.history.update(|history| match history.set(color) {
@@ -126,7 +167,7 @@ impl PickerModel {
                 self.message.set(error.to_string());
             }
         });
-        self.publish(true);
+        self.publish_from(true, origin);
         accepted
     }
 
@@ -225,7 +266,25 @@ impl PickerModel {
     }
 
     fn publish(self, committed: bool) {
+        self.publish_from(committed, EditOrigin::Local);
+    }
+    fn publish_from(self, committed: bool, origin: EditOrigin) {
         let color = self.current();
+        let previous = self.edit.get_untracked();
+        if previous.color != color {
+            self.edit.set(ColorEdit {
+                color,
+                origin,
+                revision: previous
+                    .revision
+                    .checked_add(1)
+                    .expect("color edit revision exhausted"),
+            });
+        }
+        let dragging = self.history.with_untracked(History::is_editing);
+        if self.dragging.get_untracked() != dragging {
+            self.dragging.set(dragging);
+        }
         for (signal, value) in [self.l, self.c, self.h, self.alpha]
             .into_iter()
             .zip(color.components())

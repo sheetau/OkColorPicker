@@ -2,9 +2,9 @@
 
 `okcolor-csp` owns pairing URL parsing, QR decoding, framing, a blocking TCP
 session and its background worker. Native screen capture and the connection
-control live in `okcolor-app`. Credentials remain in memory. The connection UI
-currently establishes the transport; color-model synchronization is not connected
-yet, and connecting does not send or apply a color.
+control live in `okcolor-app`. Credentials remain in memory. After pairing, the
+picker reads CSP's active drawing color and sends local color edits. This
+integration is experimental; live CSP compatibility is not yet validated.
 
 CSP's [Companion Mode](https://help.clip-studio.com/en-us/manual_en/840_options/Companion_Mode.htm)
 exposes a QR through **Connect to smartphone**. The wire implementation references
@@ -135,9 +135,44 @@ after reconnect. ACK alone does not establish that CSP applied the color.
 
 Callers retain the original floating-point color/alpha and apply the chosen sRGB
 output mapping only at this transport boundary. The application model integration
-still needs to preserve edit origin, suppress reflected quantized colors, and
-handle simultaneous local editing. The worker's typed events currently do not
-change the picker's color. Brush opacity must never be interpreted as color alpha.
+distinguishes local edits from received commits. Brush opacity is never
+interpreted as color alpha.
+
+## Picker synchronization
+
+An initial connection adopts the current CSP color. Received RGB is interpreted
+as sRGB; the companion protocol exposes no document ICC profile. A different
+stable remote color creates one Undo/recents commit and keeps the local alpha.
+Neutral colors also retain the local editing hue. Incoming colors wait while a
+text field has focus, a local drag is active or CSP reports an ongoing gesture;
+the latest stable color is applied afterward. A committed local edit takes
+precedence over an older deferred observation.
+
+Local L/C/H edits, drag previews, cancellation and Undo/Redo send the selected
+sRGB projection to the active main/sub slot. A change to the output mapping also
+updates that projection. Alpha-only edits are local. Sending a color selects
+CSP's nontransparent drawing color; the picker alpha is not mapped to either
+the transparent-color selector or brush opacity. The status reports CSP's
+transparent selector separately.
+
+The UI retains one bounded observation snapshot, tagged with the connection
+generation and last acknowledged local write revision. Old-generation events
+are discarded. Received commits carry a distinct origin and are never echoed.
+An observation predating a pending local write cannot overwrite it. Confirmation
+compares the projected RGB at CSP's possible 8-bit display precision; matching
+observations leave every original f64 component, the editing hue, alpha and
+history untouched. This also means sub-byte remote changes with the same rounded
+RGB are not imported automatically.
+
+If a send is rejected, remains unconfirmed for two seconds of observations, or
+the connection is lost with a pending edit, the picker retains the local color.
+Edits made while reconnecting likewise remain local. Once remote state is
+available, **Use CSP color** explicitly adopts it, and **Send this color** submits
+a fresh command. Neither an old unconfirmed command nor an offline edit is
+automatically replayed on reconnection. A new local edit on a live connection can
+also resolve a conflict. Explicitly starting a new pairing begins a fresh initial
+read. Credentials, synchronization state and origin/revision metadata are never
+written into the saved profile.
 
 ## Verification
 
