@@ -33,6 +33,19 @@ DX12 device and does not yet recover from device loss.
 The surface currently uses an 8-bit SDR format. Supporting Display P3 and
 Rec.2020 calculations does not establish wide-gamut monitor output. Treat the
 window as an sRGB preview until the display path is explicitly validated.
+Startup diagnostics query the window's principal display for its active color
+mode, bit depth and reference white. Support flags alone do not enable wide
+output. The query is read-only and currently runs only at renderer creation;
+monitor movement and OS color-mode changes still need live handling.
+
+The FP16 test path preserves extended custom-paint RGB and converts the composed,
+premultiplied, gamma-encoded scene to linear scRGB on the GPU. Its shader handles
+alpha and SDR reference-white scaling. This path is not yet connected to the
+window's swap chain; successful pixel tests do not establish monitor reproduction.
+The linear scRGB and 80-nit reference follow Microsoft's
+[Advanced Color guidance](https://learn.microsoft.com/en-us/windows/win32/direct3darticles/high-dynamic-range).
+The display-query ABI is checked against Windows SDK 10.0.26100.0; older APIs
+that cannot distinguish WCG from HDR report an unknown Advanced Color mode.
 
 Drag the slice or channel bars, or focus a bar and use arrow keys. Shift scales
 keyboard steps by ten; Control scales them by one tenth. Enter commits a text
@@ -46,10 +59,13 @@ See [Saved state](STATE_FORMAT.md) for profile locations, the schema and failure
 The workspace contains `okcolor-core` for device-independent color calculations
 and `okcolor-app` for zgui and platform integration. zgui is pinned to an exact
 revision in the workspace manifest; retain `Cargo.lock` when updating it.
-The winit backend alone is patched locally to request the no-redirection style
+The winit backend is patched locally to request the no-redirection style
 at window creation; the renderer verifies the actual HWND before creating the
 swap chain. See [the backend patch](../vendor/zgui-platform-winit/README.md) for
 its scope and update procedure. Do not replace this with a post-creation style change.
+The [shader vocabulary patch](../vendor/zgui-wgsl/README.md) preserves extended
+RGB in custom paint while retaining upstream alpha clamping. Both patches use
+the same pinned revision; their READMEs describe the limited changes.
 See [Color contracts](COLOR_CONTRACT.md) for input, output, gamut and history semantics.
 
 The Windows caption bridge exposes the painted maximize button as `HTMAXBUTTON`
@@ -75,9 +91,11 @@ cargo test -p okcolor-app --test composition --locked -- --ignored
 cargo test -p okcolor-app --test color_surface --locked -- --ignored
 cargo test -p okcolor-app --test picker --locked -- --ignored
 cargo test -p okcolor-app --test native_caption --locked -- --ignored
+cargo test -p okcolor-app --test wide_pipeline --locked -- --ignored
+cargo test -p okcolor-app --test native_display --locked -- --ignored
 ```
 
-The four explicit GPU tests fail if no device is available. The first three
+The five explicit GPU tests fail if no device is available. The first three
 check alpha composition, shader pixels against the f64 color reference, and
 mounted input/clipboard/IME/drag behavior with idle-frame and DPI checks on the
 headless platform. Set `OKCOLOR_TEST_RGBA` to an output path to capture the initial
@@ -87,6 +105,11 @@ The Windows-only `native_caption` test opens its own temporary Picker window.
 It checks native hit testing against painted bounds, capture, release-outside
 cancellation, and a maximize/restore round trip through winit and zgui. It sends
 messages only to the test window and does not inject desktop input.
+`wide_pipeline` reads FP16 GPU pixels after retained custom paint and the scRGB
+conversion, comparing P3/Rec.2020 colors, alpha and white scaling against the
+f64 core. `native_display` uses its own hidden window to read the current display
+configuration without changing OS settings. It requires local display access;
+remote sessions or mirrored displays may prevent an unambiguous query.
 
 Native Windows validation must additionally cover IME, clipboard, DPI changes,
 resize, minimize/restore, window movement and device loss. Headless pixel tests

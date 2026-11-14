@@ -6,6 +6,8 @@ pattern from zgui's translucent test. See licenses/zgui-NOTICE for upstream
 attributions and Cargo.lock for the precise dependency revision.
 The vendored zgui-platform-winit backend adds an opt-in Windows creation flag;
 see vendor/zgui-platform-winit/README.md for the modification and source revision.
+The vendored zgui-wgsl vocabulary preserves extended RGB in custom paint;
+see vendor/zgui-wgsl/README.md. Its upstream Apache-2.0 and MIT notices are retained.
 
 Martian Mono font, version 1.100
 Copyright 2020 The Martian Mono Project Authors (https://github.com/evilmartians/mono)

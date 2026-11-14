@@ -1,6 +1,6 @@
 [workspace]
 members = ["crates/okcolor-core", "crates/okcolor-app"]
-exclude = ["vendor/zgui-platform-winit"]
+exclude = ["vendor/zgui-platform-winit", "vendor/zgui-wgsl"]
 resolver = "3"
 
 [workspace.package]
@@ -17,3 +17,4 @@ zgui-platform-headless = { git = "https://github.com/zortax/zgui", rev = "80baa3
 
 [patch."https://github.com/zortax/zgui"]
 zgui-platform-winit = { path = "vendor/zgui-platform-winit" }
+zgui-wgsl = { path = "vendor/zgui-wgsl" }

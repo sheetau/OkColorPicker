@@ -11,3 +11,5 @@ pub mod window_frame;
 pub mod windows_caption;
 #[cfg(target_os = "windows")]
 mod windows_composition;
+#[cfg(target_os = "windows")]
+pub mod windows_display;

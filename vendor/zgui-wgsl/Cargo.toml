@@ -1,0 +1,12 @@
+[package]
+name = "zgui-wgsl"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0 AND MIT"
+rust-version = "1.90"
+description = "Pinned zgui shader vocabulary preserving extended paint RGB"
+repository = "https://github.com/zortax/zgui"
+publish = false
+
+[dependencies]
+zgui-scene = { git = "https://github.com/zortax/zgui", rev = "80baa3c7cb0fbbe1c058f10059e076e41c0a1b9a" }

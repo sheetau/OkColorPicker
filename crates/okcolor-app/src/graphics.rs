@@ -19,6 +19,15 @@ pub fn factory() -> zgui::runtime::RendererFactory {
                 "Invalid composition window: {error}"
             )))
         })?;
+        #[cfg(target_os = "windows")]
+        match crate::windows_display::query(handles.as_ref()) {
+            Ok(display) => {
+                eprintln!("Display capabilities: {display:?}; output remains sRGB preview")
+            }
+            Err(error) => {
+                eprintln!("Display capabilities unavailable: {error}; output remains sRGB preview")
+            }
+        }
         if graphics.borrow().is_none() {
             let mut descriptor = adapter::instance_descriptor(wgpu::Backends::DX12);
             descriptor.backend_options.dx12.shader_compiler = wgpu::Dx12Compiler::StaticDxc;
