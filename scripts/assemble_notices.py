@@ -180,14 +180,23 @@ def assemble(output, cargo_about):
         raise ValueError('Commit source changes before assembling source snapshots')
     commit = run('git', 'rev-parse', 'HEAD').decode().strip()
     lock_hash = sha256((ROOT / 'Cargo.lock').read_bytes()).hexdigest()
-    report = json.loads(run(cargo_about, 'generate', '--locked', '--fail', '--manifest-path',
-                            'crates/okcolor-app/Cargo.toml', '--config', 'licenses/about.toml', '--format', 'json'))
+    output.parent.mkdir(parents=True, exist_ok=True)
+    # cargo-about rejects redirected stdout under a PowerShell ancestor, even
+    # when Python reads the bytes directly. Use its explicit UTF-8 file output.
+    with tempfile.TemporaryDirectory(prefix='.license-report-', dir=output.parent) as directory:
+        report_root = Path(directory).resolve()
+        if not report_root.is_relative_to(output.parent):
+            raise ValueError('Report directory escaped output parent')
+        report_path = report_root / 'dependencies.json'
+        run(cargo_about, 'generate', '--locked', '--fail', '--manifest-path',
+            'crates/okcolor-app/Cargo.toml', '--config', 'licenses/about.toml', '--format', 'json',
+            '--output-file', str(report_path))
+        report = json.loads(report_path.read_text(encoding='utf-8'))
     packages = {u['crate']['id']: u['crate'] for e in report['licenses'] for u in e['used_by']}
     declared = {p['package']['id'] for p in report['crates']}
     if declared != set(packages):
         raise ValueError('License report does not cover every resolved package')
     html = render_html(supplemental_sections() + notice_sections(report))
-    output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='.notices-', dir=output.parent) as directory:
         stage = Path(directory).resolve()
         if not stage.is_relative_to(output.parent):
