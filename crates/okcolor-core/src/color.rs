@@ -8,6 +8,12 @@ pub enum Gamut {
     Rec2020,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GamutMapping {
+    Clip,
+    LocalMinde,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Oklch {
     l: f64,
@@ -22,7 +28,7 @@ pub struct ColorError;
 impl fmt::Display for ColorError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(
-            "Color components must be finite; L/alpha must be in 0..=1 and chroma nonnegative",
+            "Invalid or unrepresentable color: use finite components, L/alpha in 0..=1 and nonnegative chroma",
         )
     }
 }
@@ -77,7 +83,14 @@ impl Oklch {
             return Err(ColorError);
         }
         let xyz = multiply(gamut.to_xyz(), rgb.map(|v| gamut.decode(v)));
-        let [mut l, a, b] = multiply(LMS_TO_LAB, multiply(XYZ_TO_LMS, xyz).map(f64::cbrt));
+        Self::from_xyz_d65(xyz, alpha, neutral_hue)
+    }
+
+    pub fn from_oklab(
+        [mut l, a, b]: [f64; 3],
+        alpha: f64,
+        neutral_hue: f64,
+    ) -> Result<Self, ColorError> {
         // Matrix roundoff at black/white must not reject valid RGB endpoints.
         if (-1e-12..=1.0 + 1e-12).contains(&l) {
             l = l.clamp(0.0, 1.0);
@@ -88,6 +101,54 @@ impl Oklch {
         } else {
             Self::new(l, c, b.atan2(a).to_degrees(), alpha)
         }
+    }
+
+    pub fn from_lab_d50(
+        [l, a, b]: [f64; 3],
+        alpha: f64,
+        neutral_hue: f64,
+    ) -> Result<Self, ColorError> {
+        const EPSILON: f64 = 216.0 / 24389.0;
+        const KAPPA: f64 = 24389.0 / 27.0;
+        let fy = (l + 16.0) / 116.0;
+        let f = [fy + a / 500.0, fy, fy - b / 200.0];
+        let xyz = f.map(|v| {
+            if v.powi(3) > EPSILON {
+                v.powi(3)
+            } else {
+                (116.0 * v - 16.0) / KAPPA
+            }
+        });
+        let xyz = std::array::from_fn(|i| xyz[i] * D50_WHITE[i]);
+        Self::from_xyz_d65(multiply(D50_TO_D65, xyz), alpha, neutral_hue)
+    }
+
+    pub fn lab_d50(self) -> [f64; 3] {
+        let xyz = multiply(D65_TO_D50, self.xyz_d65());
+        let scaled: [f64; 3] = std::array::from_fn(|i| xyz[i] / D50_WHITE[i]);
+        let [x, y, z] = scaled.map(|v| {
+            if v > 216.0 / 24389.0 {
+                v.cbrt()
+            } else {
+                (24389.0 / 27.0 * v + 16.0) / 116.0
+            }
+        });
+        [116.0 * y - 16.0, 500.0 * (x - y), 200.0 * (y - z)]
+    }
+
+    fn xyz_d65(self) -> [f64; 3] {
+        multiply(
+            LMS_TO_XYZ,
+            multiply(LAB_TO_LMS, self.oklab()).map(|v| v.powi(3)),
+        )
+    }
+
+    fn from_xyz_d65(xyz: [f64; 3], alpha: f64, neutral_hue: f64) -> Result<Self, ColorError> {
+        Self::from_oklab(
+            multiply(LMS_TO_LAB, multiply(XYZ_TO_LMS, xyz).map(f64::cbrt)),
+            alpha,
+            neutral_hue,
+        )
     }
 
     /// Membership uses linear RGB, never a clipped or mapped preview.
@@ -122,8 +183,72 @@ impl Oklch {
         mapped
     }
 
-    pub fn clipped_rgb(self, gamut: Gamut) -> [f64; 3] {
-        self.encoded_rgb(gamut).map(|v| v.clamp(0.0, 1.0))
+    pub fn clipped_rgb(self, gamut: Gamut) -> Result<[f64; 3], ColorError> {
+        let rgb = self.encoded_rgb(gamut);
+        if !rgb.into_iter().all(f64::is_finite) {
+            return Err(ColorError);
+        }
+        Ok(rgb.map(|v| v.clamp(0.0, 1.0)))
+    }
+
+    /// CSS Color 4, 2026-11-12, binary search with local MINDE (deltaEOK 0.02).
+    /// Mapping returns destination RGB without changing the source editing coordinates.
+    pub fn mapped_rgb(self, gamut: Gamut, method: GamutMapping) -> Result<[f64; 3], ColorError> {
+        if method == GamutMapping::Clip {
+            return self.clipped_rgb(gamut);
+        }
+        if self.l == 0.0 {
+            return Ok([0.0; 3]);
+        }
+        if self.l == 1.0 {
+            return Ok([1.0; 3]);
+        }
+        if self.in_gamut(gamut) {
+            return self.clipped_rgb(gamut);
+        }
+        // Chroma above 1 is beyond these SDR gamuts by more than a JND.
+        // Bound the search before cubing, so extreme finite input cannot overflow it.
+        let mut current = Self {
+            c: self.c.min(1.0),
+            ..self
+        };
+        let mut clipped = current.clipped_rgb(gamut)?;
+        let difference = |candidate: Self, rgb: [f64; 3]| -> Result<f64, ColorError> {
+            let clipped = Self::from_rgb(rgb, gamut, candidate.alpha, candidate.h)?;
+            Ok(candidate
+                .oklab()
+                .into_iter()
+                .zip(clipped.oklab())
+                .map(|(a, b)| (a - b).powi(2))
+                .sum::<f64>()
+                .sqrt())
+        };
+        const JND: f64 = 0.02;
+        const EPSILON: f64 = 0.0001;
+        if difference(current, clipped)? < JND {
+            return Ok(clipped);
+        }
+        let (mut low, mut high) = (0.0, current.c);
+        let mut low_in_gamut = true;
+        while high - low > EPSILON {
+            current.c = (low + high) / 2.0;
+            if low_in_gamut && current.in_gamut(gamut) {
+                low = current.c;
+                continue;
+            }
+            clipped = current.clipped_rgb(gamut)?;
+            let delta = difference(current, clipped)?;
+            if delta < JND {
+                if JND - delta < EPSILON {
+                    return Ok(clipped);
+                }
+                low_in_gamut = false;
+                low = current.c;
+            } else {
+                high = current.c;
+            }
+        }
+        Ok(clipped)
     }
 }
 
@@ -145,11 +270,8 @@ impl Gamut {
     fn decode(self, v: f64) -> f64 {
         let a = v.abs();
         let linear = if self == Self::Rec2020 {
-            if a < 0.0812428582986315 {
-                a / 4.5
-            } else {
-                ((a + 0.09929682680944) / 1.09929682680944).powf(1.0 / 0.45)
-            }
+            // CSS Color 4 (2026-11-12) uses display-referred BT.1886 gamma.
+            a.powf(2.4)
         } else if a <= 0.04045 {
             a / 12.92
         } else {
@@ -160,11 +282,7 @@ impl Gamut {
     fn encode(self, v: f64) -> f64 {
         let a = v.abs();
         let encoded = if self == Self::Rec2020 {
-            if a < 0.018053968510807 {
-                a * 4.5
-            } else {
-                1.09929682680944 * a.powf(0.45) - 0.09929682680944
-            }
+            a.powf(1.0 / 2.4)
         } else if a <= 0.0031308 {
             a * 12.92
         } else {

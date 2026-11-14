@@ -36,6 +36,7 @@ probe as an sRGB preview until the display path is explicitly validated.
 The workspace contains `okcolor-core` for device-independent color calculations
 and `okcolor-app` for zgui and platform integration. zgui is pinned to an exact
 revision in the workspace manifest; retain `Cargo.lock` when updating it.
+See [Color contracts](COLOR_CONTRACT.md) for input, output, gamut and history semantics.
 
 ## Product checks
 

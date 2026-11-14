@@ -60,3 +60,18 @@ fn neutral_hue_and_input_invariants_are_preserved() {
     assert!(Oklch::new(0.5, -0.1, 0.0, 1.0).is_err());
     assert!(Oklch::new(0.5, 0.2, 0.0, 1.1).is_err());
 }
+
+#[test]
+fn rec2020_uses_display_referred_gamma_from_the_pinned_css_spec() {
+    let grey = Oklch::from_rgb([0.5; 3], Gamut::Rec2020, 1.0, 0.0).unwrap();
+    close(grey.components()[0], 0.5_f64.powf(0.8), 1e-10);
+}
+
+#[test]
+fn p3_and_rec2020_boundaries_must_not_be_forced_into_nested_order() {
+    // The P3 red primary sits slightly outside the Rec.2020 red/green edge.
+    let red = Oklch::from_rgb([1.0, 0.0, 0.0], Gamut::DisplayP3, 1.0, 0.0).unwrap();
+    assert!(red.in_gamut(Gamut::DisplayP3));
+    assert!(!red.in_gamut(Gamut::Rec2020));
+    assert!(red.linear_rgb(Gamut::Rec2020)[2] < -0.001);
+}
