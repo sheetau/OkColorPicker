@@ -1,9 +1,10 @@
 # CSP companion protocol
 
-`okcolor-csp` owns pairing URL parsing, framing and a blocking TCP session. Run it
-on a background worker. It contains no UI, screen capture, persistent credentials
-or color-model conversion. The picker must explicitly connect this layer to its
-controls; the protocol crate alone does not enable application synchronization.
+`okcolor-csp` owns pairing URL parsing, QR decoding, framing, a blocking TCP
+session and its background worker. Native screen capture and the connection
+control live in `okcolor-app`. Credentials remain in memory. The connection UI
+currently establishes the transport; color-model synchronization is not connected
+yet, and connecting does not send or apply a color.
 
 CSP's [Companion Mode](https://help.clip-studio.com/en-us/manual_en/840_options/Companion_Mode.htm)
 exposes a QR through **Connect to smartphone**. The wire implementation references
@@ -31,6 +32,44 @@ The QR password is not reused as the reconnect credential.
 Credentials live only in memory. `Pairing`, `ReconnectToken` and frame bodies are
 redacted in debug formatting and are not serializable configuration types. Do not
 log raw URLs, authentication frames or decoded secrets in callers.
+
+## Screen scanning and connection control
+
+Open CSP's **Connect to smartphone** QR, keep the full code visible on one
+display, then press **Connect CSP** in the picker. Press the status control again
+to cancel or disconnect. Scanning runs once per explicit request. It neither
+follows the QR URL in a browser nor saves screen images, URLs or credentials.
+Unrelated and malformed QR codes are ignored; different valid CSP credentials
+produce an ambiguity error instead of selecting the first host. Repeated copies
+of the same credentials are accepted.
+
+The Windows worker uses per-monitor-aware physical coordinates, including
+negative desktop origins, and captures each active display through a top-down
+32-bit GDI DIB. It restores the thread DPI context and releases all GDI resources
+on success or failure. BGRA is reduced to greyscale before `rqrr` decoding;
+unspecified bitmap alpha is ignored. Images are limited to 8,192 pixels per axis
+and 16,777,216 pixels per display; at most 16 displays and 32 QR candidates are
+accepted. Capture failure fails the whole scan so an unexamined display cannot
+hide an ambiguous pairing. Occluded, minimized or split-across-display QR codes
+must be made fully visible before scanning. Screen capture still needs validation
+against a live CSP window on the target desktop.
+
+The single worker coalesces pending requests, owns its socket and sleeps while
+disconnected. Each request and each lost connection advance a checked local
+generation; stale scan, authentication and push events cannot replace a later
+request, cancellation or reconnected session.
+The UI checks that generation again when applying asynchronous state. Initial
+authentication has a two-second overall deadline. While connected, the worker
+polls pushes with a 50 ms timeout and sends a heartbeat every second with a
+500 ms response deadline. Unexpected disconnection or a server shutdown push
+starts reconnection after one second. Failed attempts use one-second connection
+deadlines and back off to two, then five seconds. Authentication rejection
+requires a new scan. Disconnecting drops the in-memory reconnect token.
+
+Closing the picker stops and joins the worker. Cancellation is checked between
+display scans and after blocking operations; an in-progress QR decode or socket
+deadline may finish before shutdown returns. Worker callbacks must remain short
+and must not apply picker history directly from the background thread.
 
 ## Frames and socket lifecycle
 

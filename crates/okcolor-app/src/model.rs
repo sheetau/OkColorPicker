@@ -5,6 +5,7 @@ use zgui::prelude::*;
 /// Each display dependency has its own signal; history is read only on commands.
 #[derive(Clone, Copy)]
 pub struct PickerModel {
+    pub companion: crate::companion::Companion,
     pub display: RwSignal<crate::display::DisplayStatus>,
     pub l: RwSignal<f64>,
     pub c: RwSignal<f64>,
@@ -49,6 +50,7 @@ impl PickerModel {
         let recent = history.recent().iter().copied().collect();
         let [l, c, h, alpha] = initial.components();
         Self {
+            companion: crate::companion::Companion::default(),
             display: RwSignal::new(crate::display::DisplayStatus::default()),
             l: RwSignal::new(l),
             c: RwSignal::new(c),

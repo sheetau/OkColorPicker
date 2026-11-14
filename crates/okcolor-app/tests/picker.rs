@@ -58,6 +58,22 @@ fn mounted_picker_draws_and_drag_is_one_undo() {
                 harness.settle(64);
                 let (model, refs): (PickerModel, PickerRefs) = state.get().expect("mounted model");
                 let before = model.current();
+                let saved_before_status = model.saved_state_untracked();
+                for status in [
+                    okcolor_csp::worker::State::Scanning,
+                    okcolor_csp::worker::State::Connected,
+                    okcolor_csp::worker::State::Reconnecting,
+                    okcolor_csp::worker::State::Idle,
+                ] {
+                    model.companion.state.set(status);
+                    harness.settle(64);
+                    let bounds = refs.companion.window_bounds().expect("CSP control");
+                    assert!(bounds.origin.x.0 >= 0.0 && bounds.origin.x.0 + bounds.size.width.0 <= 330.0,
+                        "CSP status clipped horizontally: {bounds:?}");
+                    assert!(bounds.origin.y.0 + bounds.size.height.0 <= 560.0,
+                        "CSP status clipped vertically: {bounds:?}");
+                    assert_eq!(model.saved_state_untracked(), saved_before_status);
+                }
                 let bounds = refs.bars[0].window_bounds().expect("lightness bar");
                 assert!(bounds.size.width.0 > 70.0, "bar bounds {bounds:?}");
                 assert!(

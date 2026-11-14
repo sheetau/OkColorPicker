@@ -64,6 +64,9 @@ field:focus { background-color: #17131c; outline: 1px solid #685475; }
 .warning { color: #bd9a73; font-size: 9px; }
 .storage-warning { color: #d9aa71; gap: 4px; }
 .retry-save { align-self: flex-start; padding: 3px 7px; background-color: #292018; color: #e4bc8b; }
+.csp-connect { color: #9c94a8; }
+.csp-connect:hover { color: #e0d4ef; }
+.csp-connect:focus-visible { outline: 1px solid #9c94a8; }
 .grip { position: absolute; z-index: 30; }
 .grip.north { top: 0; left: 8px; right: 8px; height: 4px; }
 .grip.south { bottom: 0; left: 8px; right: 8px; height: 4px; }

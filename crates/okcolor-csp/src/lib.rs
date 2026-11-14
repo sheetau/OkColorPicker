@@ -1,7 +1,9 @@
 //! Bounded CSP companion protocol, independent of the picker and native UI.
 pub mod frame;
 mod pairing;
+pub mod qr;
 mod session;
+pub mod worker;
 pub use pairing::Pairing;
 pub use session::{ReconnectToken, Session};
 use std::{fmt, io};

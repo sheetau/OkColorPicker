@@ -9,6 +9,7 @@ use zgui::{prelude::*, reactive::RenderEffect};
 /// Stable handles also let application tests exercise the actual mounted controls.
 #[derive(Clone, Copy)]
 pub struct PickerRefs {
+    pub companion: NodeRef,
     pub maximize: NodeRef,
     pub recents: NodeRef,
     pub swatches: [NodeRef; 2],
@@ -20,6 +21,7 @@ pub struct PickerRefs {
 impl Default for PickerRefs {
     fn default() -> Self {
         Self {
+            companion: NodeRef::new(),
             maximize: NodeRef::new(),
             recents: NodeRef::new(),
             swatches: std::array::from_fn(|_| NodeRef::new()),
@@ -163,7 +165,18 @@ pub fn Picker(model: PickerModel, refs: PickerRefs) -> impl IntoView {
                     row {
                         text {{move ||model.display.get().label()}}
                         spacer()
-                        text {"CSP not connected"}
+                        control(class="csp-connect",node_ref=refs.companion,tabindex=Focus::Sequential,
+                            a11y:label=move ||if model.companion.active() {"Disconnect or cancel CSP connection"} else {"Scan the screen for a CSP companion QR"},
+                            on:click=move |_|{
+                                if model.companion.active() {model.companion.disconnect();}
+                                else {model.companion.scan();}
+                            }) {{move ||model.companion.label()}}
+                    }
+                    if move ||matches!(model.companion.state.get(),okcolor_csp::worker::State::Failed(_)) {
+                        text(class="warning") {{move ||match model.companion.state.get() {
+                            okcolor_csp::worker::State::Failed(message)=>message,
+                            _=>String::new(),
+                        }}}
                     }
                     text(class="warning") {{move || {
                         let message=model.message.get();

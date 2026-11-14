@@ -8,7 +8,7 @@ const QR_KEY: [u8; 7] = [0x74, 0xb2, 0x92, 0x5b, 0x4a, 0x21, 0xda];
 const AUTH_KEY: [u8; 7] = [0xb6, 0xd5, 0x92, 0xc4, 0xa7, 0x83, 0xe1];
 
 /// In-memory credentials. Parsing performs no network access or DNS lookup.
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct Pairing {
     pub(crate) endpoints: Vec<SocketAddr>,
     pub(crate) password: String,

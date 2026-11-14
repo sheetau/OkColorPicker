@@ -1,5 +1,6 @@
 //! Native application components, kept separate from the color calculation core.
 pub mod autosave;
+pub mod companion;
 pub mod display;
 pub mod fonts;
 pub mod graphics;
@@ -25,3 +26,5 @@ pub mod windows_dispatcher;
 pub mod windows_display;
 #[cfg(target_os = "windows")]
 mod windows_display_watch;
+#[cfg(target_os = "windows")]
+mod windows_qr;
