@@ -374,7 +374,7 @@ fn Channel(
             Err(_) => model.message.set("Enter a finite number".into()),
         }
     };
-    let adjust = move |steps: f64, modifiers: Modifiers| {
+    let adjust = move |steps: f64, modifiers: Modifiers, add_recent: bool| {
         let mut channels = model.current().components();
         if dirty.get_untracked() {
             let Ok(base) = draft.get_untracked().trim().parse::<f64>() else {
@@ -388,7 +388,7 @@ fn Channel(
             }
         }
         let next = stepped_channel(index, channels[index], steps, modifiers);
-        if model.set_channel(index, next) {
+        if model.set_channel_with_recent(index, next, add_recent) {
             let text = display(model.current().components()[index]);
             dirty.set(false);
             draft.set(text.clone());
@@ -427,7 +427,7 @@ fn Channel(
             },
         ));
         if steps != 0.0 {
-            adjust(steps, cx.modifiers);
+            adjust(steps, cx.modifiers, false);
         }
     };
     view! {
@@ -449,7 +449,7 @@ fn Channel(
                     wheel_remainder.set((Modifiers::NONE,0.0));
                     if matches!(cx.key, Key::Named(NamedKey::ArrowUp | NamedKey::ArrowDown)) {
                         let steps = if cx.key == Key::Named(NamedKey::ArrowUp) { 1.0 } else { -1.0 };
-                        adjust(steps, cx.modifiers);
+                        adjust(steps, cx.modifiers, true);
                         cx.prevent_default();
                         cx.stop_propagation();
                     }

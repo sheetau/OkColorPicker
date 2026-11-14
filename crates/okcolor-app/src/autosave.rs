@@ -119,6 +119,7 @@ pub fn bind(model: PickerModel, store: StateStore, initial: SavedState) {
         submitting.borrow().submit(model.saved_state());
     });
     on_cleanup_local(move || {
+        model.finish_remote();
         writer.borrow().submit(model.saved_state_untracked());
         drop(effect);
         writer.borrow_mut().finish();

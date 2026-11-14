@@ -115,6 +115,7 @@ impl Sync {
             State::Scanning | State::Connecting | State::Connected | State::Reconnecting
         );
         if valid && self.generation != generation {
+            model.finish_remote();
             if inbox.requested {
                 self.protected = self.dirty == Some(generation) && self.protected;
                 if self.dirty != Some(generation) {
@@ -140,9 +141,11 @@ impl Sync {
         self.previous = edit;
         self.mapping = mapping;
         if !valid || inbox.state != Some(State::Connected) {
+            model.finish_remote();
             return Feedback::default();
         }
         let Some(observation) = inbox.color else {
+            model.finish_remote();
             return Feedback {
                 hint: "Waiting for CSP color state".into(),
                 resolve: false,
@@ -150,6 +153,9 @@ impl Sync {
         };
         let remote = observation.color;
         let busy = model.dragging.get_untracked() || model.editing_text.get_untracked();
+        if busy || self.dirty.is_some() || self.protected || self.pending.is_some() {
+            model.finish_remote();
+        }
         if resolution == Resolution::Pull && !busy && !remote.manipulating {
             self.dirty = None;
             self.pending = None;
@@ -235,13 +241,16 @@ impl Sync {
                 resolve: !busy && !remote.manipulating,
             };
         }
-        if !busy && !remote.manipulating && observation.sequence != self.applied {
+        if !busy && observation.sequence != self.applied {
             let matches = model
                 .current()
                 .mapped_rgb(Gamut::Srgb, mapping)
                 .is_ok_and(|rgb| same_rgb(rgb, remote.rgb));
             if !matches {
-                model.receive_rgb(remote.rgb);
+                model.receive_rgb_sample(remote.rgb, remote.manipulating);
+            }
+            if !remote.manipulating {
+                model.finish_remote();
             }
             self.previous = model.edit.get_untracked();
             self.applied = observation.sequence;
@@ -552,7 +561,30 @@ mod tests {
                 },
             );
             tick(&mut sync, model, &inbox, now, Resolution::None, &mut sent);
-            assert_eq!(model.current(), before);
+            assert_ne!(model.current(), before);
+            assert_eq!(model.current().components()[3], 0.0);
+            assert!(
+                !model.dragging.get_untracked(),
+                "remote preview must not block subsequent samples"
+            );
+            assert_eq!(model.recent.get_untracked().len(), count);
+            assert_eq!(model.saved_state_untracked().current, before);
+            for step in 1..20 {
+                color.rgb = [1.0 - f64::from(step) / 20.0, f64::from(step) / 20.0, 0.0];
+                inbox.absorb(
+                    1,
+                    Event::Color {
+                        state: color,
+                        after_write: 0,
+                    },
+                );
+                let previous = model.current();
+                tick(&mut sync, model, &inbox, now, Resolution::None, &mut sent);
+                assert_ne!(model.current(), previous);
+                assert_eq!(model.edit.get_untracked().origin, EditOrigin::Companion);
+                assert_eq!(model.recent.get_untracked().len(), count);
+                assert!(sent.is_empty());
+            }
             color.rgb = [0.0, 1.0, 0.0];
             color.manipulating = false;
             inbox.absorb(
@@ -596,6 +628,47 @@ mod tests {
             assert!(sent.is_empty());
             assert_eq!(model.current(), edited);
         });
+    }
+
+    #[test]
+    fn a_remote_preview_commits_before_local_takeover_or_disconnect() {
+        for disconnect in [false, true] {
+            Owner::new().with(|| {
+                let (model, mut sync, mut inbox) = setup();
+                let now = Instant::now();
+                let mut sent = vec![];
+                tick(&mut sync, model, &inbox, now, Resolution::None, &mut sent);
+                let before = model.current();
+                let mut color = remote([1.0, 0.0, 0.0]);
+                color.manipulating = true;
+                inbox.absorb(
+                    1,
+                    Event::Color {
+                        state: color,
+                        after_write: 0,
+                    },
+                );
+                tick(&mut sync, model, &inbox, now, Resolution::None, &mut sent);
+                let preview = model.current();
+                assert_ne!(preview, before);
+                if disconnect {
+                    inbox.absorb(2, Event::State(State::Reconnecting));
+                    model.companion.state.set(State::Reconnecting);
+                    tick(&mut sync, model, &inbox, now, Resolution::None, &mut sent);
+                } else {
+                    assert!(model.begin());
+                    model.preview(Oklch::new(0.5, 0.08, 30.0, 0.4).unwrap());
+                    tick(&mut sync, model, &inbox, now, Resolution::None, &mut sent);
+                    model.commit();
+                    model.undo();
+                }
+                assert_eq!(model.current(), preview);
+                assert_eq!(model.saved_state_untracked().current, preview);
+                model.undo();
+                assert_eq!(model.current(), before);
+                assert!(sent.is_empty(), "remote gestures must not echo");
+            });
+        }
     }
     #[test]
     fn an_unmodified_text_draft_defers_the_latest_neutral_color_until_blur() {

@@ -143,9 +143,11 @@ interpreted as color alpha.
 An initial connection adopts the current CSP color. Received RGB is interpreted
 as sRGB; the companion protocol exposes no document ICC profile. A different
 stable remote color creates one Undo/recents commit and keeps the local alpha.
-Neutral colors also retain the local editing hue. Incoming colors wait while a
-text field has focus, a local drag is active or CSP reports an ongoing gesture;
-the latest stable color is applied afterward. A committed local edit takes
+Neutral colors also retain the local editing hue. An ongoing CSP gesture updates
+the picker live; release commits one Undo/recents entry for the whole gesture.
+Local editing or disconnection commits the last received preview before proceeding.
+Incoming colors wait while a text field has focus or a local drag is active;
+the latest color is applied afterward. A committed local edit takes
 precedence over an older deferred observation.
 
 Local L/C/H edits, drag previews, cancellation and Undo/Redo send the selected

@@ -124,6 +124,7 @@ fn check_numeric_adjustments(
     refs.numbers[1].focus();
     harness.settle(32);
     let before_wheel = model.current();
+    let recent_before_wheel = model.recent.get_untracked();
     harness.deliver_to_first(wheel(
         refs.numbers[1],
         pixels(-11.0),
@@ -181,6 +182,13 @@ fn check_numeric_adjustments(
     ));
     harness.settle(32);
     assert!((model.current().components()[1] - after_wheel.components()[1] + 0.01).abs() < 1e-12);
+    assert_eq!(model.recent.get_untracked(), recent_before_wheel);
+    assert_eq!(model.saved_state_untracked().recent, recent_before_wheel);
+    let stepped = model.current();
+    model.undo();
+    assert_eq!(model.current(), after_wheel);
+    model.redo();
+    assert_eq!(model.current(), stepped);
 
     let before_ime = model.current();
     harness.deliver_to_first(SurfaceEvent::Ime(ImeEvent::Enabled));
@@ -545,13 +553,22 @@ fn mounted_picker_draws_and_drag_is_one_undo() {
                 let last_valid = model.current();
                 assert!((last_valid.components()[1] - 0.02).abs() < 1e-6);
                 harness.deliver_to_first(slice_event(PointerAction::Moved, 0.95, 0.05));
+                harness.settle(32);
+                assert!(model.dragging.get_untracked());
+                assert!((model.current().components()[0] - 0.95).abs() < 1e-6);
+                assert!(model.current().in_gamut(model.gamut.get_untracked()));
+                harness.deliver_to_first(slice_event(PointerAction::Moved, 1.4, 0.6));
+                harness.settle(32);
+                assert!((model.current().components()[0] - 0.4).abs() < 1e-6);
+                assert!(model.current().in_gamut(model.gamut.get_untracked()));
+                harness.deliver_to_first(slice_event(PointerAction::Moved, 0.05, 0.5));
+                harness.settle(32);
+                assert_eq!(model.current(), last_valid, "captured drag can reenter the gamut");
                 harness.deliver_to_first(slice_event(PointerAction::Released, 0.95, 0.05));
                 harness.settle(32);
-                assert_eq!(
-                    model.current(),
-                    last_valid,
-                    "leaving the gamut must retain the last valid sample"
-                );
+                assert!(!model.dragging.get_untracked());
+                assert!((model.current().components()[0] - 0.95).abs() < 1e-6);
+                assert!(model.current().in_gamut(model.gamut.get_untracked()));
                 model.undo();
                 harness.settle(32);
                 assert_eq!(model.current(), before_slice);

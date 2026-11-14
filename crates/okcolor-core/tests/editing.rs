@@ -83,3 +83,45 @@ fn gamut_boundaries_have_valid_interior_and_invalid_exterior() {
         }
     }
 }
+
+#[test]
+fn wheel_edits_keep_recents_and_still_save_undo_and_branch() {
+    let mut history = History::new(color(0.1), 100, 24);
+    history.set(color(0.2)).unwrap();
+    let recent = history.recent().clone();
+    for index in 30..40 {
+        history
+            .set_without_recent(color(f64::from(index) / 100.0))
+            .unwrap();
+    }
+    assert_eq!(history.recent(), &recent);
+    assert_eq!(history.committed(), color(0.39));
+    history.undo().unwrap();
+    assert_eq!(history.current(), color(0.38));
+    history.redo().unwrap();
+    assert_eq!(history.current(), color(0.39));
+    history.undo().unwrap();
+    history.set_without_recent(color(0.5)).unwrap();
+    assert!(!history.can_redo());
+    assert_eq!(history.recent(), &recent);
+}
+
+#[test]
+fn captured_slice_drag_tracks_the_boundary_and_can_reenter() {
+    for gamut in [Gamut::Srgb, Gamut::DisplayP3, Gamut::Rec2020] {
+        for hue in (0..360).step_by(15) {
+            let slice = GamutSlice::new(f64::from(hue), 0.4, gamut).unwrap();
+            for y in [-1.0, 0.0, 0.1, 0.3, 0.5, 0.9, 1.0, 2.0] {
+                let picked = slice.drag(1.5, y, 0.37).unwrap();
+                let [l, c, h, alpha] = picked.components();
+                assert_eq!(l, 1.0 - y.clamp(0.0, 1.0));
+                assert_eq!((h, alpha), (f64::from(hue), 0.37));
+                assert!(picked.in_gamut(gamut));
+                assert!((c - slice.boundary(l, gamut).unwrap().min(0.4)).abs() < 1e-7);
+            }
+            assert_eq!(slice.drag(-1.0, 0.5, 1.0).unwrap().components()[1], 0.0);
+            assert_eq!(slice.drag(0.01, 0.5, 0.37), slice.pick(0.01, 0.5, 0.37));
+            assert!(slice.drag(f64::NAN, 0.5, 1.0).is_none());
+        }
+    }
+}

@@ -142,6 +142,20 @@ impl SurfaceKind {
             Self::Alpha => [model.alpha.get(), 0.5],
         }
     }
+
+    fn drag(self, model: PickerModel, x: f64, y: f64) -> Option<Oklch> {
+        if self != Self::Slice {
+            return self.pick(model, x, y);
+        }
+        let [_, _, h, alpha] = model.current().components();
+        GamutSlice::new(
+            h,
+            model.max_chroma.get_untracked(),
+            model.gamut.get_untracked(),
+        )
+        .ok()?
+        .drag(x, y, alpha)
+    }
 }
 
 /// A color sample uses the same GPU preview policy as the editing surfaces.
@@ -216,7 +230,7 @@ pub fn ColorControl(model: PickerModel, kind: SurfaceKind, node: NodeRef) -> imp
         if cx.primary
             && dragging.get_untracked()
             && let Some((x, y)) = coordinate(cx.position, node.window_bounds())
-            && let Some(color) = kind.pick(model, x, y)
+            && let Some(color) = kind.drag(model, x, y)
         {
             model.preview(color);
         }
@@ -224,7 +238,7 @@ pub fn ColorControl(model: PickerModel, kind: SurfaceKind, node: NodeRef) -> imp
     let up = move |cx: &mut EventCx<'_, events::PointerUp>| {
         if cx.primary && cx.button == Some(PointerButton::Primary) && dragging.get_untracked() {
             if let Some((x, y)) = coordinate(cx.position, node.window_bounds())
-                && let Some(color) = kind.pick(model, x, y)
+                && let Some(color) = kind.drag(model, x, y)
             {
                 model.preview(color);
             }

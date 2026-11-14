@@ -22,14 +22,29 @@ impl GamutSlice {
     }
 
     /// Coordinates are normalized: left C=0, right C=max, top L=1, bottom L=0.
-    /// Invalid or out-of-gamut samples are nonselectable, including during drags.
-    /// The caller keeps the last valid color while the pointer is outside.
+    /// Invalid or out-of-gamut samples cannot start a selection.
     pub fn pick(self, x: f64, y: f64, alpha: f64) -> Option<Oklch> {
         if !(0.0..=1.0).contains(&x) || !(0.0..=1.0).contains(&y) {
             return None;
         }
         let color = Oklch::new(1.0 - y, x * self.max_chroma, self.hue, alpha).ok()?;
         color.in_gamut(self.gamut).then_some(color)
+    }
+
+    /// During a captured drag, preserve lightness and reduce chroma to the gamut boundary.
+    /// Clamp coordinates to the chart first, so dragging outside its rectangle stays active.
+    pub fn drag(self, x: f64, y: f64, alpha: f64) -> Option<Oklch> {
+        if !x.is_finite() || !y.is_finite() {
+            return None;
+        }
+        let color = Oklch::new(
+            1.0 - y.clamp(0.0, 1.0),
+            x.clamp(0.0, 1.0) * self.max_chroma,
+            self.hue,
+            alpha,
+        )
+        .ok()?;
+        Some(color.reduce_chroma(self.gamut))
     }
 
     /// Boundary for any of the three reference gamuts, independent of preview mapping.

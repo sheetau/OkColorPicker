@@ -78,13 +78,16 @@ An active wide output path does not promise complete P3/Rec.2020 panel coverage.
 
 A slice fixes hue, puts absolute chroma on the horizontal axis, and increases
 lightness upward. Its chroma extent is explicit and does not change per sample.
-Out-of-gamut clicks and drag samples are ignored; a caller retains the last valid
-sample while outside. Markers are not clamped, so numeric/external colors can
+Out-of-gamut clicks do not start a selection. Once a drag starts inside the gamut,
+coordinates stay captured outside the chart: lightness follows the pointer within
+0–1 and chroma is reduced to the selected gamut boundary at that lightness.
+Reentering the gamut resumes direct selection. Markers are not clamped, so numeric/external colors can
 remain outside the chart. Each gamut boundary is calculated independently;
 Display P3 and Rec.2020 must not be forced into a nested order.
 
 `History::begin/preview/commit` creates one undo entry for an entire drag or
 external burst. Cancel restores the exact previous color. Only changed commits
-add deduplicated recent colors. Undo/redo do not add recents. A new commit clears
+add deduplicated recent colors, except numeric wheel edits, which remain undoable
+and persistent without changing recents. Undo/redo do not add recents. A new commit clears
 redo; cancel and unchanged commits preserve it. History and recent counts have
 explicit bounds, and history navigation requires resolving the current edit.

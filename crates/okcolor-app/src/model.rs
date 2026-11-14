@@ -62,6 +62,7 @@ pub struct PickerModel {
     committed: RwSignal<Oklch>,
     history: RwSignal<History, LocalStorage>,
     before_drag: RwSignal<Oklch>,
+    remote_edit: RwSignal<bool>,
 }
 
 impl Default for PickerModel {
@@ -113,6 +114,7 @@ impl PickerModel {
             committed: RwSignal::new(initial),
             history: RwSignal::new_local(history),
             before_drag: RwSignal::new(initial),
+            remote_edit: RwSignal::new(false),
         }
     }
 
@@ -162,6 +164,11 @@ impl PickerModel {
 
     /// A remote commit uses the same Undo/recents contract without echoing back.
     pub fn receive_rgb(self, rgb: [f64; 3]) -> bool {
+        self.receive_rgb_sample(rgb, false)
+    }
+
+    /// Remote gestures preview live, but commit one history entry on release.
+    pub(crate) fn receive_rgb_sample(self, rgb: [f64; 3], manipulating: bool) -> bool {
         if self.editing_text.get_untracked()
             || self.dragging.get_untracked()
             || rgb
@@ -174,18 +181,63 @@ impl PickerModel {
         let Ok(color) = Oklch::from_rgb(rgb, Gamut::Srgb, alpha, h) else {
             return false;
         };
-        self.select_from(color, EditOrigin::Companion)
+        if !manipulating && !self.remote_edit.get_untracked() {
+            return self.select_from(color, EditOrigin::Companion);
+        }
+        if !self.remote_edit.get_untracked() {
+            let mut started = false;
+            self.history
+                .update(|history| started = history.begin().is_ok());
+            if !started {
+                return false;
+            }
+            self.before_drag.set(self.current());
+            self.remote_edit.set(true);
+        }
+        self.history.update(|history| {
+            let _ = history.preview(color);
+        });
+        self.publish_from(false, EditOrigin::Companion);
+        if !manipulating {
+            self.finish_remote();
+        }
+        true
+    }
+
+    /// Preserve the last received sample if local editing or a disconnect ends a gesture.
+    pub(crate) fn finish_remote(self) {
+        if !self.remote_edit.get_untracked() {
+            return;
+        }
+        self.history.update(|history| {
+            if history.commit() == Ok(true) {
+                self.previous.set(self.before_drag.get_untracked());
+            }
+        });
+        self.remote_edit.set(false);
+        self.publish_from(true, EditOrigin::Companion);
     }
 
     fn select_from(self, color: Oklch, origin: EditOrigin) -> bool {
+        self.select_with_recent(color, origin, true)
+    }
+
+    fn select_with_recent(self, color: Oklch, origin: EditOrigin, add_recent: bool) -> bool {
+        self.finish_remote();
         let before = self.current();
         let mut accepted = true;
-        self.history.update(|history| match history.set(color) {
-            Ok(true) => self.previous.set(before),
-            Ok(false) => {}
-            Err(error) => {
-                accepted = false;
-                self.message.set(error.to_string());
+        self.history.update(|history| {
+            match if add_recent {
+                history.set(color)
+            } else {
+                history.set_without_recent(color)
+            } {
+                Ok(true) => self.previous.set(before),
+                Ok(false) => {}
+                Err(error) => {
+                    accepted = false;
+                    self.message.set(error.to_string());
+                }
             }
         });
         self.publish_from(true, origin);
@@ -206,6 +258,15 @@ impl PickerModel {
     }
 
     pub fn set_channel(self, channel: usize, value: f64) -> bool {
+        self.set_channel_with_recent(channel, value, true)
+    }
+
+    pub(crate) fn set_channel_with_recent(
+        self,
+        channel: usize,
+        value: f64,
+        add_recent: bool,
+    ) -> bool {
         let mut components = self.current().components();
         let Some(component) = components.get_mut(channel) else {
             return false;
@@ -214,7 +275,7 @@ impl PickerModel {
         match Oklch::new(components[0], components[1], components[2], components[3]) {
             Ok(color) => {
                 self.message.set(String::new());
-                self.select(color)
+                self.select_with_recent(color, EditOrigin::Local, add_recent)
             }
             Err(error) => {
                 self.message.set(error.to_string());
@@ -224,6 +285,7 @@ impl PickerModel {
     }
 
     pub fn begin(self) -> bool {
+        self.finish_remote();
         let mut started = false;
         self.history.update(|history| {
             started = history.begin().is_ok();
@@ -255,6 +317,7 @@ impl PickerModel {
         self.publish(false);
     }
     pub fn undo(self) {
+        self.finish_remote();
         let before = self.current();
         self.history.update(|history| {
             if history.undo() == Ok(true) {
@@ -264,6 +327,7 @@ impl PickerModel {
         self.publish(true);
     }
     pub fn redo(self) {
+        self.finish_remote();
         let before = self.current();
         self.history.update(|history| {
             if history.redo() == Ok(true) {
@@ -302,7 +366,8 @@ impl PickerModel {
                     .expect("color edit revision exhausted"),
             });
         }
-        let dragging = self.history.with_untracked(History::is_editing);
+        let dragging =
+            self.history.with_untracked(History::is_editing) && !self.remote_edit.get_untracked();
         if self.dragging.get_untracked() != dragging {
             self.dragging.set(dragging);
         }

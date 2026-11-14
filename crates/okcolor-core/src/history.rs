@@ -96,15 +96,21 @@ impl History {
     }
 
     pub fn commit(&mut self) -> Result<bool, EditError> {
+        self.commit_with_recent(true)
+    }
+
+    fn commit_with_recent(&mut self, add_recent: bool) -> Result<bool, EditError> {
         let before = self.before_edit.take().ok_or(EditError::NotEditing)?;
         if before == self.current {
             return Ok(false);
         }
         push_bounded(&mut self.undo, before, self.history_limit);
         self.redo.clear();
-        self.recent.retain(|color| *color != self.current);
-        self.recent.push_front(self.current);
-        self.recent.truncate(self.recent_limit);
+        if add_recent {
+            self.recent.retain(|color| *color != self.current);
+            self.recent.push_front(self.current);
+            self.recent.truncate(self.recent_limit);
+        }
         Ok(true)
     }
 
@@ -118,6 +124,13 @@ impl History {
         self.begin()?;
         self.preview(color)?;
         self.commit()
+    }
+
+    /// A wheel adjustment remains undoable without adding intermediate recent colors.
+    pub fn set_without_recent(&mut self, color: Oklch) -> Result<bool, EditError> {
+        self.begin()?;
+        self.preview(color)?;
+        self.commit_with_recent(false)
     }
 
     pub fn undo(&mut self) -> Result<bool, EditError> {
