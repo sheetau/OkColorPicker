@@ -35,6 +35,44 @@ distributed notice document must contain the license texts and package/version
 attribution without those machine-specific paths. The selected license list is
 not a release approval or a substitute for the upstream obligations.
 
+## Assemble notices and source
+
+After committing the source and reviewing the collection, run:
+
+```powershell
+python -m unittest discover -s scripts -p test_assemble_notices.py -v
+python scripts/assemble_notices.py --output output/notices
+```
+
+Use `--cargo-about <path>` if the pinned tool is installed outside PATH. The
+output directory must not exist. Assembly requires a clean Git worktree and
+collects a fresh locked report. It writes a self-contained notice document,
+`SOURCES.zip`, a package-to-source index, DXC source provenance and a checksum
+manifest. It publishes nothing. The raw report and local Cargo paths are not
+included in the output.
+
+Registry source archives must match Cargo.lock checksums. Git dependencies are
+archived at their locked commits; local application and patch sources come from
+the current project commit. Git excludes untracked files. These are source snapshots, including upstream
+tests/examples and their own notices, rather than a preconfigured offline build.
+Native DXC source locations are supplied separately from the Rust source bundle.
+
+The collector handles two reviewed exceptions to generic MIT detection.
+`zgui-color` uses the Microsoft Terminal notice retained with the shader patch.
+For `void` 1.0.2, the
+[original README](https://github.com/reem/rust-void/blob/ab2f4dbb7c95c144ccba2fa8afd11e155aa91133/README.md)
+declares MIT and credits its author but contains no full license file. The
+document preserves that README and separately reproduces the
+[standard MIT permission terms](https://spdx.org/licenses/MIT.html),
+omitting the unfilled copyright placeholder rather than
+inventing a holder or year. Source hashes are checked before either exception is
+used. An unknown generic MIT case stops assembly and requires review.
+
+Include all five generated files together in the distribution, plus its binary
+and user instructions. Check their hashes after copying. Successful assembly
+does not establish native compatibility, clean-machine runtime availability or
+the final distribution font decision.
+
 ## Material outside the generated report
 
 Keep the project license and NOTICE, this folder's upstream notices, local patch
