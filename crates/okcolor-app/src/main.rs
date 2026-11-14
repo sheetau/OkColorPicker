@@ -1,3 +1,8 @@
+#![cfg_attr(
+    all(target_os = "windows", not(debug_assertions)),
+    windows_subsystem = "windows"
+)]
+
 use okcolor_app::{
     autosave, fonts, graphics,
     model::PickerModel,
@@ -21,7 +26,33 @@ impl zgui::runtime::FrameProbe for FrameCount {
     }
 }
 
-fn main() -> Result<(), zgui::Error> {
+fn main() {
+    if let Err(error) = run() {
+        eprintln!("OkColorPicker could not run: {error}");
+        #[cfg(all(target_os = "windows", not(debug_assertions)))]
+        {
+            use windows_sys::Win32::UI::WindowsAndMessaging::{MB_ICONERROR, MB_OK, MessageBoxW};
+            let message: Vec<u16> = format!("OkColorPicker could not run.\n\n{error}")
+                .encode_utf16()
+                .chain(Some(0))
+                .collect();
+            let title: Vec<u16> = "OkColorPicker".encode_utf16().chain(Some(0)).collect();
+            // The GUI subsystem has no console for an Explorer-launched application.
+            // Keep both UTF-16 buffers alive through this synchronous native dialog.
+            unsafe {
+                MessageBoxW(
+                    std::ptr::null_mut(),
+                    message.as_ptr(),
+                    title.as_ptr(),
+                    MB_OK | MB_ICONERROR,
+                );
+            }
+        }
+        std::process::exit(1);
+    }
+}
+
+fn run() -> Result<(), zgui::Error> {
     #[cfg(target_os = "windows")]
     let _dispatcher = okcolor_app::windows_dispatcher::DispatcherRuntime::new()
         .inspect_err(|error| eprintln!("Advanced Color dispatcher unavailable: {error}"))

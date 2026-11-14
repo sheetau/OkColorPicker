@@ -30,6 +30,14 @@ selected adapter and actual surface formats; set `OKCOLOR_TRACE_FRAMES` to log
 frame counts. It requires a working DX12 device. A device-loss callback marks the
 device unavailable and wakes the window; recovery runs on the UI thread.
 
+Windows release builds use the GUI subsystem, so launching the executable from
+Explorer does not create a console window. A fatal application error is shown in
+a native dialog before exit code 1. Debug builds retain the console. To capture
+release diagnostics, start the process with explicit standard-output/error
+redirection (for example, PowerShell `Start-Process -PassThru` with
+`-RedirectStandardOutput` and `-RedirectStandardError`). Logs are not written to
+the profile automatically.
+
 The Windows presentation path composes into retained FP16 textures, then converts
 premultiplied gamma-encoded values to linear scRGB on the GPU. It prefers an FP16
 DirectComposition swap chain when the surface supports it and the display's
