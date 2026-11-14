@@ -170,7 +170,18 @@ fn worker_maintains_heartbeat_reconnects_and_releases_idle_socket_on_shutdown() 
         assert_eq!(auth.detail.as_ref().unwrap()[2], token);
         reply(&mut socket, &auth);
         done_tx.send(()).unwrap();
-        assert_eq!(socket.read(&mut [0]).unwrap(), 0);
+        loop {
+            let mut bytes = vec![];
+            if socket.read_until(0, &mut bytes).unwrap() == 0 {
+                break;
+            }
+            let frame = Decoder::default().feed(&bytes).unwrap().pop().unwrap();
+            assert!(matches!(
+                frame.command.as_str(),
+                "TellHeartbeat" | "SyncColorCircleUIState" | "SyncSubViewUIState"
+            ));
+            reply(&mut socket, &frame);
+        }
     });
     let (tx, rx) = mpsc::channel();
     let worker = Worker::start(
@@ -190,5 +201,205 @@ fn worker_maintains_heartbeat_reconnects_and_releases_idle_socket_on_shutdown() 
     let start = Instant::now();
     drop(worker);
     assert!(start.elapsed() < Duration::from_secs(1));
+    server.join().unwrap();
+}
+
+#[test]
+fn color_sync_uses_active_gate_coalesces_writes_and_orders_pushes_before_ack() {
+    use okcolor_csp::color::ColorCommand;
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let pairing = pairing(listener.local_addr().unwrap().port());
+    let (reading_tx, reading) = mpsc::channel();
+    let (release_tx, release) = mpsc::channel();
+    let server = thread::spawn(move || {
+        let mut socket = accept(&listener);
+        let auth = receive(&mut socket);
+        reply(&mut socket, &auth);
+        let heartbeat = receive(&mut socket);
+        assert_eq!(heartbeat.command, "TellHeartbeat");
+        assert_eq!(
+            heartbeat.detail,
+            Some(json!({"IdleTimerResetRequested":true}))
+        );
+        reply(&mut socket, &heartbeat);
+        let request = receive(&mut socket);
+        assert_eq!(request.command, "SyncColorCircleUIState");
+        reading_tx.send(()).unwrap();
+        release.recv_timeout(WAIT).unwrap();
+        let mut state = json!({"CurrentColorIndex":0,"ColorSelectionModel":"HSV",
+            "HSVColorMainH":0,"HSVColorMainS":4294967295u32,"HSVColorMainV":4294967295u32,
+            "IsCurrentColorTransparent":false,"CanExecuteSetterCommand":true,"IsManipulating":false});
+        let mut response = Frame {
+            kind: Kind::Success,
+            command: request.command,
+            serial: request.serial,
+            detail: Some(state.clone()),
+            data: vec![],
+        };
+        socket
+            .get_mut()
+            .write_all(&response.encode().unwrap())
+            .unwrap();
+        let set = receive(&mut socket);
+        assert_eq!(set.command, "SetCurrentColor");
+        assert_eq!(
+            set.detail,
+            Some(json!({"ColorSpaceKind":"HSV","ColorIndex":0,
+            "HSVColorH":2863311530u32,"HSVColorS":4294967295u32,"HSVColorV":4294967295u32,"IsColorTransparent":false}))
+        );
+        // A previous state push arrives during the setter exchange, before its ACK.
+        response.kind = Kind::Command;
+        response.serial = 99;
+        socket
+            .get_mut()
+            .write_all(&response.encode().unwrap())
+            .unwrap();
+        let ack = receive(&mut socket);
+        assert_eq!((ack.kind, ack.serial), (Kind::Success, 99));
+        reply(&mut socket, &set);
+        let poll = receive(&mut socket);
+        assert_eq!(poll.command, "SyncColorCircleUIState");
+        state["HSVColorMainH"] = json!(2863311530u32);
+        response.kind = Kind::Success;
+        response.serial = poll.serial;
+        response.detail = Some(state);
+        socket
+            .get_mut()
+            .write_all(&response.encode().unwrap())
+            .unwrap();
+        // No command should target the inactive sub-color or brush opacity.
+        assert_eq!(socket.read(&mut [0]).unwrap(), 0);
+    });
+    let (tx, rx) = mpsc::channel();
+    let worker = Worker::start(
+        |_| Err(ScanError::NoPairing),
+        move |g, e| {
+            tx.send((g, e)).unwrap();
+        },
+    )
+    .unwrap();
+    let control = worker.control();
+    control.pair(pairing);
+    state(&rx, 1, State::Connecting);
+    state(&rx, 1, State::Connected);
+    reading.recv_timeout(WAIT).unwrap();
+    assert!(!control.send_color(0, 1, ColorCommand::new([0.0, 1.0, 0.0], 0, false).unwrap()));
+    assert!(control.send_color(1, 1, ColorCommand::new([0.0, 1.0, 0.0], 0, false).unwrap()));
+    assert!(control.send_color(1, 2, ColorCommand::new([0.0, 0.0, 1.0], 0, false).unwrap()));
+    release_tx.send(()).unwrap();
+    let mut red_count = 0;
+    let mut sent = false;
+    loop {
+        let (generation, event) = rx.recv_timeout(WAIT).unwrap();
+        assert_eq!(generation, 1);
+        match event {
+            Event::Color {
+                state,
+                after_write: 0,
+            } => {
+                assert!(!sent);
+                assert_eq!(state.rgb, [1.0, 0.0, 0.0]);
+                red_count += 1;
+            }
+            Event::Sent { revision: 2, color } => {
+                assert_eq!(red_count, 2);
+                assert_eq!(color.rgb(), [0.0, 0.0, 1.0]);
+                sent = true;
+            }
+            Event::Color {
+                state,
+                after_write: 2,
+            } => {
+                assert!(sent);
+                assert_eq!(state.rgb, [0.0, 0.0, 1.0]);
+                break;
+            }
+            _ => panic!("Unexpected synchronization event"),
+        }
+    }
+    assert!(control.send_color(1, 3, ColorCommand::new([1.0; 3], 1, false).unwrap()));
+    assert!(matches!(
+        rx.recv_timeout(WAIT).unwrap(),
+        (1, Event::SendRejected { revision: 3 })
+    ));
+    drop(worker);
+    server.join().unwrap();
+}
+
+#[test]
+fn rgb_fallback_rechecks_slot_and_discards_a_color_read_across_a_slot_change() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let pairing = pairing(listener.local_addr().unwrap().port());
+    let server = thread::spawn(move || {
+        let mut socket = accept(&listener);
+        let auth = receive(&mut socket);
+        reply(&mut socket, &auth);
+        let heartbeat = receive(&mut socket);
+        reply(&mut socket, &heartbeat);
+        for (command, detail) in [
+            (
+                "SyncColorCircleUIState",
+                json!({"ColorSelectionModel":"HLS","CurrentColorIndex":0,
+                "IsCurrentColorTransparent":false,"CanExecuteSetterCommand":true,"IsManipulating":false}),
+            ),
+            (
+                "SyncSubViewUIState",
+                json!({"CurrentColorRed":4294967295u32,"CurrentColorGreen":0,"CurrentColorBlue":0}),
+            ),
+            ("SyncColorCircleUIState", json!({"CurrentColorIndex":1})),
+            (
+                "SyncSubViewUIState",
+                json!({"CurrentColorRed":0,"CurrentColorGreen":4294967295u32,"CurrentColorBlue":0}),
+            ),
+            ("SyncColorCircleUIState", json!({})),
+        ] {
+            let request = receive(&mut socket);
+            assert_eq!(request.command, command);
+            socket
+                .get_mut()
+                .write_all(
+                    &Frame {
+                        kind: Kind::Success,
+                        command: request.command,
+                        serial: request.serial,
+                        detail: Some(detail),
+                        data: vec![],
+                    }
+                    .encode()
+                    .unwrap(),
+                )
+                .unwrap();
+        }
+        assert_eq!(socket.read(&mut [0]).unwrap(), 0);
+    });
+    let (tx, rx) = mpsc::channel();
+    let worker = Worker::start(
+        |_| Err(ScanError::NoPairing),
+        move |g, e| {
+            tx.send((g, e)).unwrap();
+        },
+    )
+    .unwrap();
+    worker.control().pair(pairing);
+    state(&rx, 1, State::Connecting);
+    state(&rx, 1, State::Connected);
+    loop {
+        match rx.recv_timeout(WAIT).unwrap() {
+            (1, Event::ColorUnavailable) => {}
+            (
+                1,
+                Event::Color {
+                    state,
+                    after_write: 0,
+                },
+            ) => {
+                assert_eq!(state.slot, 1);
+                assert_eq!(state.rgb, [0.0, 1.0, 0.0]);
+                break;
+            }
+            _ => panic!("Unconfirmed RGB was published"),
+        }
+    }
+    drop(worker);
     server.join().unwrap();
 }

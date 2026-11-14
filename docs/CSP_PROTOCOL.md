@@ -60,8 +60,10 @@ generation; stale scan, authentication and push events cannot replace a later
 request, cancellation or reconnected session.
 The UI checks that generation again when applying asynchronous state. Initial
 authentication has a two-second overall deadline. While connected, the worker
-polls pushes with a 50 ms timeout and sends a heartbeat every second with a
-500 ms response deadline. Unexpected disconnection or a server shutdown push
+polls pushes with a 25 ms timeout and sends a heartbeat every second with a
+500 ms response deadline. Heartbeats include `IdleTimerResetRequested: true`,
+including immediately after authentication, to enable the server's state feed.
+Unexpected disconnection or a server shutdown push
 starts reconnection after one second. Failed attempts use one-second connection
 deadlines and back off to two, then five seconds. Authentication rejection
 requires a new scan. Disconnecting drops the in-memory reconnect token.
@@ -96,16 +98,46 @@ the model, independently of the server generation string used for authentication
 
 ## Color boundary
 
-`set_rgb` sends three 8-bit channels and `IsColorTransparent`. It omits
+The low-level `set_rgb` sends three 8-bit channels and `IsColorTransparent`. It omits
 `ColorSpaceKind` and `ColorIndex`, whose presence would select a different command
 variant. It does not send `SetAlpha`, which controls brush opacity.
 
+The worker's `ColorCommand` instead encodes bounded RGB as normalized unsigned
+32-bit HSV and explicitly targets slot 0 (main) or 1 (sub). It carries the binary
+transparent selector, never continuous alpha or brush opacity. This avoids a
+queued edit silently targeting a different active slot. Commands for an inactive
+slot, a manipulating/disabled host or an already acknowledged local revision are
+rejected before sending.
+
+Received circle HSV and Sub View RGB are normalized over `u32::MAX`. This corrects
+the older reference's 8-bit Sub View comment, using the captured-wire observations
+in [LumaPaletteCSP's protocol notes](https://github.com/andyubird/LumaPaletteCSP/blob/9e63821f64f07e493f86273d0bfde78e1d4c829f/PROTOCOL.md).
+Only protocol facts are used; the implementation is independent of that project's
+GPL source. Field names, types and ranges are checked before an update is applied.
+Incomplete state is merged with observations on the same socket; absent channels
+never default to zero. Bad updates leave the cache unchanged and invalidate the
+connection. Reconnection starts with an empty cache. Switching slots invalidates
+the active RGB baseline, and switching models invalidates the channel baselines.
+HLS units are not inferred: the worker requests Sub View RGB when circle HSV is
+unavailable, then rechecks circle metadata before associating RGB with a slot.
+If the slot changed during that read, the unconfirmed RGB is discarded and read
+again. Tab-only responses cannot confirm RGB. Color Mix state does not stand in
+for the active drawing color.
+
+The worker polls circle state every 500 ms, reads Sub View as needed, and consumes
+pushes. It drains queued pushes in wire order before applying a later response.
+A single pending color slot coalesces rapid local edits; connection replacement
+or loss clears it. Setter acknowledgement produces `Sent`, and each observation
+reports the last acknowledged local write revision. A poll follows a successful
+write even if the remote color is unchanged. This metadata lets the UI reject
+observations predating a newer local edit. Transport errors do not replay writes
+after reconnect. ACK alone does not establish that CSP applied the color.
+
 Callers retain the original floating-point color/alpha and apply the chosen sRGB
-output mapping only at this transport boundary. Received state is still raw JSON;
-the integration must validate the particular state schema and channel ranges,
-select the current main/sub color, and suppress echoes without quantizing the
-editor's original color. Do not assume that every CSP integer color field is
-8-bit RGB or that brush opacity is color alpha.
+output mapping only at this transport boundary. The application model integration
+still needs to preserve edit origin, suppress reflected quantized colors, and
+handle simultaneous local editing. The worker's typed events currently do not
+change the picker's color. Brush opacity must never be interpreted as color alpha.
 
 ## Verification
 
@@ -113,7 +145,10 @@ Run `cargo test -p okcolor-csp --locked`. Tests cover a fixed pairing vector,
 invalid fields, every split position of a frame, coalesced frames, bounded input,
 real loopback sockets, interleaved pushes/ACKs, credential rotation/reconnect,
 strict response matching, authentication rejection, partial reads across idle
-timeouts and connection invalidation on request timeout.
+timeouts and connection invalidation on request timeout. Color tests cover
+unsigned channel endpoints, delta updates, model/slot changes, malformed state,
+HSV conversion, the active heartbeat gate, coalesced writes, inactive-slot
+rejection and observation order around setter acknowledgements.
 
 Loopback peers establish these client contracts, not compatibility with a CSP
 release. Release validation must also pair through a real CSP QR, inspect current

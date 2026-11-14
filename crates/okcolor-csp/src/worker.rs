@@ -1,5 +1,9 @@
 //! A single background owner for scanning, authentication, heartbeats and pushes.
 use crate::{Error, Pairing, ReconnectToken, Session, frame::Frame, qr::ScanError};
+use crate::{
+    color::{ColorCommand, ColorState},
+    synchronization::Connection,
+};
 use std::{
     io,
     sync::{Arc, Condvar, Mutex},
@@ -19,6 +23,10 @@ pub enum State {
 pub enum Event {
     State(State),
     Push(Frame),
+    Color { state: ColorState, after_write: u64 },
+    ColorUnavailable,
+    Sent { revision: u64, color: ColorCommand },
+    SendRejected { revision: u64 },
 }
 enum Request {
     Scan,
@@ -30,6 +38,7 @@ struct Pending {
     generation: u64,
     request: Option<Request>,
     stopping: bool,
+    color: Option<(u64, ColorCommand)>,
 }
 #[derive(Clone)]
 pub struct Control(Arc<(Mutex<Pending>, Condvar)>);
@@ -46,6 +55,23 @@ impl Control {
     pub fn generation(&self) -> u64 {
         self.0.0.lock().unwrap().generation
     }
+    /// Coalesce continuous edits without retaining commands across connections.
+    pub fn send_color(&self, generation: u64, revision: u64, color: ColorCommand) -> bool {
+        let mut pending = self.0.0.lock().unwrap();
+        if pending.stopping || pending.generation != generation || pending.request.is_some() {
+            return false;
+        }
+        pending.color = Some((revision, color));
+        self.0.1.notify_one();
+        true
+    }
+    pub(crate) fn take_color(&self, generation: u64) -> Option<(u64, ColorCommand)> {
+        let mut pending = self.0.0.lock().unwrap();
+        if pending.stopping || pending.generation != generation {
+            return None;
+        }
+        pending.color.take()
+    }
     fn request(&self, request: Request) {
         let mut pending = self.0.0.lock().unwrap();
         if pending.stopping {
@@ -56,6 +82,7 @@ impl Control {
         };
         pending.generation = next;
         pending.request = Some(request);
+        pending.color = None;
         self.0.1.notify_one();
     }
     fn cancelled(&self, generation: u64) -> bool {
@@ -71,6 +98,7 @@ impl Control {
         }
         let next = generation.checked_add(1)?;
         pending.generation = next;
+        pending.color = None;
         Some(next)
     }
     fn wait(&self, duration: Option<Duration>) -> Option<(u64, Request)> {
@@ -121,6 +149,7 @@ impl Drop for Worker {
             let mut pending = self.control.0.0.lock().unwrap();
             pending.stopping = true;
             pending.request = None;
+            pending.color = None;
         }
         self.control.0.1.notify_one();
         if let Some(thread) = self.thread.take()
@@ -137,9 +166,8 @@ fn run(
     report: impl Fn(u64, Event),
 ) {
     let mut generation = 0;
-    let mut session: Option<Session> = None;
+    let mut session: Option<Connection> = None;
     let mut token: Option<ReconnectToken> = None;
-    let mut heartbeat = Instant::now();
     let mut retry = Instant::now();
     let mut failures = 0u32;
     let publish = |generation, event| {
@@ -193,8 +221,7 @@ fn run(
             match result {
                 Ok(connected) => {
                     token = Some(connected.reconnect_token());
-                    session = Some(connected);
-                    heartbeat = Instant::now() + Duration::from_secs(1);
+                    session = Some(Connection::new(connected));
                     publish(generation, Event::State(State::Connected));
                 }
                 Err(error) => publish(generation, Event::State(State::Failed(error.to_string()))),
@@ -215,9 +242,8 @@ fn run(
             }
             match result {
                 Ok(connected) => {
-                    session = Some(connected);
+                    session = Some(Connection::new(connected));
                     failures = 0;
-                    heartbeat = Instant::now() + Duration::from_secs(1);
                     publish(generation, Event::State(State::Connected));
                 }
                 Err(Error::AuthenticationRejected | Error::CommandRejected) => {
@@ -236,28 +262,13 @@ fn run(
         let Some(connected) = session.as_mut() else {
             continue;
         };
-        let result = if Instant::now() >= heartbeat {
-            heartbeat = Instant::now() + Duration::from_secs(1);
-            connected
-                .heartbeat(Duration::from_millis(500))
-                .map(|_| None)
-        } else {
-            connected.poll(Duration::from_millis(50))
-        };
+        let result = connected.step(&control, generation);
         match result {
-            Ok(Some(frame)) => {
-                let shutdown = frame.command == "PreNotifyOfServerShutdown";
-                publish(generation, Event::Push(frame));
-                if shutdown {
-                    session = None;
-                    retry = Instant::now() + backoff(0);
-                    if let Some(next) = control.retire(generation) {
-                        generation = next;
-                        publish(generation, Event::State(State::Reconnecting));
-                    }
+            Ok(events) => {
+                for event in events {
+                    publish(generation, event);
                 }
             }
-            Ok(None) => {}
             Err(_) => {
                 session = None;
                 retry = Instant::now() + backoff(0);

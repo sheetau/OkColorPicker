@@ -151,6 +151,31 @@ impl Session {
     pub fn heartbeat(&mut self, timeout: Duration) -> Result<(), Error> {
         self.command("TellHeartbeat", None, timeout).map(|_| ())
     }
+    /// Active heartbeat opens CSP's state synchronization gate.
+    pub fn active_heartbeat(&mut self, timeout: Duration) -> Result<(), Error> {
+        self.command(
+            "TellHeartbeat",
+            Some(json!({"IdleTimerResetRequested":true})),
+            timeout,
+        )
+        .map(|_| ())
+    }
+    pub fn set_color(
+        &mut self,
+        color: crate::color::ColorCommand,
+        timeout: Duration,
+    ) -> Result<(), Error> {
+        self.command(
+            "SetCurrentColor",
+            Some(json!({
+                "ColorSpaceKind":"HSV", "ColorIndex":color.slot,
+                "HSVColorH":color.hsv[0], "HSVColorS":color.hsv[1], "HSVColorV":color.hsv[2],
+                "IsColorTransparent":color.transparent,
+            })),
+            timeout,
+        )
+        .map(|_| ())
+    }
     /// CSP accepts bounded RGB plus a transparent-color selector, not continuous alpha.
     pub fn set_rgb(
         &mut self,
@@ -190,6 +215,9 @@ impl Session {
                 }
             }
         }
+    }
+    pub(crate) fn queued_event(&mut self) -> Option<Frame> {
+        self.events.pop_front()
     }
     fn exchange(
         &mut self,

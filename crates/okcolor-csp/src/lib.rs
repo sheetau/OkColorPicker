@@ -1,8 +1,10 @@
 //! Bounded CSP companion protocol, independent of the picker and native UI.
+pub mod color;
 pub mod frame;
 mod pairing;
 pub mod qr;
 mod session;
+mod synchronization;
 pub mod worker;
 pub use pairing::Pairing;
 pub use session::{ReconnectToken, Session};
@@ -12,6 +14,7 @@ use std::{fmt, io};
 pub enum Error {
     InvalidPairing,
     InvalidFrame,
+    InvalidColorState,
     FrameTooLarge,
     AuthenticationRejected,
     CommandRejected,
@@ -27,6 +30,7 @@ impl fmt::Display for Error {
         let message = match self {
             Self::InvalidPairing => "Invalid CSP companion pairing URL",
             Self::InvalidFrame => "Invalid CSP protocol frame",
+            Self::InvalidColorState => "Invalid or unsupported CSP color state",
             Self::FrameTooLarge => "CSP frame exceeds the size limit",
             Self::AuthenticationRejected => "CSP authentication rejected; scan a new pairing QR",
             Self::CommandRejected => "CSP rejected the command",
