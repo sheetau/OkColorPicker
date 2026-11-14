@@ -1,0 +1,278 @@
+use crate::model::PickerModel;
+use okcolor_core::{Gamut, GamutMapping, GamutSlice, Oklch};
+use zgui::reactive::RenderEffect;
+use zgui::{
+    geom::{DevicePx, Point, Rect},
+    prelude::*,
+};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub enum SurfaceKind {
+    Slice,
+    Lightness,
+    Chroma,
+    Hue,
+    Alpha,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Default, ShaderParams)]
+pub struct ColorParams {
+    pub channels: [f32; 4],
+    pub gamut: f32,
+    pub kind: f32,
+    pub mapping: f32,
+    pub max_chroma: f32,
+}
+
+static COLOR_SURFACE: ShaderEffect<ColorParams> = shader! {
+    name: "okcolor-surface",
+    mode: Paint,
+    params: ColorParams,
+    path: "src/color_surface.wgsl",
+};
+
+pub struct ColorSurface {
+    shader: ShaderHandle<ColorParams>,
+    params: ColorParams,
+}
+
+impl ColorSurface {
+    pub fn new(params: ColorParams) -> Self {
+        Self {
+            shader: COLOR_SURFACE.register(),
+            params,
+        }
+    }
+}
+
+impl CustomElement for ColorSurface {
+    fn layout(&mut self, cx: &mut CustomLayoutCx<'_>) -> CustomMeasured {
+        CustomMeasured {
+            width: cx.known_width.unwrap_or(290.0 * cx.scale),
+            height: cx
+                .known_height
+                .unwrap_or(if self.params.kind == 0.0 { 130.0 } else { 22.0 } * cx.scale),
+            ..CustomMeasured::default()
+        }
+    }
+    fn paint(&mut self, painter: &mut ScenePainter<'_>) {
+        self.shader.set_params(self.params);
+        let whole = Rect::new(Point::new(DevicePx(0.0), DevicePx(0.0)), painter.size());
+        painter.effect(whole, 0.0, &self.shader);
+    }
+}
+
+impl SurfaceKind {
+    /// The expensive color surface subscribes only to the axes it actually depends on.
+    pub fn params(self, model: PickerModel) -> ColorParams {
+        let l = if matches!(self, Self::Slice | Self::Lightness) {
+            0.0
+        } else {
+            model.l.get()
+        };
+        let c = if matches!(self, Self::Slice | Self::Chroma) {
+            0.0
+        } else {
+            model.c.get()
+        };
+        let h = if self == Self::Hue {
+            0.0
+        } else {
+            model.h.get()
+        };
+        ColorParams {
+            channels: [l as f32, c.min(10000.0) as f32, h as f32, 1.0],
+            gamut: match model.gamut.get() {
+                Gamut::Srgb => 0.0,
+                Gamut::DisplayP3 => 1.0,
+                Gamut::Rec2020 => 2.0,
+            },
+            kind: self as u8 as f32,
+            mapping: if model.mapping.get() == GamutMapping::Clip {
+                1.0
+            } else {
+                0.0
+            },
+            max_chroma: model.max_chroma.get() as f32,
+        }
+    }
+
+    pub fn pick(self, model: PickerModel, x: f64, y: f64) -> Option<Oklch> {
+        let [mut l, mut c, mut h, mut a] = model.current().components();
+        if self == Self::Slice {
+            return GamutSlice::new(
+                h,
+                model.max_chroma.get_untracked(),
+                model.gamut.get_untracked(),
+            )
+            .ok()?
+            .pick(x, y, a);
+        }
+        let x = x.clamp(0.0, 1.0);
+        match self {
+            Self::Lightness => l = x,
+            Self::Chroma => c = x * model.max_chroma.get_untracked(),
+            Self::Hue => h = x * 360.0,
+            Self::Alpha => a = x,
+            Self::Slice => unreachable!(),
+        }
+        Oklch::new(l, c, h, a).ok()
+    }
+
+    pub fn marker(self, model: PickerModel) -> [f64; 2] {
+        match self {
+            Self::Slice => [model.c.get() / model.max_chroma.get(), 1.0 - model.l.get()],
+            Self::Lightness => [model.l.get(), 0.5],
+            Self::Chroma => [model.c.get() / model.max_chroma.get(), 0.5],
+            Self::Hue => [model.h.get() / 360.0, 0.5],
+            Self::Alpha => [model.alpha.get(), 0.5],
+        }
+    }
+}
+
+#[component]
+pub fn ColorControl(model: PickerModel, kind: SurfaceKind, node: NodeRef) -> impl IntoView {
+    let (surface, handle) = zgui::custom::custom(ColorSurface::new(ColorParams::default()));
+    let effect = RenderEffect::new(move |_| {
+        let params = kind.params(model);
+        handle.update(|surface| surface.params = params);
+        handle.repaint();
+    });
+    on_cleanup_local(move || drop(effect));
+    let dragging = RwSignal::new(false);
+    let scale = use_window().scale();
+    let coordinate =
+        move |position: zgui::geom::Point<zgui::geom::CssPx, zgui::geom::Css>,
+              bounds: Option<zgui::geom::Rect<DevicePx, zgui::geom::Device>>| {
+            let bounds = bounds?;
+            if bounds.size.width.0 <= 0.0 || bounds.size.height.0 <= 0.0 {
+                return None;
+            }
+            let scale = scale.get_untracked();
+            Some((
+                f64::from((position.x.0 * scale - bounds.origin.x.0) / bounds.size.width.0),
+                f64::from((position.y.0 * scale - bounds.origin.y.0) / bounds.size.height.0),
+            ))
+        };
+    let down = move |cx: &mut EventCx<'_, events::PointerDown>| {
+        if !cx.primary || cx.button != Some(PointerButton::Primary) {
+            return;
+        }
+        if let Some((x, y)) = coordinate(cx.position, node.window_bounds())
+            && let Some(color) = kind.pick(model, x, y)
+            && model.begin()
+        {
+            dragging.set(true);
+            cx.capture_pointer();
+            model.preview(color);
+        }
+    };
+    let moved = move |cx: &mut EventCx<'_, events::PointerMove>| {
+        if cx.primary
+            && dragging.get_untracked()
+            && let Some((x, y)) = coordinate(cx.position, node.window_bounds())
+            && let Some(color) = kind.pick(model, x, y)
+        {
+            model.preview(color);
+        }
+    };
+    let up = move |cx: &mut EventCx<'_, events::PointerUp>| {
+        if cx.primary && cx.button == Some(PointerButton::Primary) && dragging.get_untracked() {
+            if let Some((x, y)) = coordinate(cx.position, node.window_bounds())
+                && let Some(color) = kind.pick(model, x, y)
+            {
+                model.preview(color);
+            }
+            dragging.set(false);
+            cx.release_pointer();
+            model.commit();
+        }
+    };
+    let keys = move |cx: &mut EventCx<'_, events::KeyDown>| {
+        if cx.key == Key::Named(NamedKey::Escape) && dragging.get_untracked() {
+            dragging.set(false);
+            cx.release_pointer();
+            model.cancel();
+            cx.prevent_default();
+            return;
+        }
+        let direction = match cx.key {
+            Key::Named(NamedKey::ArrowLeft | NamedKey::ArrowDown) => -1.0,
+            Key::Named(NamedKey::ArrowRight | NamedKey::ArrowUp) => 1.0,
+            _ => return,
+        };
+        let index = match kind {
+            SurfaceKind::Lightness => 0,
+            SurfaceKind::Chroma => 1,
+            SurfaceKind::Hue => 2,
+            SurfaceKind::Alpha => 3,
+            SurfaceKind::Slice => {
+                if matches!(cx.key, Key::Named(NamedKey::ArrowUp | NamedKey::ArrowDown)) {
+                    0
+                } else {
+                    1
+                }
+            }
+        };
+        let mut step = if index == 2 {
+            1.0
+        } else if index == 1 {
+            0.001
+        } else {
+            0.01
+        };
+        if cx.modifiers.contains(Modifiers::SHIFT) {
+            step *= 10.0;
+        }
+        if cx.modifiers.contains(Modifiers::CONTROL) {
+            step *= 0.1;
+        }
+        let value = model.current().components()[index] + step * direction;
+        let value = if index == 0 || index == 3 {
+            value.clamp(0.0, 1.0)
+        } else if index == 1 {
+            value.max(0.0)
+        } else {
+            value
+        };
+        if kind == SurfaceKind::Slice {
+            let mut channels = model.current().components();
+            channels[index] = value;
+            if let Ok(color) = Oklch::new(channels[0], channels[1], channels[2], channels[3])
+                && color.in_gamut(model.gamut.get_untracked())
+            {
+                model.select(color);
+            }
+        } else {
+            model.set_channel(index, value);
+        }
+        cx.prevent_default();
+        cx.stop_propagation();
+    };
+    let label = match kind {
+        SurfaceKind::Slice => "Lightness and chroma",
+        SurfaceKind::Lightness => "Lightness",
+        SurfaceKind::Chroma => "Chroma",
+        SurfaceKind::Hue => "Hue",
+        SurfaceKind::Alpha => "Alpha",
+    };
+    view! {
+        box(class="color-control",
+            node_ref=node,
+            class:slice=kind==SurfaceKind::Slice,
+            tabindex=Focus::Sequential,
+            a11y:label=label,
+            on:pointer_down=down,
+            on:pointer_move=moved,
+            on:pointer_up=up,
+            on:key_down=keys,
+            on:pointer_cancel=move |_| { if dragging.get_untracked() {dragging.set(false);model.cancel();} }) {
+            {surface.class("color-surface").into_view()}
+            box(class="color-marker",class:outside=move || kind.marker(model)[0]>1.0,
+                style:left=move || Some(format!("{}%",kind.marker(model)[0].clamp(0.0,1.0)*100.0)),
+                style:top=move || Some(format!("{}%",kind.marker(model)[1].clamp(0.0,1.0)*100.0))) {}
+        }
+    }
+}

@@ -23,15 +23,23 @@ native linker. It creates no product source.
 cargo run -p okcolor-app --locked
 ```
 
-The current executable is a rendering probe. It uses DX12, DirectComposition,
+The executable uses DX12, DirectComposition,
 premultiplied surface alpha and an opaque CSS background. A statically linked DXC
-avoids loading unrelated `dxcompiler.dll` files from PATH. The probe logs the
-selected adapter, actual surface formats and frame count. It requires a working
+avoids loading unrelated `dxcompiler.dll` files from PATH. It logs the
+selected adapter and actual surface formats; set `OKCOLOR_TRACE_FRAMES` to log
+frame counts. It requires a working
 DX12 device and does not yet recover from device loss.
 
 The surface currently uses an 8-bit SDR format. Supporting Display P3 and
 Rec.2020 calculations does not establish wide-gamut monitor output. Treat the
-probe as an sRGB preview until the display path is explicitly validated.
+window as an sRGB preview until the display path is explicitly validated.
+
+Drag the slice or channel bars, or focus a bar and use arrow keys. Shift scales
+keyboard steps by ten; Control scales them by one tenth. Enter commits a text
+draft, and Escape cancels it or an active drag. Ctrl+C/V outside text entry copies
+or applies a complete color. Inside text entry, the same shortcuts edit the draft.
+Ctrl+Z, Ctrl+Shift+Z and Ctrl+Y navigate color history outside text entry.
+Recent colors and undo history currently last for the running session only.
 
 The workspace contains `okcolor-core` for device-independent color calculations
 and `okcolor-app` for zgui and platform integration. zgui is pinned to an exact
@@ -52,12 +60,16 @@ cargo fmt --all --check
 cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo test --workspace --locked
 cargo test -p okcolor-app --test composition --locked -- --ignored
+cargo test -p okcolor-app --test color_surface --locked -- --ignored
+cargo test -p okcolor-app --test picker --locked -- --ignored
 ```
 
-The last command requires a GPU. It fails if no device is available and checks
-opaque, transparent and premultiplied pixels by readback, plus idle frame
-behavior. It is separate from portable core tests. Readback occurs only in the
-test, never in the application's per-frame path.
+The last three commands require a GPU and fail if no device is available. They
+check alpha composition, shader pixels against the f64 color reference, and
+mounted input/clipboard/IME/drag behavior with idle-frame and DPI checks on the
+headless platform. Set `OKCOLOR_TEST_RGBA` to an output path to capture the initial
+330×560 UI as RGBA bytes. Readback occurs only in tests, never in the application's
+per-frame path.
 
 Native Windows validation must additionally cover IME, clipboard, DPI changes,
 resize, minimize/restore, window movement and device loss. Headless pixel tests

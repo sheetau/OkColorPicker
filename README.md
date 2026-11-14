@@ -2,10 +2,13 @@
 
 An OKLCH color picker for Windows, built in Rust with zgui.
 
-The project aims to provide accurate gamut cross-sections, editable color values,
-and a workflow for CLIP STUDIO PAINT. The application is in early development;
-a development rendering probe and color calculation core are available. There
-is no finished picker or release yet.
+Explore a fixed-hue lightness/chroma slice, adjust L/C/H/alpha, and edit or copy
+CSS color values. The picker preserves the original color while displaying
+sRGB, Display P3 and Rec.2020 boundaries with an sRGB screen preview.
+
+The application is in early development. Recent colors and undo work within a
+session; persistence, CLIP STUDIO PAINT integration and validated wide-gamut
+monitor output are still being developed. There is no release yet.
 
 ## Development
 

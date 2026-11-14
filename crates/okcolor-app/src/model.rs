@@ -17,6 +17,7 @@ pub struct PickerModel {
     pub can_undo: RwSignal<bool>,
     pub can_redo: RwSignal<bool>,
     pub message: RwSignal<String>,
+    pub editing_text: RwSignal<bool>,
     history: RwSignal<History, LocalStorage>,
     before_drag: RwSignal<Oklch>,
 }
@@ -44,6 +45,7 @@ impl PickerModel {
             can_undo: RwSignal::new(false),
             can_redo: RwSignal::new(false),
             message: RwSignal::new(String::new()),
+            editing_text: RwSignal::new(false),
             history: RwSignal::new_local(History::new(initial, 100, 24)),
             before_drag: RwSignal::new(initial),
         }
@@ -155,6 +157,13 @@ impl PickerModel {
 
     pub fn output(self, format: ColorFormat) -> String {
         format_color(self.color(), format, self.mapping.get())
+            .map(|value| value.text)
+            .unwrap_or_default()
+    }
+
+    /// Commands read a snapshot and must not create display subscriptions.
+    pub fn output_untracked(self, format: ColorFormat) -> String {
+        format_color(self.current(), format, self.mapping.get_untracked())
             .map(|value| value.text)
             .unwrap_or_default()
     }
