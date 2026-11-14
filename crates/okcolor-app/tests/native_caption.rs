@@ -204,6 +204,7 @@ fn painted_native_maximize_button_round_trips_through_winit_and_zgui() {
             std::process::exit(1);
         }
     });
+    let _dispatcher = okcolor_app::windows_dispatcher::DispatcherRuntime::new().unwrap();
     let caption = CaptionBridge::new(false);
     let button = Rc::new(Cell::new(None));
     let sizes = Rc::new(RefCell::new(Vec::new()));

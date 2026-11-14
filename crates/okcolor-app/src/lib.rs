@@ -14,7 +14,11 @@ pub mod window_frame;
 #[cfg(target_os = "windows")]
 pub mod windows_caption;
 #[cfg(target_os = "windows")]
+mod windows_color_events;
+#[cfg(target_os = "windows")]
 mod windows_composition;
+#[cfg(target_os = "windows")]
+pub mod windows_dispatcher;
 #[cfg(target_os = "windows")]
 pub mod windows_display;
 #[cfg(target_os = "windows")]

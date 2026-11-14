@@ -22,6 +22,10 @@ impl zgui::runtime::FrameProbe for FrameCount {
 }
 
 fn main() -> Result<(), zgui::Error> {
+    #[cfg(target_os = "windows")]
+    let _dispatcher = okcolor_app::windows_dispatcher::DispatcherRuntime::new()
+        .inspect_err(|error| eprintln!("Advanced Color dispatcher unavailable: {error}"))
+        .ok();
     let mut startup = StartupState::open(state_directory());
     let trace = std::env::var_os("OKCOLOR_TRACE_FRAMES").is_some();
     let display = okcolor_app::display::DisplayBridge::default();

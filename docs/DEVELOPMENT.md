@@ -55,10 +55,22 @@ opaque. The underlying numeric alpha remains unchanged.
 Read-only discovery uses the window's principal display, active color mode, bit
 depth and reference white. Support flags alone do not enable wide output. Native
 window-position, DPI, display-change and setting-change messages invalidate the
-cached discovery and request a frame. The following draw refreshes it outside the
-window callback. Actual cross-monitor/HDR transitions, including reference-white
-slider notifications, still need native validation; the message hook is not proof
-that every OS setting produces the expected notification.
+cached discovery and request a frame. On Windows 11 build 22621 and later, a cached
+`DisplayInformation` also subscribes to `AdvancedColorInfoChanged`, covering color
+settings independently of window messages. Callbacks only invalidate the cache;
+the following draw queries it outside the callback. Older systems or subscription
+failures retain the window-message path and log the limitation.
+
+The native entry point owns a UI-thread WinRT dispatcher scope outside the app's
+event loop. Subscriptions are revoked before releasing their window; an owned
+queue drains and shuts down before COM uninitialization. Existing host queues are
+borrowed and remain running. Custom native hosts must likewise retain
+`windows_dispatcher::DispatcherRuntime` around their event loop to enable these
+events. The interop interface follows the Windows SDK 10.0.26100.0 ABI and
+[Microsoft's desktop DisplayInformation contract](https://learn.microsoft.com/en-us/windows/win32/api/windows.graphics.display.interop/nf-windows-graphics-display-interop-idisplayinformationstaticsinterop-getforwindow).
+Actual cross-monitor/HDR transitions, including reference-white slider changes,
+still need native validation; successful subscription does not establish delivery
+for every OS setting.
 The linear scRGB and 80-nit reference follow Microsoft's
 [Advanced Color guidance](https://learn.microsoft.com/en-us/windows/win32/direct3darticles/high-dynamic-range).
 The display-query ABI is checked against Windows SDK 10.0.26100.0; older APIs
@@ -113,6 +125,7 @@ cargo test -p okcolor-app --test native_caption --locked -- --ignored
 cargo test -p okcolor-app --test wide_pipeline --locked -- --ignored
 cargo test -p okcolor-app --test wide_picker --locked -- --ignored
 cargo test -p okcolor-app --test native_display --locked -- --ignored
+cargo test -p okcolor-app --lib windows_color_events --locked -- --ignored
 ```
 
 The six explicit GPU tests fail if no device is available. The first three
@@ -136,6 +149,12 @@ display policies do not establish the behavior of an actual monitor transition.
 `native_display` uses its own hidden window to read the current display
 configuration without changing OS settings. It requires local display access;
 remote sessions or mirrored displays may prevent an unambiguous query.
+The `windows_color_events` test requires Windows 11 build 22621+ and a local
+monitor. It registers and revokes real notifications on private hidden windows,
+reads Advanced Color information, and repeats queue creation/shutdown. It checks
+pending-work drainage, borrowed-queue ownership, callback-capture release and
+preservation of the thread's quit message. It does not toggle HDR or generate
+physical display-change events.
 
 Native Windows validation must additionally cover IME, clipboard, DPI changes,
 resize, minimize/restore, window movement and device loss. Headless pixel tests
