@@ -4,7 +4,7 @@ use zgui::{platform::Surface, render::Renderer, runtime::AppError};
 use zgui_render_wgpu::{Gpu, PresentPacing, SharedGraphics, gpu::adapter, wgpu};
 
 /// Creates one device lazily, when the first hidden window has a presentation target.
-/// This probe deliberately reports device loss rather than silently changing backends.
+/// Device loss is reported rather than silently changing backends.
 pub fn factory() -> zgui::runtime::RendererFactory {
     let graphics: RefCell<Option<SharedGraphics>> = RefCell::new(None);
     Box::new(move |surface: &Arc<dyn Surface>, target| {
@@ -12,6 +12,12 @@ pub fn factory() -> zgui::runtime::RendererFactory {
             AppError::Platform(zgui::platform::PlatformError::Backend(
                 "The window has no native presentation handle".into(),
             ))
+        })?;
+        #[cfg(target_os = "windows")]
+        crate::windows_composition::verify(handles.as_ref()).map_err(|error| {
+            AppError::Platform(zgui::platform::PlatformError::Backend(format!(
+                "Invalid composition window: {error}"
+            )))
         })?;
         if graphics.borrow().is_none() {
             let mut descriptor = adapter::instance_descriptor(wgpu::Backends::DX12);

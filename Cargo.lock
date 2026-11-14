@@ -2482,12 +2482,16 @@ name = "okcolor-app"
 version = "0.1.0"
 dependencies = [
  "okcolor-core",
+ "raw-window-handle",
  "serde",
  "serde_json",
  "tempfile",
  "wgpu",
+ "windows-sys 0.61.2",
+ "winit",
  "zgui",
  "zgui-platform-headless",
+ "zgui-platform-winit",
  "zgui-render-vector-vello",
  "zgui-render-wgpu",
 ]
@@ -5416,7 +5420,6 @@ dependencies = [
 [[package]]
 name = "zgui-platform-winit"
 version = "0.1.0"
-source = "git+https://github.com/zortax/zgui?rev=80baa3c7cb0fbbe1c058f10059e076e41c0a1b9a#80baa3c7cb0fbbe1c058f10059e076e41c0a1b9a"
 dependencies = [
  "accesskit",
  "accesskit_winit",

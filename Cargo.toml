@@ -1,5 +1,6 @@
 [workspace]
 members = ["crates/okcolor-core", "crates/okcolor-app"]
+exclude = ["vendor/zgui-platform-winit"]
 resolver = "3"
 
 [workspace.package]
@@ -13,3 +14,6 @@ zgui = { git = "https://github.com/zortax/zgui", rev = "80baa3c7cb0fbbe1c058f100
 zgui-render-wgpu = { git = "https://github.com/zortax/zgui", rev = "80baa3c7cb0fbbe1c058f10059e076e41c0a1b9a" }
 zgui-render-vector-vello = { git = "https://github.com/zortax/zgui", rev = "80baa3c7cb0fbbe1c058f10059e076e41c0a1b9a" }
 zgui-platform-headless = { git = "https://github.com/zortax/zgui", rev = "80baa3c7cb0fbbe1c058f10059e076e41c0a1b9a" }
+
+[patch."https://github.com/zortax/zgui"]
+zgui-platform-winit = { path = "vendor/zgui-platform-winit" }

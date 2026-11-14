@@ -23,7 +23,7 @@ native linker. It creates no product source.
 cargo run -p okcolor-app --locked
 ```
 
-The executable uses DX12, DirectComposition,
+The executable uses DX12, DirectComposition, `WS_EX_NOREDIRECTIONBITMAP`,
 premultiplied surface alpha and an opaque CSS background. A statically linked DXC
 avoids loading unrelated `dxcompiler.dll` files from PATH. It logs the
 selected adapter and actual surface formats; set `OKCOLOR_TRACE_FRAMES` to log
@@ -46,6 +46,10 @@ See [Saved state](STATE_FORMAT.md) for profile locations, the schema and failure
 The workspace contains `okcolor-core` for device-independent color calculations
 and `okcolor-app` for zgui and platform integration. zgui is pinned to an exact
 revision in the workspace manifest; retain `Cargo.lock` when updating it.
+The winit backend alone is patched locally to request the no-redirection style
+at window creation; the renderer verifies the actual HWND before creating the
+swap chain. See [the backend patch](../vendor/zgui-platform-winit/README.md) for
+its scope and update procedure. Do not replace this with a post-creation style change.
 See [Color contracts](COLOR_CONTRACT.md) for input, output, gamut and history semantics.
 
 Martian Mono is embedded under OFL. Martian Grotesk is an optional user-installed
@@ -76,6 +80,9 @@ per-frame path.
 Native Windows validation must additionally cover IME, clipboard, DPI changes,
 resize, minimize/restore, window movement and device loss. Headless pixel tests
 do not establish those behaviors. Measure performance with a release build.
+On Windows, the regular test suite also creates a hidden native window and verifies
+that no-redirection and window-control styles survive backend style updates. This
+does not exercise the shell's Snap menu or interactive movement and resizing.
 
 ## Verification and publication
 

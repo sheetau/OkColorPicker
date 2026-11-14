@@ -7,3 +7,5 @@ pub mod persistence;
 pub mod surface;
 pub mod ui;
 pub mod window_frame;
+#[cfg(target_os = "windows")]
+mod windows_composition;
