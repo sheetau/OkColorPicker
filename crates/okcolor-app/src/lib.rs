@@ -10,6 +10,8 @@ pub mod persistence;
 pub mod presentation;
 pub mod surface;
 pub mod ui;
+#[cfg(target_os = "windows")]
+mod unavailable_sink;
 pub mod window_frame;
 #[cfg(target_os = "windows")]
 pub mod windows_caption;

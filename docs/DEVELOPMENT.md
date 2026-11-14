@@ -27,8 +27,8 @@ The executable uses DX12, DirectComposition, `WS_EX_NOREDIRECTIONBITMAP`,
 premultiplied surface alpha and an opaque CSS background. A statically linked DXC
 avoids loading unrelated `dxcompiler.dll` files from PATH. It logs the
 selected adapter and actual surface formats; set `OKCOLOR_TRACE_FRAMES` to log
-frame counts. It requires a working
-DX12 device and does not yet recover from device loss.
+frame counts. It requires a working DX12 device. A device-loss callback marks the
+device unavailable and wakes the window; recovery runs on the UI thread.
 
 The Windows presentation path composes into retained FP16 textures, then converts
 premultiplied gamma-encoded values to linear scRGB on the GPU. It prefers an FP16
@@ -37,7 +37,13 @@ reference white is known. Otherwise it uses an unencoded 8-bit SDR surface and
 copies the original gamma-encoded values. Alpha stays premultiplied in both paths.
 Resize replaces the offscreen output and its binding without replacing the UI
 renderer or its atlas. Surface acquisition failures preserve the submitted frame
-for retry; device-loss recovery is still required.
+for retry. Device loss recreates the DX12 device, FP16 composition, vector
+rasterizer, output pass and native swap chain with the same compiler/presentation
+policy. Failed attempts wait 250 ms, 1 s, 2 s, then at most one attempt every 5 s;
+retry timers hold only a weak window reference and stop affecting closed windows.
+The runtime invalidates dependent paint/atlas caches after recovery, retaining the
+mounted view, focus and model. Uploads to a known lost device are refused until
+recovery, leaving pending CPU data available.
 
 The slice, four channel bars, current/previous samples and recent samples all use
 custom GPU paint. They retain extended RGB when Windows reports active WCG or HDR,
@@ -96,7 +102,9 @@ The [shader vocabulary patch](../vendor/zgui-wgsl/README.md) preserves extended
 RGB in custom paint while retaining upstream alpha clamping. The
 [renderer patch](../vendor/zgui-render-wgpu/README.md) exposes its offscreen GPU
 texture for the final conversion. All patches use the same pinned revision;
-their READMEs describe the limited changes.
+their READMEs describe the limited changes. The
+[runtime patch](../vendor/zgui-runtime/README.md) invalidates dependent caches on
+`FrameOutcome::Recovered`; replaying old chunks alone cannot restore lost textures.
 See [Color contracts](COLOR_CONTRACT.md) for input, output, gamut and history semantics.
 
 The Windows caption bridge exposes the painted maximize button as `HTMAXBUTTON`
@@ -122,13 +130,14 @@ cargo test -p okcolor-app --test composition --locked -- --ignored
 cargo test -p okcolor-app --test color_surface --locked -- --ignored
 cargo test -p okcolor-app --test picker --locked -- --ignored
 cargo test -p okcolor-app --test native_caption --locked -- --ignored
+cargo test -p okcolor-app --test native_recovery --locked -- --ignored
 cargo test -p okcolor-app --test wide_pipeline --locked -- --ignored
 cargo test -p okcolor-app --test wide_picker --locked -- --ignored
 cargo test -p okcolor-app --test native_display --locked -- --ignored
 cargo test -p okcolor-app --lib windows_color_events --locked -- --ignored
 ```
 
-The six explicit GPU tests fail if no device is available. The first three
+The seven explicit GPU tests fail if no device is available. The first three
 check alpha composition, shader pixels against the f64 color reference, and
 mounted input/clipboard/IME/drag behavior with idle-frame and DPI checks on the
 headless platform. Set `OKCOLOR_TEST_RGBA` to an output path to capture the initial
@@ -139,6 +148,13 @@ It checks native hit testing against painted bounds, capture, release-outside
 cancellation, and a maximize/restore round trip through winit and zgui. It also
 requires successfully presented frames at both maximized and restored extents. It sends
 messages only to the test window and does not inject desktop input.
+`native_recovery` destroys its own logical DX12 device twice from a background
+thread after the UI has time to park. The production callback must wake it. After
+each replacement, the test requires a native presentation and matching mounted
+Picker pixels, including glyphs/custom paint, and verifies that the old device is
+released. An active color drag and committed Undo/Redo history must survive. This
+does not reset the display driver; physical GPU removal, driver reset and a period
+with no usable adapter still require separate native validation.
 `wide_pipeline` reads FP16 GPU pixels after retained custom paint and the scRGB
 conversion, comparing P3/Rec.2020 colors, alpha and white scaling against the
 f64 core, including texture growth/shrink and both SDR output byte orders.

@@ -5539,7 +5539,6 @@ dependencies = [
 [[package]]
 name = "zgui-runtime"
 version = "0.1.0"
-source = "git+https://github.com/zortax/zgui?rev=80baa3c7cb0fbbe1c058f10059e076e41c0a1b9a#80baa3c7cb0fbbe1c058f10059e076e41c0a1b9a"
 dependencies = [
  "rustc-hash 2.1.3",
  "thiserror 2.0.21",

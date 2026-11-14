@@ -27,80 +27,9 @@ use zgui::{
 };
 use zgui_platform_winit::{UserEvent, WinitApp};
 
-struct ObservePresentation {
-    inner: Box<dyn Renderer>,
-    deferred: Rc<Cell<u32>>,
-    sizes: Rc<RefCell<Vec<zgui::geom::Size<i32, zgui::geom::Device>>>>,
-}
-impl Renderer for ObservePresentation {
-    fn capabilities(&self) -> RenderCapabilities {
-        self.inner.capabilities()
-    }
-    fn target(&self) -> Option<RenderTarget> {
-        self.inner.target()
-    }
-    fn configure(&mut self, target: RenderTarget) {
-        self.inner.configure(target);
-    }
-    fn draw(&mut self, scene: &zgui::scene::Scene, damage: &zgui::bits::DamageSet) -> FrameOutcome {
-        let result = self.inner.draw(scene, damage);
-        if matches!(result, FrameOutcome::Skipped(SkipReason::Unacquired)) {
-            self.deferred.set(self.deferred.get() + 1);
-        }
-        assert!(
-            !matches!(result, FrameOutcome::Skipped(SkipReason::DeviceUnavailable)),
-            "Native presentation became unavailable"
-        );
-        if matches!(result, FrameOutcome::Presented(_)) {
-            self.sizes
-                .borrow_mut()
-                .push(self.inner.target().unwrap().size);
-        }
-        result
-    }
-    fn texture_sink(&mut self) -> &mut dyn zgui::atlas::TextureSink {
-        self.inner.texture_sink()
-    }
-    fn as_any_mut(&mut self) -> Option<&mut dyn std::any::Any> {
-        self.inner.as_any_mut()
-    }
-    fn as_any(&self) -> Option<&dyn std::any::Any> {
-        self.inner.as_any()
-    }
-    fn shifts_composed_pixels(&self) -> bool {
-        self.inner.shifts_composed_pixels()
-    }
-    fn composed_survives_configure(&self) -> bool {
-        self.inner.composed_survives_configure()
-    }
-    fn shift_composed(&mut self, shift: ScrollShift) {
-        self.inner.shift_composed(shift);
-    }
-    fn register_external(&mut self, texture: ExternalTexture) -> TextureHandle {
-        self.inner.register_external(texture)
-    }
-    fn release_external(&mut self, handle: TextureHandle) {
-        self.inner.release_external(handle);
-    }
-    fn memory(&self) -> MemoryReport {
-        self.inner.memory()
-    }
-    fn vector_status(&self) -> VectorStatus {
-        self.inner.vector_status()
-    }
-    fn target_pool(&self) -> TargetPoolReport {
-        self.inner.target_pool()
-    }
-    fn release_cached_targets(&mut self) -> u64 {
-        self.inner.release_cached_targets()
-    }
-    fn release_idle_resources(&mut self) -> u64 {
-        self.inner.release_idle_resources()
-    }
-    fn acquire_block(&self) -> Duration {
-        self.inner.acquire_block()
-    }
-}
+#[path = "support/observe_renderer.rs"]
+mod observe_renderer;
+use observe_renderer::ObservePresentation;
 
 struct Probe {
     caption: CaptionBridge,
@@ -231,8 +160,22 @@ fn painted_native_maximize_button_round_trips_through_winit_and_zgui() {
         );
         Ok(Box::new(ObservePresentation {
             inner: renderer(surface, target)?,
-            deferred: observed_deferred.clone(),
-            sizes: recorded.clone(),
+            on_draw: {
+                let deferred = observed_deferred.clone();
+                let sizes = recorded.clone();
+                Rc::new(move |result, target| {
+                    if matches!(result, FrameOutcome::Skipped(SkipReason::Unacquired)) {
+                        deferred.set(deferred.get() + 1);
+                    }
+                    assert!(
+                        !matches!(result, FrameOutcome::Skipped(SkipReason::DeviceUnavailable)),
+                        "Native presentation became unavailable"
+                    );
+                    if matches!(result, FrameOutcome::Presented(_)) {
+                        sizes.borrow_mut().push(target.size);
+                    }
+                })
+            },
         }))
     });
     app()
