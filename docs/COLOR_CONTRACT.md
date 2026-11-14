@@ -58,6 +58,22 @@ beyond all three supported SDR gamuts, to avoid overflow from extreme input.
 is a separate operation used for boundary search. No preview operation overwrites
 the original color. Numeric gamut support does not establish monitor support.
 
+Preview policy is runtime state. Active Windows WCG/HDR, a known reference white
+and an FP16 presentation surface together enable extended RGB paint. SDR,
+unknown display capabilities and 8-bit fallback surfaces use the selected sRGB
+`LocalMinde` or `Clip` policy. Working-gamut boundaries remain independent of this
+choice. Display changes do not create history entries or change saved colors.
+
+All editing surfaces and current/previous/recent samples use this same policy.
+Sample alpha is composited over a checkerboard. Bounded sRGB text output still
+uses its mapping policy even while the preview uses extended RGB.
+
+GPU preview precision is finite: chroma is capped at 10,000 for intermediate
+arithmetic, and FP16 values saturate at ±65,504 instead of becoming infinities.
+These representation limits affect extreme previews only; they are not a new
+gamut boundary and never clamp the editor's `f64` source or serialized value.
+An active wide output path does not promise complete P3/Rec.2020 panel coverage.
+
 ## Slice and history
 
 A slice fixes hue, puts absolute chroma on the horizontal axis, and increases

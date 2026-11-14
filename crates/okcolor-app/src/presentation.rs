@@ -1,4 +1,5 @@
 //! Keep zgui composition in FP16 and convert only at the native presentation boundary.
+use crate::display::{DisplayBridge, DisplayMode, DisplayStatus};
 use crate::{output_pass::OutputPass, windows_display_watch::DisplayWatch};
 use std::{
     sync::Arc,
@@ -12,6 +13,7 @@ pub struct Presentation {
     surface: Option<wgpu::Surface<'static>>,
     native: Arc<dyn GpuSurface>,
     display: DisplayWatch,
+    display_bridge: DisplayBridge,
     config: wgpu::SurfaceConfiguration,
     output: OutputPass,
     configure_pending: bool,
@@ -26,6 +28,7 @@ impl Presentation {
         graphics: &SharedGraphics,
         native: Arc<dyn GpuSurface>,
         target: RenderTarget,
+        display_bridge: DisplayBridge,
     ) -> Result<Self, String> {
         let gpu = graphics.gpu().ok_or("No presentation device")?;
         let display = DisplayWatch::new(native.clone()).map_err(|e| e.to_string())?;
@@ -60,14 +63,13 @@ impl Presentation {
             inner.offscreen_texture().expect("offscreen renderer"),
             format,
         );
-        eprintln!(
-            "Presentation: {format:?} / PreMultiplied; FP16 gamma composition; picker remains sRGB preview"
-        );
+        eprintln!("Presentation: {format:?} / PreMultiplied; FP16 gamma composition");
         Ok(Self {
             inner,
             surface: Some(surface),
             native,
             display,
+            display_bridge,
             config,
             output,
             configure_pending: true,
@@ -204,6 +206,23 @@ impl Renderer for Presentation {
         if self.display.refresh() {
             self.configure_pending = true;
             self.present_pending = true;
+        }
+        if let Err(error) = self.prepare_surface() {
+            eprintln!("Presentation unavailable: {error}");
+            return FrameOutcome::Skipped(SkipReason::DeviceUnavailable);
+        }
+        let mode = self.display.mode();
+        let status = DisplayStatus {
+            mode,
+            wide_output: self.config.format == wgpu::TextureFormat::Rgba16Float
+                && matches!(mode, DisplayMode::WideColor | DisplayMode::Hdr)
+                && self.display.white_scale().is_some(),
+        };
+        if self.display_bridge.publish(status) {
+            // The current scene was built for the old policy. Retain its damage
+            // and let reactive paint effects update before submitting anything.
+            self.has_frame = false;
+            return FrameOutcome::Skipped(SkipReason::Unacquired);
         }
         let result = self.inner.draw(scene, damage);
         let stats = match result {

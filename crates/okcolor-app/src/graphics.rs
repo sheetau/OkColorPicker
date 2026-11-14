@@ -8,6 +8,12 @@ use zgui_render_wgpu::{Gpu, SharedGraphics, gpu::adapter, wgpu};
 /// Creates one device lazily, when the first hidden window has a presentation target.
 /// Device loss is reported rather than silently changing backends.
 pub fn factory() -> zgui::runtime::RendererFactory {
+    factory_with_display(crate::display::DisplayBridge::default())
+}
+
+pub fn factory_with_display(
+    display: crate::display::DisplayBridge,
+) -> zgui::runtime::RendererFactory {
     let graphics: RefCell<Option<SharedGraphics>> = RefCell::new(None);
     Box::new(move |surface: &Arc<dyn Surface>, target| {
         let handles = Arc::clone(surface).gpu_shared().ok_or_else(|| {
@@ -49,10 +55,11 @@ pub fn factory() -> zgui::runtime::RendererFactory {
         let graphics = graphics.as_ref().expect("device opened above");
         #[cfg(target_os = "windows")]
         {
-            let renderer = crate::presentation::Presentation::new(graphics, handles, target)
-                .map_err(|error| {
-                    AppError::Platform(zgui::platform::PlatformError::Backend(error))
-                })?;
+            let renderer =
+                crate::presentation::Presentation::new(graphics, handles, target, display.clone())
+                    .map_err(|error| {
+                        AppError::Platform(zgui::platform::PlatformError::Backend(error))
+                    })?;
             Ok(Box::new(renderer) as Box<dyn Renderer>)
         }
         #[cfg(not(target_os = "windows"))]

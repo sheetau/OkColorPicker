@@ -1,6 +1,7 @@
 //! End-to-end native messages within this test's own Picker window; no desktop input injection.
 #![cfg(target_os = "windows")]
 use okcolor_app::{
+    display::DisplayBridge,
     fonts, graphics,
     model::PickerModel,
     ui::{PickerProps, PickerRefs, STYLE},
@@ -28,6 +29,7 @@ use zgui_platform_winit::{UserEvent, WinitApp};
 
 struct ObservePresentation {
     inner: Box<dyn Renderer>,
+    deferred: Rc<Cell<u32>>,
     sizes: Rc<RefCell<Vec<zgui::geom::Size<i32, zgui::geom::Device>>>>,
 }
 impl Renderer for ObservePresentation {
@@ -42,6 +44,9 @@ impl Renderer for ObservePresentation {
     }
     fn draw(&mut self, scene: &zgui::scene::Scene, damage: &zgui::bits::DamageSet) -> FrameOutcome {
         let result = self.inner.draw(scene, damage);
+        if matches!(result, FrameOutcome::Skipped(SkipReason::Unacquired)) {
+            self.deferred.set(self.deferred.get() + 1);
+        }
         assert!(
             !matches!(result, FrameOutcome::Skipped(SkipReason::DeviceUnavailable)),
             "Native presentation became unavailable"
@@ -118,6 +123,7 @@ impl FrameProbe for Probe {
         let ready = {
             let sizes = self.sizes.borrow();
             match (self.stage.get(), sizes.first(), sizes.last()) {
+                (_, None, _) => false,
                 (2, Some(first), Some(last)) => {
                     last.width > first.width && last.height > first.height
                 }
@@ -209,10 +215,22 @@ fn painted_native_maximize_button_round_trips_through_winit_and_zgui() {
         sizes: sizes.clone(),
     });
     let recorded = sizes.clone();
-    let mut renderer = graphics::factory();
+    let display = DisplayBridge::default();
+    let deferred = Rc::new(Cell::new(0));
+    let observed_deferred = deferred.clone();
+    let known_display = Rc::new(Cell::new(false));
+    let observed_display = known_display.clone();
+    let mut renderer = graphics::factory_with_display(display.clone());
     let renderer: zgui::runtime::RendererFactory = Box::new(move |surface, target| {
+        let handles = surface.clone().gpu_shared().unwrap();
+        observed_display.set(
+            okcolor_app::windows_display::query(handles.as_ref()).is_ok_and(|color| {
+                color.mode != okcolor_app::windows_display::ColorMode::AdvancedUnknown
+            }),
+        );
         Ok(Box::new(ObservePresentation {
             inner: renderer(surface, target)?,
+            deferred: observed_deferred.clone(),
             sizes: recorded.clone(),
         }))
     });
@@ -241,7 +259,9 @@ fn painted_native_maximize_button_round_trips_through_winit_and_zgui() {
                 let refs = PickerRefs::default();
                 caption.bind_maximize(refs.maximize);
                 button.set(Some(refs.maximize));
-                view! { Picker(model=PickerModel::default(),refs=refs) }
+                let model = PickerModel::default();
+                display.bind(model.display);
+                view! { Picker(model=model,refs=refs) }
             },
         )
         .unwrap();
@@ -251,6 +271,12 @@ fn painted_native_maximize_button_round_trips_through_winit_and_zgui() {
         "Cancellation, maximize and restore must finish"
     );
     let sizes = sizes.borrow();
+    if known_display.get() {
+        assert!(
+            deferred.get() > 0,
+            "Initial display discovery must defer the old preview scene"
+        );
+    }
     let first = sizes
         .first()
         .expect("At least one frame must reach the native swap chain");

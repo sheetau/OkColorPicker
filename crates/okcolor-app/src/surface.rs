@@ -24,6 +24,10 @@ pub struct ColorParams {
     pub kind: f32,
     pub mapping: f32,
     pub max_chroma: f32,
+    pub wide: f32,
+    pub padding0: f32,
+    pub padding1: f32,
+    pub padding2: f32,
 }
 
 static COLOR_SURFACE: ShaderEffect<ColorParams> = shader! {
@@ -50,7 +54,9 @@ impl ColorSurface {
 impl CustomElement for ColorSurface {
     fn layout(&mut self, cx: &mut CustomLayoutCx<'_>) -> CustomMeasured {
         CustomMeasured {
-            width: cx.known_width.unwrap_or(290.0 * cx.scale),
+            width: cx
+                .known_width
+                .unwrap_or(if self.params.kind > 4.5 { 22.0 } else { 290.0 } * cx.scale),
             height: cx
                 .known_height
                 .unwrap_or(if self.params.kind == 0.0 { 130.0 } else { 22.0 } * cx.scale),
@@ -96,6 +102,12 @@ impl SurfaceKind {
                 0.0
             },
             max_chroma: model.max_chroma.get() as f32,
+            wide: if model.display.get().wide_output {
+                1.0
+            } else {
+                0.0
+            },
+            ..Default::default()
         }
     }
 
@@ -130,6 +142,37 @@ impl SurfaceKind {
             Self::Alpha => [model.alpha.get(), 0.5],
         }
     }
+}
+
+/// A color sample uses the same GPU preview policy as the editing surfaces.
+#[component]
+pub fn ColorSwatch(model: PickerModel, color: Memo<Oklch>) -> impl IntoView {
+    let (surface, handle) = zgui::custom::custom(ColorSurface::new(ColorParams {
+        kind: 5.0,
+        ..Default::default()
+    }));
+    let effect = RenderEffect::new(move |_| {
+        let [l, c, h, alpha] = color.get().components();
+        let params = ColorParams {
+            channels: [l as f32, c.min(10000.0) as f32, h as f32, alpha as f32],
+            kind: 5.0,
+            mapping: if model.mapping.get() == GamutMapping::Clip {
+                1.0
+            } else {
+                0.0
+            },
+            wide: if model.display.get().wide_output {
+                1.0
+            } else {
+                0.0
+            },
+            ..Default::default()
+        };
+        handle.update(|surface| surface.params = params);
+        handle.repaint();
+    });
+    on_cleanup_local(move || drop(effect));
+    surface.class("color-surface").into_view()
 }
 
 #[component]

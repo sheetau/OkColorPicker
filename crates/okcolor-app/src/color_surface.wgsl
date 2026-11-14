@@ -1,11 +1,15 @@
 // D65/OKLab transforms mirror the f64 CPU reference in okcolor-core.
-// Rendering is an SDR sRGB preview; working-gamut membership is independent.
+// Working-gamut membership is independent of the display's preview policy.
 struct Params {
     channels: vec4<f32>,
     gamut: f32,
     kind: f32,
     mapping: f32,
     max_chroma: f32,
+    wide: f32,
+    padding0: f32,
+    padding1: f32,
+    padding2: f32,
 }
 
 fn xyz_from_lab(lab: vec3<f32>) -> vec3<f32> {
@@ -57,6 +61,12 @@ fn decode_channel(v: f32) -> f32 {
 fn clipped(lab: vec3<f32>) -> vec3<f32> {
     let rgb = linear_rgb(lab, 0.0);
     return clamp(vec3<f32>(encode_channel(rgb.r), encode_channel(rgb.g), encode_channel(rgb.b)), vec3<f32>(0.0), vec3<f32>(1.0));
+}
+fn extended(lab: vec3<f32>) -> vec3<f32> {
+    let rgb = linear_rgb(lab, 0.0);
+    // FP16 has a finite representation. This guard affects extreme preview
+    // coordinates, never the original f64 color, and is not gamut mapping.
+    return clamp(vec3<f32>(encode_channel(rgb.r), encode_channel(rgb.g), encode_channel(rgb.b)), vec3<f32>(-65504.0), vec3<f32>(65504.0));
 }
 fn lab_from_srgb(rgb: vec3<f32>) -> vec3<f32> {
     let lin = vec3<f32>(decode_channel(rgb.r), decode_channel(rgb.g), decode_channel(rgb.b));
@@ -120,12 +130,14 @@ fn shade(input: ShaderInput, params: Params) -> vec4<f32> {
     let lab = color_at(uv, params);
     var rgb = vec3<f32>(0.03529412);
     if params.kind >= 0.5 || in_gamut(lab, params.gamut) {
-        rgb = preview_rgb(lab, params.mapping);
+        if params.wide > 0.5 { rgb = extended(lab); }
+        else { rgb = preview_rgb(lab, params.mapping); }
     }
     if params.kind > 3.5 {
         let tile = (u32(input.local.x / 5.0) + u32(input.local.y / 5.0)) % 2u;
         let backdrop = select(0.13, 0.23, tile == 1u);
-        rgb = mix(vec3<f32>(backdrop), rgb, uv.x);
+        let alpha = select(uv.x, params.channels.w, params.kind > 4.5);
+        rgb = mix(vec3<f32>(backdrop), rgb, alpha);
     } else {
         // A crossing in either axis marks the exact RGB-boundary neighborhood.
         let step = vec2<f32>(0.65) / max(input.size, vec2<f32>(1.0));

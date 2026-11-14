@@ -39,9 +39,18 @@ Resize replaces the offscreen output and its binding without replacing the UI
 renderer or its atlas. Surface acquisition failures preserve the submitted frame
 for retry; device-loss recovery is still required.
 
-The picker widgets currently still produce an sRGB preview. Selecting FP16 does
-not by itself establish wide-gamut monitor reproduction or widen those widgets.
-The GPU tests additionally exercise extended P3/Rec.2020 custom-paint values.
+The slice, four channel bars, current/previous samples and recent samples all use
+custom GPU paint. They retain extended RGB when Windows reports active WCG or HDR,
+reference white is known, and the actual presentation format is FP16. Otherwise
+they use the selected sRGB mapping or clipping policy. The status names the
+active preview path; the sRGB output policy remains available for bounded text
+formats. Physical panel coverage and reproduction still require native validation.
+
+Display status is runtime-only and never changes the source color, saved state or
+undo history. When its policy changes, the renderer defers the old scene with its
+damage intact, allowing reactive paint effects to update before presentation.
+Samples composite alpha over a checkerboard; the opaque application scene stays
+opaque. The underlying numeric alpha remains unchanged.
 
 Read-only discovery uses the window's principal display, active color mode, bit
 depth and reference white. Support flags alone do not enable wide output. Native
@@ -102,10 +111,11 @@ cargo test -p okcolor-app --test color_surface --locked -- --ignored
 cargo test -p okcolor-app --test picker --locked -- --ignored
 cargo test -p okcolor-app --test native_caption --locked -- --ignored
 cargo test -p okcolor-app --test wide_pipeline --locked -- --ignored
+cargo test -p okcolor-app --test wide_picker --locked -- --ignored
 cargo test -p okcolor-app --test native_display --locked -- --ignored
 ```
 
-The five explicit GPU tests fail if no device is available. The first three
+The six explicit GPU tests fail if no device is available. The first three
 check alpha composition, shader pixels against the f64 color reference, and
 mounted input/clipboard/IME/drag behavior with idle-frame and DPI checks on the
 headless platform. Set `OKCOLOR_TEST_RGBA` to an output path to capture the initial
@@ -119,6 +129,10 @@ messages only to the test window and does not inject desktop input.
 `wide_pipeline` reads FP16 GPU pixels after retained custom paint and the scRGB
 conversion, comparing P3/Rec.2020 colors, alpha and white scaling against the
 f64 core, including texture growth/shrink and both SDR output byte orders.
+`wide_picker` checks the mounted slice, bars and samples through final scRGB
+conversion while simulating SDR/WCG/HDR, unknown displays and an SDR fallback.
+It also checks checkerboard alpha and finite output for extreme input. Simulated
+display policies do not establish the behavior of an actual monitor transition.
 `native_display` uses its own hidden window to read the current display
 configuration without changing OS settings. It requires local display access;
 remote sessions or mirrored displays may prevent an unambiguous query.

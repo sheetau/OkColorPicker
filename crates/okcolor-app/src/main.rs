@@ -24,7 +24,8 @@ impl zgui::runtime::FrameProbe for FrameCount {
 fn main() -> Result<(), zgui::Error> {
     let mut startup = StartupState::open(state_directory());
     let trace = std::env::var_os("OKCOLOR_TRACE_FRAMES").is_some();
-    let renderer = graphics::factory();
+    let display = okcolor_app::display::DisplayBridge::default();
+    let renderer = graphics::factory_with_display(display.clone());
     #[cfg(target_os = "windows")]
     let caption = okcolor_app::windows_caption::CaptionBridge::new(trace);
     #[cfg(target_os = "windows")]
@@ -50,6 +51,7 @@ fn main() -> Result<(), zgui::Error> {
     }
     application.run(move || {
         let model = PickerModel::restore(startup.state.clone());
+        display.bind(model.display);
         model.storage_message.set(startup.warning.clone());
         if let Some(store) = startup.store.take() {
             autosave::bind(model, store, startup.state.clone());

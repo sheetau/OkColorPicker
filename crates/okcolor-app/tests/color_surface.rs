@@ -43,6 +43,7 @@ fn gpu_surfaces_match_f64_mapping_and_working_gamut_mask() {
                     kind: kind as f32,
                     mapping,
                     max_chroma: 0.4,
+                    ..Default::default()
                 })
             })
         })

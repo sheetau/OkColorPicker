@@ -87,6 +87,16 @@ impl DisplayWatch {
     pub fn white_scale(&self) -> Option<f32> {
         self.color.as_ref().and_then(DisplayColor::white_scale)
     }
+
+    pub fn mode(&self) -> crate::display::DisplayMode {
+        use crate::{display::DisplayMode, windows_display::ColorMode};
+        match self.color.as_ref().map(|color| color.mode) {
+            Some(ColorMode::Sdr) => DisplayMode::Sdr,
+            Some(ColorMode::WideColor) => DisplayMode::WideColor,
+            Some(ColorMode::Hdr) => DisplayMode::Hdr,
+            _ => DisplayMode::Unknown,
+        }
+    }
 }
 
 impl Drop for DisplayWatch {

@@ -1,6 +1,6 @@
 use crate::{
     model::PickerModel,
-    surface::{ColorControlProps, SurfaceKind},
+    surface::{ColorControlProps, ColorSwatchProps, SurfaceKind},
     window_frame::ResizeEdgesProps,
 };
 use okcolor_core::{ColorFormat, Gamut, GamutMapping, Oklch};
@@ -11,6 +11,7 @@ use zgui::{prelude::*, reactive::RenderEffect};
 pub struct PickerRefs {
     pub maximize: NodeRef,
     pub recents: NodeRef,
+    pub swatches: [NodeRef; 2],
     pub slice: NodeRef,
     pub bars: [NodeRef; 4],
     pub numbers: [NodeRef; 4],
@@ -21,23 +22,13 @@ impl Default for PickerRefs {
         Self {
             maximize: NodeRef::new(),
             recents: NodeRef::new(),
+            swatches: std::array::from_fn(|_| NodeRef::new()),
             slice: NodeRef::new(),
             bars: std::array::from_fn(|_| NodeRef::new()),
             numbers: std::array::from_fn(|_| NodeRef::new()),
             codes: std::array::from_fn(|_| NodeRef::new()),
         }
     }
-}
-
-fn preview_css(color: Oklch, mapping: GamutMapping) -> String {
-    let rgb = color.mapped_rgb(Gamut::Srgb, mapping).unwrap_or([0.0; 3]);
-    format!(
-        "rgb({:.3} {:.3} {:.3} / {})",
-        rgb[0] * 255.0,
-        rgb[1] * 255.0,
-        rgb[2] * 255.0,
-        color.components()[3]
-    )
 }
 
 #[component]
@@ -94,9 +85,9 @@ pub fn Picker(model: PickerModel, refs: PickerRefs) -> impl IntoView {
                         tabindex=Focus::Sequential,
                         on:click=move |_|model.gamut.set(Gamut::Rec2020)) {"2020"}
                     spacer()
-                    control(class="mapping",tabindex=Focus::Sequential,a11y:label="Toggle gamut mapping",
+                    control(class="mapping",tabindex=Focus::Sequential,a11y:label="Toggle sRGB fallback mapping",
                         on:click=move |_|model.mapping.update(|m|*m=if *m==GamutMapping::Clip {GamutMapping::LocalMinde}else{GamutMapping::Clip})) {
-                        {move ||if model.mapping.get()==GamutMapping::Clip {"Clipped"} else {"Mapped"}}
+                        {move ||if model.mapping.get()==GamutMapping::Clip {"sRGB Clipped"} else {"sRGB Mapped"}}
                     }
                 }
                 column(class="plot-section") {
@@ -114,11 +105,13 @@ pub fn Picker(model: PickerModel, refs: PickerRefs) -> impl IntoView {
                 row(class="adjustments") {
                     column(class="preview-column") {
                         box(class="swatches") {
-                            control(class="previous swatch",tabindex=Focus::Sequential,a11y:label="Previous color",
-                                style:background-color=move ||Some(preview_css(model.previous.get(),model.mapping.get())),
-                                on:click=move |_|{model.select(model.previous.get_untracked());}) {}
-                            box(class="current swatch",
-                                style:background-color=move ||Some(preview_css(model.color(),model.mapping.get()))) {}
+                            control(class="previous swatch",node_ref=refs.swatches[0],tabindex=Focus::Sequential,a11y:label="Previous color",
+                                on:click=move |_|{model.select(model.previous.get_untracked());}) {
+                                ColorSwatch(model=model,color=Memo::new(move |_|model.previous.get()))
+                            }
+                            box(class="current swatch",node_ref=refs.swatches[1]) {
+                                ColorSwatch(model=model,color=Memo::new(move |_|model.color()))
+                            }
                         }
                         row(class="history-buttons") {
                             control(tabindex=Focus::Sequential,
@@ -168,7 +161,7 @@ pub fn Picker(model: PickerModel, refs: PickerRefs) -> impl IntoView {
                         }
                     }
                     row {
-                        text {"sRGB preview"}
+                        text {{move ||model.display.get().label()}}
                         spacer()
                         text {"CSP not connected"}
                     }
@@ -176,7 +169,10 @@ pub fn Picker(model: PickerModel, refs: PickerRefs) -> impl IntoView {
                         let message=model.message.get();
                         if !message.is_empty() {message}
                         else if !model.color().in_gamut(model.gamut.get()) {"Outside working gamut — original retained".into()}
-                        else if !model.color().in_gamut(Gamut::Srgb) {"Wide-gamut color shown as an sRGB preview".into()}
+                        else if !model.display.get().wide_output && !model.color().in_gamut(Gamut::Srgb) {
+                            if model.mapping.get()==GamutMapping::Clip {"sRGB Clipped preview — original retained".into()}
+                            else {"sRGB Mapped preview — original retained".into()}
+                        }
                         else {String::new()}
                     }}}
                 }
@@ -220,8 +216,9 @@ fn RecentColors(model: PickerModel, node: NodeRef) -> impl IntoView {
                 if move ||model.recent.get().is_empty() {text(class="empty-recent") {"Recent colors"}}
                 for entry in move ||model.recent.get(), key=|entry:&Oklch|entry.components().map(f64::to_bits) {
                     control(class="recent",tabindex=Focus::Sequential,a11y:label="Recall recent color",
-                        style:background-color=move ||Some(preview_css(entry,model.mapping.get())),
-                        on:click=move |_|{model.select(entry);}) {}
+                        on:click=move |_|{model.select(entry);}) {
+                        ColorSwatch(model=model,color=Memo::new(move |_|entry))
+                    }
                 }
             }
             if move ||position.get().content_size.width.0>position.get().scrollport.width.0 {

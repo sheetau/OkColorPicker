@@ -27,7 +27,10 @@ fn fragment(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
     let color = textureLoad(source, vec2<i32>(position.xy), 0);
     if color.a <= 0.0 { return vec4<f32>(0.0); }
     let straight = color.rgb / color.a;
-    return vec4<f32>(decode_srgb(straight) * settings.white_scale * color.a, color.a);
+    let linear = decode_srgb(straight) * settings.white_scale * color.a;
+    // Avoid FP16 infinities for extreme finite editor coordinates. Normal wide
+    // gamut colors keep their negative and above-one channels unchanged.
+    return vec4<f32>(clamp(linear, vec3<f32>(-65504.0), vec3<f32>(65504.0)), color.a);
 }
 
 // The bounded SDR fallback uses the UI's original gamma-encoded values.
