@@ -4,7 +4,8 @@
 session and its background worker. Native screen capture and the connection
 control live in `okcolor-app`. Credentials remain in memory. After pairing, the
 picker reads CSP's active drawing color and sends local color edits. This
-integration is experimental; live CSP compatibility is not yet validated.
+integration is experimental and relies on a reverse-engineered protocol;
+compatibility can vary between CSP versions.
 
 CSP's [Companion Mode](https://help.clip-studio.com/en-us/manual_en/840_options/Companion_Mode.htm)
 exposes a QR through **Connect to smartphone**. The wire implementation references
@@ -51,8 +52,8 @@ unspecified bitmap alpha is ignored. Images are limited to 8,192 pixels per axis
 and 16,777,216 pixels per display; at most 16 displays and 32 QR candidates are
 accepted. Capture failure fails the whole scan so an unexamined display cannot
 hide an ambiguous pairing. Occluded, minimized or split-across-display QR codes
-must be made fully visible before scanning. Screen capture still needs validation
-against a live CSP window on the target desktop.
+must be made fully visible before scanning. Verify pairing with the CSP version
+and desktop configuration targeted by each release.
 
 The single worker coalesces pending requests, owns its socket and sleeps while
 disconnected. Each request and each lost connection advance a checked local

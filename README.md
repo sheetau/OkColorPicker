@@ -4,12 +4,17 @@ An OKLCH color picker for Windows, built in Rust with zgui.
 
 Explore a fixed-hue lightness/chroma slice, adjust L/C/H/alpha, and edit or copy
 CSS color values. The picker preserves the original color while displaying
-sRGB, Display P3 and Rec.2020 boundaries with an sRGB screen preview.
+sRGB, Display P3 and Rec.2020 boundaries. The preview uses the detected Windows
+display mode and falls back to sRGB when extended color output is unavailable.
 
 The application saves committed colors, recent colors and picker preferences
 between sessions. Undo history stays within the current session.
-CLIP STUDIO PAINT integration and validated wide-gamut monitor output are still
-being developed. There is no release yet.
+Connect to CLIP STUDIO PAINT through Companion Mode to receive and send color
+edits while preserving the picker's alpha. See [CSP pairing and synchronization](docs/CSP_PROTOCOL.md)
+for the connection steps and behavior.
+
+The application is in development; there is no release yet. Physical HDR/WCG
+monitor behavior and clean-machine installation remain unverified.
 
 ## Development
 
