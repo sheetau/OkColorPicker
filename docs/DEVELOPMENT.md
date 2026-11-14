@@ -82,8 +82,16 @@ The linear scRGB and 80-nit reference follow Microsoft's
 The display-query ABI is checked against Windows SDK 10.0.26100.0; older APIs
 that cannot distinguish WCG from HDR report an unknown Advanced Color mode.
 
-Drag the slice or channel bars, or focus a bar and use arrow keys. Shift scales
-keyboard steps by ten; Control scales them by one tenth. Enter commits a text
+Drag the slice or channel bars, or focus a bar and use arrow keys. Numeric fields
+also accept Up/Down while focused, plus vertical wheel input when the pointer is
+over the focused field. Steps are
+0.01 for L/alpha, 0.001 for C and 1 degree for H. Shift scales steps by ten;
+Control scales them by one tenth. Wheel input accumulates one step per reported
+line or 22 CSS pixels, independent of DPI; gesture momentum is ignored. Valid
+drafts are adjusted and committed as one history action; invalid drafts and IME
+composition do not change the color. Untouched fields step from full-precision
+model values, with four displayed decimal places for C and three for other channels.
+L/alpha stop at their limits, C stops at zero, and hue wraps. Enter commits a text
 draft, and Escape cancels it or an active drag. Ctrl+C/V outside text entry copies
 or applies a complete color. Inside text entry, the same shortcuts edit the draft.
 Ctrl+Z, Ctrl+Shift+Z and Ctrl+Y navigate color history outside text entry.

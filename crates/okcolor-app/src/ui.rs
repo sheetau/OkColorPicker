@@ -1,10 +1,10 @@
 use crate::{
-    model::PickerModel,
+    model::{PickerModel, stepped_channel},
     surface::{ColorControlProps, ColorSwatchProps, SurfaceKind},
     window_frame::ResizeEdgesProps,
 };
 use okcolor_core::{ColorFormat, Gamut, GamutMapping, Oklch};
-use zgui::{prelude::*, reactive::RenderEffect};
+use zgui::{geom::CssPx, prelude::*, reactive::RenderEffect, vocab::ScrollPhase};
 
 /// Stable handles also let application tests exercise the actual mounted controls.
 #[derive(Clone, Copy)]
@@ -320,6 +320,7 @@ fn Titlebar(maximize: NodeRef) -> impl IntoView {
                     text {"Ctrl C / V · Copy / paste color"}
                     text {"Ctrl Z / Shift Z · Undo / redo"}
                     text {"Arrow keys · Adjust a focused control"}
+                    text {"Wheel · Adjust a focused number"}
                     text {"Shift · ×10   Ctrl · ×0.1"}
                     text {"Enter · Commit   Escape · Cancel drag"}
                 }
@@ -341,12 +342,20 @@ fn Channel(
     let draft = RwSignal::new(String::new());
     let dirty = RwSignal::new(false);
     let composing = RwSignal::new(false);
+    let wheel_remainder = RwSignal::new((Modifiers::NONE, 0.0_f64));
     let value = [model.l, model.c, model.h, model.alpha][index];
+    let display = move |value: f64| {
+        if index == 1 {
+            format!("{value:.4}")
+        } else {
+            format!("{value:.3}")
+        }
+    };
     let driving = RenderEffect::new(move |_| {
         let value = value.get();
         if !focused.get() {
             dirty.set(false);
-            let text = format!("{value:.3}");
+            let text = display(value);
             draft.set(text.clone());
             number.set_value(&text);
         }
@@ -356,7 +365,7 @@ fn Channel(
         if !dirty.get_untracked() {
             return;
         }
-        match draft.get_untracked().parse::<f64>() {
+        match draft.get_untracked().trim().parse::<f64>() {
             Ok(value) => {
                 if model.set_channel(index, value) {
                     dirty.set(false);
@@ -365,24 +374,88 @@ fn Channel(
             Err(_) => model.message.set("Enter a finite number".into()),
         }
     };
+    let adjust = move |steps: f64, modifiers: Modifiers| {
+        let mut channels = model.current().components();
+        if dirty.get_untracked() {
+            let Ok(base) = draft.get_untracked().trim().parse::<f64>() else {
+                model.message.set("Enter a finite number".into());
+                return;
+            };
+            channels[index] = base;
+            if let Err(error) = Oklch::new(channels[0], channels[1], channels[2], channels[3]) {
+                model.message.set(error.to_string());
+                return;
+            }
+        }
+        let next = stepped_channel(index, channels[index], steps, modifiers);
+        if model.set_channel(index, next) {
+            let text = display(model.current().components()[index]);
+            dirty.set(false);
+            draft.set(text.clone());
+            number.set_value(&text);
+        }
+    };
+    let wheel = move |cx: &mut EventCx<'_, events::Wheel>| {
+        if !focused.get_untracked() || composing.get_untracked() {
+            return;
+        }
+        let phase = cx.payload().as_wheel().expect("wheel payload").phase;
+        let (modifiers, mut remainder) = wheel_remainder.get_untracked();
+        if modifiers != cx.modifiers || phase == ScrollPhase::Started {
+            remainder = 0.0;
+        }
+        if phase == ScrollPhase::Ended {
+            wheel_remainder.set((cx.modifiers, 0.0));
+        }
+        let delta = cx.delta.to_pixels(CssPx(22.0));
+        if delta.height.0 == 0.0 || !delta.height.0.is_finite() {
+            return;
+        }
+        cx.prevent_default();
+        cx.stop_propagation();
+        if phase == ScrollPhase::Momentum {
+            return;
+        }
+        let total = remainder - f64::from(delta.height.0) / 22.0;
+        let steps = total.trunc();
+        wheel_remainder.set((
+            cx.modifiers,
+            if phase == ScrollPhase::Ended {
+                0.0
+            } else {
+                total - steps
+            },
+        ));
+        if steps != 0.0 {
+            adjust(steps, cx.modifiers);
+        }
+    };
     view! {
         row(class="channel") {
             text(class="channel-label") {{label}}
             ColorControl(model=model,kind=kind,node=bar)
             field(class="number",node_ref=number,a11y:label=label,
-                on:focus_in=move |_|{focused.set(true);model.editing_text.set(true);},
+                on:focus_in=move |_|{focused.set(true);model.editing_text.set(true);wheel_remainder.set((Modifiers::NONE,0.0));},
                 on:focus_out=move |_|{focused.set(false);model.editing_text.set(false);},
-                on:input=move |cx|{if let Some(v)=cx.payload().as_value(){draft.set(v.value.to_string());dirty.set(true);}},
-                on:ime_start=move |_|composing.set(true),
+                on:input=move |cx|{if let Some(v)=cx.payload().as_value(){draft.set(v.value.to_string());dirty.set(true);wheel_remainder.set((Modifiers::NONE,0.0));}},
+                on:ime_start=move |_|{composing.set(true);wheel_remainder.set((Modifiers::NONE,0.0));},
                 on:ime_preedit=move |_|composing.set(true),
                 on:ime_commit=move |_|composing.set(false),
                 on:ime_end=move |_|composing.set(false),
                 on:change=move |_|commit(),
+                on:wheel=wheel,
                 on:key_down=move |cx|{
                     if composing.get_untracked() { return; }
+                    wheel_remainder.set((Modifiers::NONE,0.0));
+                    if matches!(cx.key, Key::Named(NamedKey::ArrowUp | NamedKey::ArrowDown)) {
+                        let steps = if cx.key == Key::Named(NamedKey::ArrowUp) { 1.0 } else { -1.0 };
+                        adjust(steps, cx.modifiers);
+                        cx.prevent_default();
+                        cx.stop_propagation();
+                    }
                     if cx.key==Key::Named(NamedKey::Enter) {commit();cx.prevent_default();}
                     if cx.key == Key::Named(NamedKey::Escape) {
-                        let text = format!("{:.3}", value.get_untracked());
+                        let text = display(value.get_untracked());
                         dirty.set(false);
                         draft.set(text.clone());
                         number.set_value(&text);

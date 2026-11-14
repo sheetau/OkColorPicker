@@ -1,4 +1,4 @@
-use crate::model::PickerModel;
+use crate::model::{PickerModel, stepped_channel};
 use okcolor_core::{Gamut, GamutMapping, GamutSlice, Oklch};
 use zgui::reactive::RenderEffect;
 use zgui::{
@@ -259,27 +259,12 @@ pub fn ColorControl(model: PickerModel, kind: SurfaceKind, node: NodeRef) -> imp
                 }
             }
         };
-        let mut step = if index == 2 {
-            1.0
-        } else if index == 1 {
-            0.001
-        } else {
-            0.01
-        };
-        if cx.modifiers.contains(Modifiers::SHIFT) {
-            step *= 10.0;
-        }
-        if cx.modifiers.contains(Modifiers::CONTROL) {
-            step *= 0.1;
-        }
-        let value = model.current().components()[index] + step * direction;
-        let value = if index == 0 || index == 3 {
-            value.clamp(0.0, 1.0)
-        } else if index == 1 {
-            value.max(0.0)
-        } else {
-            value
-        };
+        let value = stepped_channel(
+            index,
+            model.current().components()[index],
+            direction,
+            cx.modifiers,
+        );
         if kind == SurfaceKind::Slice {
             let mut channels = model.current().components();
             channels[index] = value;

@@ -26,6 +26,199 @@ use zgui_render_wgpu::{Builder, wgpu};
 mod support;
 use support::Capture;
 
+fn check_numeric_adjustments(
+    harness: &mut Harness<impl zgui::platform::AppHandler>,
+    model: PickerModel,
+    refs: PickerRefs,
+) {
+    let original = model.current();
+    let key = |key, modifiers| SurfaceEvent::Key {
+        state: KeyState::Pressed,
+        event: KeyEvent::named(key, PhysicalKey::Unidentified(0)),
+        modifiers,
+        timestamp: Timestamp::ORIGIN,
+    };
+    let type_draft = |harness: &mut Harness<_>, text: &str| {
+        for (text, modifiers) in [("a", Modifiers::CONTROL), (text, Modifiers::NONE)] {
+            harness.deliver_to_first(SurfaceEvent::Key {
+                state: KeyState::Pressed,
+                event: KeyEvent::character(text),
+                modifiers,
+                timestamp: Timestamp::ORIGIN,
+            });
+        }
+        harness.settle(32);
+    };
+    let wheel = |node: NodeRef, delta, phase, modifiers| {
+        let bounds = node.window_bounds().unwrap();
+        SurfaceEvent::Wheel {
+            event: WheelEvent {
+                delta,
+                phase,
+                position: Point::new(
+                    CssPx(bounds.origin.x.0 + bounds.size.width.0 * 0.5),
+                    CssPx(bounds.origin.y.0 + bounds.size.height.0 * 0.5),
+                ),
+                id: PointerId::MOUSE,
+                kind: PointerKind::Mouse,
+            },
+            modifiers,
+            timestamp: Timestamp::ORIGIN,
+        }
+    };
+    let lines = |y| ScrollDelta::Lines { x: 0.0, y };
+    let pixels = |y| ScrollDelta::Pixels(Size::new(CssPx(0.0), CssPx(y)));
+    model.select(okcolor_core::Oklch::new(0.625, 0.123456789, 359.5, 0.5).unwrap());
+    refs.numbers[1].focus();
+    harness.settle(32);
+    for _ in 0..2 {
+        harness.deliver_to_first(key(NamedKey::ArrowUp, Modifiers::CONTROL));
+        harness.settle(32);
+    }
+    assert!((model.current().components()[1] - 0.123656789).abs() < 1e-12);
+    assert_eq!(refs.numbers[1].text_content(), "0.1237");
+    harness.deliver_to_first(key(NamedKey::ArrowDown, Modifiers::SHIFT));
+    harness.settle(32);
+    assert!((model.current().components()[1] - 0.113656789).abs() < 1e-12);
+
+    // A valid draft and step are one history action; hue wraps without rounding its base.
+    refs.numbers[2].focus();
+    harness.settle(32);
+    let before_draft = model.current();
+    type_draft(harness, "359.75");
+    harness.deliver_to_first(key(NamedKey::ArrowUp, Modifiers::NONE));
+    harness.settle(32);
+    assert_eq!(model.current().components()[2], 0.75);
+    model.undo();
+    assert_eq!(model.current(), before_draft);
+
+    refs.numbers[0].focus();
+    harness.settle(32);
+    for invalid in ["-", "NaN", "1.1"] {
+        type_draft(harness, invalid);
+        harness.deliver_to_first(key(NamedKey::ArrowUp, Modifiers::NONE));
+        harness.deliver_to_first(wheel(
+            refs.numbers[0],
+            lines(-1.0),
+            ScrollPhase::Discrete,
+            Modifiers::NONE,
+        ));
+        harness.settle(32);
+        assert_eq!(model.current(), before_draft);
+        assert_eq!(refs.numbers[0].text_content(), invalid);
+        assert!(!model.message.get_untracked().is_empty());
+    }
+    harness.deliver_to_first(key(NamedKey::Escape, Modifiers::NONE));
+    harness.settle(32);
+    type_draft(harness, "0.999");
+    harness.deliver_to_first(key(NamedKey::ArrowUp, Modifiers::NONE));
+    harness.settle(32);
+    assert_eq!(model.current().components()[0], 1.0);
+    refs.numbers[3].focus();
+    harness.settle(32);
+    type_draft(harness, "0.001");
+    harness.deliver_to_first(key(NamedKey::ArrowDown, Modifiers::NONE));
+    harness.settle(32);
+    assert_eq!(model.current().components()[3], 0.0);
+
+    refs.numbers[1].focus();
+    harness.settle(32);
+    let before_wheel = model.current();
+    harness.deliver_to_first(wheel(
+        refs.numbers[1],
+        pixels(-11.0),
+        ScrollPhase::Started,
+        Modifiers::CONTROL,
+    ));
+    harness.settle(32);
+    assert_eq!(model.current(), before_wheel);
+    harness.deliver_to_first(wheel(
+        refs.numbers[1],
+        pixels(-11.0),
+        ScrollPhase::Moved,
+        Modifiers::CONTROL,
+    ));
+    harness.settle(32);
+    assert!(
+        (model.current().components()[1] - before_wheel.components()[1] - 0.0001).abs() < 1e-12
+    );
+    let after_wheel = model.current();
+    harness.deliver_to_first(wheel(
+        refs.numbers[1],
+        pixels(-11.0),
+        ScrollPhase::Moved,
+        Modifiers::CONTROL,
+    ));
+    harness.deliver_to_first(wheel(
+        refs.numbers[1],
+        pixels(0.0),
+        ScrollPhase::Ended,
+        Modifiers::CONTROL,
+    ));
+    harness.deliver_to_first(wheel(
+        refs.numbers[1],
+        pixels(-11.0),
+        ScrollPhase::Moved,
+        Modifiers::CONTROL,
+    ));
+    harness.deliver_to_first(wheel(
+        refs.numbers[1],
+        pixels(-100.0),
+        ScrollPhase::Momentum,
+        Modifiers::CONTROL,
+    ));
+    harness.settle(32);
+    assert_eq!(
+        model.current(),
+        after_wheel,
+        "gesture remainder/momentum changed color"
+    );
+    harness.deliver_to_first(wheel(
+        refs.numbers[1],
+        lines(1.0),
+        ScrollPhase::Discrete,
+        Modifiers::SHIFT,
+    ));
+    harness.settle(32);
+    assert!((model.current().components()[1] - after_wheel.components()[1] + 0.01).abs() < 1e-12);
+
+    let before_ime = model.current();
+    harness.deliver_to_first(SurfaceEvent::Ime(ImeEvent::Enabled));
+    harness.deliver_to_first(SurfaceEvent::Ime(ImeEvent::Preedit {
+        text: "0.2".into(),
+        cursor: Some(3..3),
+    }));
+    harness.deliver_to_first(key(NamedKey::ArrowUp, Modifiers::NONE));
+    harness.deliver_to_first(wheel(
+        refs.numbers[1],
+        lines(-1.0),
+        ScrollPhase::Discrete,
+        Modifiers::NONE,
+    ));
+    harness.settle(32);
+    assert_eq!(model.current(), before_ime);
+    harness.deliver_to_first(SurfaceEvent::Ime(ImeEvent::Commit(String::new().into())));
+    harness.settle(32);
+    assert_eq!(model.current(), before_ime, "IME commit changed color");
+    harness.deliver_to_first(SurfaceEvent::Ime(ImeEvent::Disabled));
+    harness.deliver_to_first(key(NamedKey::Escape, Modifiers::NONE));
+    harness.settle(32);
+    assert_eq!(model.current(), before_ime, "Escape changed color");
+    refs.slice.focus();
+    harness.settle(32);
+    assert_eq!(model.current(), before_ime, "blur changed color");
+    harness.deliver_to_first(wheel(
+        refs.numbers[1],
+        lines(-1.0),
+        ScrollPhase::Discrete,
+        Modifiers::NONE,
+    ));
+    harness.settle(32);
+    assert_eq!(model.current(), before_ime, "unfocused wheel changed color");
+    model.select(original);
+    harness.settle(32);
+}
+
 #[test]
 #[ignore = "requires a graphics device; run with --ignored"]
 fn mounted_picker_draws_and_drag_is_one_undo() {
@@ -196,6 +389,8 @@ fn mounted_picker_draws_and_drag_is_one_undo() {
                     "Escape/blur quantized untouched chroma"
                 );
 
+                check_numeric_adjustments(&mut harness, model, refs);
+
                 // Clipboard text inside a field remains a draft; Enter commits any supported format.
                 harness
                     .platform()
@@ -301,6 +496,29 @@ fn mounted_picker_draws_and_drag_is_one_undo() {
                     harness.settle(32);
                 }
                 assert!((model.current().components()[0] - 0.8).abs() < 1e-5);
+                refs.numbers[1].focus();
+                harness.settle(32);
+                let number = refs.numbers[1].window_bounds().unwrap();
+                let before_wheel = model.current().components()[1];
+                harness.deliver_to_first(SurfaceEvent::Wheel {
+                    event: WheelEvent {
+                        delta: ScrollDelta::Pixels(Size::new(CssPx(0.0), CssPx(-22.0))),
+                        phase: ScrollPhase::Discrete,
+                        position: Point::new(
+                            CssPx((number.origin.x.0 + number.size.width.0 * 0.5) / 2.0),
+                            CssPx((number.origin.y.0 + number.size.height.0 * 0.5) / 2.0),
+                        ),
+                        id: PointerId::MOUSE,
+                        kind: PointerKind::Mouse,
+                    },
+                    modifiers: Modifiers::NONE,
+                    timestamp: Timestamp::ORIGIN,
+                });
+                harness.settle(32);
+                assert!((model.current().components()[1] - before_wheel - 0.001).abs() < 1e-12,
+                    "wheel stepping must remain in CSS units at 2x DPI");
+                refs.slice.focus();
+                harness.settle(32);
                 let slice = refs.slice.window_bounds().unwrap();
                 let slice_event = |action, x, y| SurfaceEvent::Pointer {
                     action,

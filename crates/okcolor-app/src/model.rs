@@ -2,6 +2,27 @@ use crate::persistence::{RECENT_LIMIT, SavedState};
 use okcolor_core::{ColorFormat, Gamut, GamutMapping, History, Oklch, format_color, parse_color};
 use zgui::prelude::*;
 
+/// Shared stepping policy for channel fields, bars and the gamut slice.
+pub(crate) fn stepped_channel(index: usize, base: f64, steps: f64, modifiers: Modifiers) -> f64 {
+    let mut step = match index {
+        1 => 0.001,
+        2 => 1.0,
+        _ => 0.01,
+    };
+    if modifiers.contains(Modifiers::SHIFT) {
+        step *= 10.0;
+    }
+    if modifiers.contains(Modifiers::CONTROL) {
+        step *= 0.1;
+    }
+    let value = base + steps * step;
+    match index {
+        0 | 3 => value.clamp(0.0, 1.0),
+        1 => value.max(0.0),
+        _ => value,
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EditOrigin {
     Local,
