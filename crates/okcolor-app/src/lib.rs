@@ -3,7 +3,10 @@ pub mod autosave;
 pub mod fonts;
 pub mod graphics;
 pub mod model;
+pub mod output_pass;
 pub mod persistence;
+#[cfg(target_os = "windows")]
+pub mod presentation;
 pub mod surface;
 pub mod ui;
 pub mod window_frame;
@@ -13,3 +16,5 @@ pub mod windows_caption;
 mod windows_composition;
 #[cfg(target_os = "windows")]
 pub mod windows_display;
+#[cfg(target_os = "windows")]
+mod windows_display_watch;

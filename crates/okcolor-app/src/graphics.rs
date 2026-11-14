@@ -1,7 +1,9 @@
 //! Windows presentation policy, kept separate from color calculations and widgets.
 use std::{cell::RefCell, sync::Arc};
 use zgui::{platform::Surface, render::Renderer, runtime::AppError};
-use zgui_render_wgpu::{Gpu, PresentPacing, SharedGraphics, gpu::adapter, wgpu};
+#[cfg(not(target_os = "windows"))]
+use zgui_render_wgpu::PresentPacing;
+use zgui_render_wgpu::{Gpu, SharedGraphics, gpu::adapter, wgpu};
 
 /// Creates one device lazily, when the first hidden window has a presentation target.
 /// Device loss is reported rather than silently changing backends.
@@ -19,15 +21,6 @@ pub fn factory() -> zgui::runtime::RendererFactory {
                 "Invalid composition window: {error}"
             )))
         })?;
-        #[cfg(target_os = "windows")]
-        match crate::windows_display::query(handles.as_ref()) {
-            Ok(display) => {
-                eprintln!("Display capabilities: {display:?}; output remains sRGB preview")
-            }
-            Err(error) => {
-                eprintln!("Display capabilities unavailable: {error}; output remains sRGB preview")
-            }
-        }
         if graphics.borrow().is_none() {
             let mut descriptor = adapter::instance_descriptor(wgpu::Backends::DX12);
             descriptor.backend_options.dx12.shader_compiler = wgpu::Dx12Compiler::StaticDxc;
@@ -53,12 +46,22 @@ pub fn factory() -> zgui::runtime::RendererFactory {
             }
         }
         let graphics = graphics.borrow();
-        let mut renderer = graphics
-            .as_ref()
-            .expect("device opened above")
-            .renderer_for_surface(target, handles, PresentPacing::Display, None)?;
-        zgui_render_vector_vello::attach(&mut renderer, target.size);
-        eprintln!("Presentation formats: {:?}", renderer.formats());
-        Ok(Box::new(renderer) as Box<dyn Renderer>)
+        let graphics = graphics.as_ref().expect("device opened above");
+        #[cfg(target_os = "windows")]
+        {
+            let renderer = crate::presentation::Presentation::new(graphics, handles, target)
+                .map_err(|error| {
+                    AppError::Platform(zgui::platform::PlatformError::Backend(error))
+                })?;
+            Ok(Box::new(renderer) as Box<dyn Renderer>)
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            let mut renderer =
+                graphics.renderer_for_surface(target, handles, PresentPacing::Display, None)?;
+            zgui_render_vector_vello::attach(&mut renderer, target.size);
+            eprintln!("Presentation formats: {:?}", renderer.formats());
+            Ok(Box::new(renderer) as Box<dyn Renderer>)
+        }
     })
 }

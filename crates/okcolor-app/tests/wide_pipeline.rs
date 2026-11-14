@@ -3,12 +3,36 @@
 use okcolor_core::{Gamut, Oklch};
 use std::{cell::RefCell, rc::Rc, sync::Arc};
 use zgui::{
-    geom::{DevicePx, Point, Rect},
+    geom::{DevicePx, Point, Rect, Size},
     prelude::*,
     render::{RenderTarget, Renderer},
 };
+use zgui::{
+    platform::SurfaceEvent,
+    runtime::{FrameProbe, Window},
+};
 use zgui_platform_headless::Harness;
-use zgui_render_wgpu::{Gpu, SharedGraphics, gpu::adapter, wgpu};
+use zgui_render_wgpu::{Gpu, SharedGraphics, WgpuRenderer, gpu::adapter, wgpu};
+
+struct OutputFrames(Rc<RefCell<Vec<wgpu::Texture>>>);
+impl FrameProbe for OutputFrames {
+    fn frame_ended(&self, window: &Window) {
+        let renderer = window
+            .renderer()
+            .as_any()
+            .unwrap()
+            .downcast_ref::<WgpuRenderer>()
+            .unwrap();
+        let texture = renderer.offscreen_texture().unwrap();
+        let mut frames = self.0.borrow_mut();
+        if frames
+            .last()
+            .is_none_or(|last| last.size() != texture.size())
+        {
+            frames.push(texture.clone());
+        }
+    }
+}
 
 #[repr(C)]
 #[derive(Clone, Copy, Default, ShaderParams)]
@@ -58,8 +82,7 @@ fn fp16_composition_and_scrgb_output_preserve_extended_color_alpha_and_reference
         Oklch::from_rgb([1.0, 1.0, 1.0], Gamut::Srgb, 1.0, 0.0).unwrap(),
         Oklch::from_rgb([0.0, 0.0, 0.0], Gamut::Srgb, 0.0, 0.0).unwrap(),
     ];
-    let source = Rc::new(RefCell::new(None));
-    let output = source.clone();
+    let frames = Rc::new(RefCell::new(Vec::new()));
     const STYLE: &str = "
         :root { background-color: transparent; }
         row { width: 112px; height: 16px; }
@@ -70,20 +93,23 @@ fn fp16_composition_and_scrgb_output_preserve_extended_color_alpha_and_reference
         .with_transparent(true)
         .with_stylesheet(STYLE)
         .with_renderer(Box::new(move |_, target: RenderTarget| {
-            let texture = texture(
-                graphics.gpu().unwrap().device(),
-                target.size.width as u32,
-                16,
-            );
-            *output.borrow_mut() = Some(texture.clone());
-            let renderer = graphics.renderer_supplied(target, vec![texture])?;
+            let renderer =
+                graphics.renderer_offscreen(target, wgpu::TextureFormat::Rgba16Float, false)?;
             assert_eq!(renderer.formats().scene, wgpu::TextureFormat::Rgba16Float);
             Ok(Box::new(renderer) as Box<dyn Renderer>)
         }))
+        .with_probe(Rc::new(OutputFrames(frames.clone())))
         .run_on(
             |handler| {
                 let mut harness = Harness::new(handler);
                 harness.settle(32);
+                for (width, height) in [(128.0, 32.0), (112.0, 16.0)] {
+                    harness.deliver_to_first(SurfaceEvent::Resized(Size::new(
+                        DevicePx(width),
+                        DevicePx(height),
+                    )));
+                    harness.settle(32);
+                }
                 Ok(())
             },
             move || {
@@ -107,37 +133,76 @@ fn fp16_composition_and_scrgb_output_preserve_extended_color_alpha_and_reference
             },
         )
         .unwrap();
-    let source = source.borrow();
-    let source = source.as_ref().unwrap();
-    for scale in [1.0_f32, 2.5] {
-        let result = convert(&gpu, source, scale);
-        let pixels = read_float(&gpu, &result);
-        for (index, color) in colors.iter().enumerate() {
-            let got = pixels[8 * 112 + index * 16 + 8];
-            let alpha = color.components()[3];
-            let expected = color
-                .linear_rgb(Gamut::Srgb)
-                .map(|v| v * alpha * f64::from(scale));
-            for channel in 0..3 {
-                assert!(
-                    (f64::from(got[channel]) - expected[channel]).abs() < 0.006,
-                    "sample {index}, scale {scale}, channel {channel}: {got:?}, expected {expected:?}"
-                );
+    let frames = frames.borrow();
+    assert_eq!(
+        frames.len(),
+        3,
+        "Growth and shrink must replace the offscreen output"
+    );
+    let mut pass = okcolor_app::output_pass::OutputPass::new(
+        &gpu,
+        &frames[0],
+        wgpu::TextureFormat::Rgba16Float,
+    );
+    for source in frames.iter() {
+        pass.bind_source(&gpu, source);
+        for scale in [1.0_f32, 2.5] {
+            let result = convert(&gpu, &pass, source, scale, wgpu::TextureFormat::Rgba16Float);
+            let pixels = read_float(&gpu, &result);
+            for (index, color) in colors.iter().enumerate() {
+                let got = pixels[8 * source.width() as usize + index * 16 + 8];
+                let alpha = color.components()[3];
+                let expected = color
+                    .linear_rgb(Gamut::Srgb)
+                    .map(|v| v * alpha * f64::from(scale));
+                for channel in 0..3 {
+                    assert!(
+                        (f64::from(got[channel]) - expected[channel]).abs() < 0.006,
+                        "sample {index}, scale {scale}, channel {channel}: {got:?}, expected {expected:?}"
+                    );
+                }
+                assert!((f64::from(got[3]) - alpha).abs() < 0.001);
             }
-            assert!((f64::from(got[3]) - alpha).abs() < 0.001);
+            assert!(
+                pixels[8 * source.width() as usize + 8][1] < 0.0,
+                "P3 red's negative green must survive"
+            );
+            assert!(
+                pixels[8 * source.width() as usize + 8][0] > scale,
+                "P3 red exceeds the sRGB red coordinate"
+            );
         }
-        assert!(
-            pixels[8 * 112 + 8][1] < 0.0,
-            "P3 red's negative green must survive"
-        );
-        assert!(
-            pixels[8 * 112 + 8][0] > scale,
-            "P3 red exceeds the sRGB red coordinate"
-        );
+        for format in [
+            wgpu::TextureFormat::Rgba8Unorm,
+            wgpu::TextureFormat::Bgra8Unorm,
+        ] {
+            let fallback = okcolor_app::output_pass::OutputPass::new(&gpu, source, format);
+            let result = convert(&gpu, &fallback, source, 2.5, format);
+            let pixels = read_float(&gpu, &result);
+            for (index, color) in colors.iter().enumerate() {
+                let got = pixels[8 * source.width() as usize + index * 16 + 8];
+                let alpha = color.components()[3];
+                let expected = color
+                    .encoded_rgb(Gamut::Srgb)
+                    .map(|v| (v * alpha).clamp(0.0, 1.0));
+                for channel in 0..3 {
+                    assert!(
+                        (f64::from(got[channel]) - expected[channel]).abs() < 0.006,
+                        "SDR passthrough changed gamma or white: {got:?} vs {expected:?}"
+                    );
+                }
+                assert!((f64::from(got[3]) - alpha).abs() < 0.006);
+            }
+        }
     }
 }
 
-fn texture(device: &wgpu::Device, width: u32, height: u32) -> wgpu::Texture {
+fn texture(
+    device: &wgpu::Device,
+    width: u32,
+    height: u32,
+    format: wgpu::TextureFormat,
+) -> wgpu::Texture {
     device.create_texture(&wgpu::TextureDescriptor {
         label: Some("wide-color-test"),
         size: wgpu::Extent3d {
@@ -148,7 +213,7 @@ fn texture(device: &wgpu::Device, width: u32, height: u32) -> wgpu::Texture {
         mip_level_count: 1,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
-        format: wgpu::TextureFormat::Rgba16Float,
+        format,
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT
             | wgpu::TextureUsages::TEXTURE_BINDING
             | wgpu::TextureUsages::COPY_SRC,
@@ -156,93 +221,25 @@ fn texture(device: &wgpu::Device, width: u32, height: u32) -> wgpu::Texture {
     })
 }
 
-fn convert(gpu: &Gpu, source: &wgpu::Texture, scale: f32) -> wgpu::Texture {
-    let device = gpu.device();
-    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some("scRGB presentation"),
-        source: wgpu::ShaderSource::Wgsl(include_str!("../src/scrgb.wgsl").into()),
-    });
-    let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: Some("scRGB presentation"),
-        layout: None,
-        vertex: wgpu::VertexState {
-            module: &shader,
-            entry_point: Some("vertex"),
-            compilation_options: Default::default(),
-            buffers: &[],
-        },
-        fragment: Some(wgpu::FragmentState {
-            module: &shader,
-            entry_point: Some("fragment"),
-            compilation_options: Default::default(),
-            targets: &[Some(wgpu::ColorTargetState {
-                format: wgpu::TextureFormat::Rgba16Float,
-                blend: None,
-                write_mask: wgpu::ColorWrites::ALL,
-            })],
-        }),
-        primitive: Default::default(),
-        depth_stencil: None,
-        multisample: Default::default(),
-        multiview_mask: None,
-        cache: None,
-    });
-    let uniform = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("white scale"),
-        size: 16,
-        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        mapped_at_creation: false,
-    });
-    gpu.queue().write_buffer(
-        &uniform,
-        0,
-        &[scale, 0.0, 0.0, 0.0].map(f32::to_le_bytes).concat(),
-    );
-    let view = source.create_view(&Default::default());
-    let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: None,
-        layout: &pipeline.get_bind_group_layout(0),
-        entries: &[
-            wgpu::BindGroupEntry {
-                binding: 0,
-                resource: wgpu::BindingResource::TextureView(&view),
-            },
-            wgpu::BindGroupEntry {
-                binding: 1,
-                resource: uniform.as_entire_binding(),
-            },
-        ],
-    });
-    let result = texture(device, source.width(), source.height());
-    let target = result.create_view(&Default::default());
-    let mut encoder = device.create_command_encoder(&Default::default());
-    {
-        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: None,
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &target,
-                depth_slice: None,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
-                    store: wgpu::StoreOp::Store,
-                },
-            })],
-            depth_stencil_attachment: None,
-            timestamp_writes: None,
-            occlusion_query_set: None,
-            multiview_mask: None,
-        });
-        pass.set_pipeline(&pipeline);
-        pass.set_bind_group(0, &group, &[]);
-        pass.draw(0..3, 0..1);
-    }
+fn convert(
+    gpu: &Gpu,
+    pass: &okcolor_app::output_pass::OutputPass,
+    source: &wgpu::Texture,
+    scale: f32,
+    format: wgpu::TextureFormat,
+) -> wgpu::Texture {
+    let output = texture(gpu.device(), source.width(), source.height(), format);
+    let view = output.create_view(&Default::default());
+    let mut encoder = gpu.device().create_command_encoder(&Default::default());
+    pass.encode(gpu, &mut encoder, &view, scale);
     gpu.queue().submit([encoder.finish()]);
-    result
+    output
 }
 
 fn read_float(gpu: &Gpu, texture: &wgpu::Texture) -> Vec<[f32; 4]> {
-    let row = (texture.width() * 8).div_ceil(256) * 256;
+    let float = texture.format() == wgpu::TextureFormat::Rgba16Float;
+    let stride = if float { 8 } else { 4 };
+    let row = (texture.width() * stride).div_ceil(256) * 256;
     let buffer = gpu.device().create_buffer(&wgpu::BufferDescriptor {
         label: None,
         size: u64::from(row * texture.height()),
@@ -275,10 +272,19 @@ fn read_float(gpu: &Gpu, texture: &wgpu::Texture) -> Vec<[f32; 4]> {
     let mut result = Vec::new();
     for y in 0..texture.height() {
         for x in 0..texture.width() {
-            let start = (y * row + x * 8) as usize;
+            let start = (y * row + x * stride) as usize;
             result.push(std::array::from_fn(|c| {
-                half::f16::from_le_bytes([mapped[start + c * 2], mapped[start + c * 2 + 1]])
-                    .to_f32()
+                if float {
+                    half::f16::from_le_bytes([mapped[start + c * 2], mapped[start + c * 2 + 1]])
+                        .to_f32()
+                } else {
+                    let channel = if texture.format() == wgpu::TextureFormat::Bgra8Unorm {
+                        [2, 1, 0, 3][c]
+                    } else {
+                        c
+                    };
+                    f32::from(mapped[start + channel]) / 255.0
+                }
             }));
         }
     }

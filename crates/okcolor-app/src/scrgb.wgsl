@@ -29,3 +29,9 @@ fn fragment(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
     let straight = color.rgb / color.a;
     return vec4<f32>(decode_srgb(straight) * settings.white_scale * color.a, color.a);
 }
+
+// The bounded SDR fallback uses the UI's original gamma-encoded values.
+@fragment
+fn fragment_sdr(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
+    return textureLoad(source, vec2<i32>(position.xy), 0);
+}

@@ -30,18 +30,26 @@ selected adapter and actual surface formats; set `OKCOLOR_TRACE_FRAMES` to log
 frame counts. It requires a working
 DX12 device and does not yet recover from device loss.
 
-The surface currently uses an 8-bit SDR format. Supporting Display P3 and
-Rec.2020 calculations does not establish wide-gamut monitor output. Treat the
-window as an sRGB preview until the display path is explicitly validated.
-Startup diagnostics query the window's principal display for its active color
-mode, bit depth and reference white. Support flags alone do not enable wide
-output. The query is read-only and currently runs only at renderer creation;
-monitor movement and OS color-mode changes still need live handling.
+The Windows presentation path composes into retained FP16 textures, then converts
+premultiplied gamma-encoded values to linear scRGB on the GPU. It prefers an FP16
+DirectComposition swap chain when the surface supports it and the display's
+reference white is known. Otherwise it uses an unencoded 8-bit SDR surface and
+copies the original gamma-encoded values. Alpha stays premultiplied in both paths.
+Resize replaces the offscreen output and its binding without replacing the UI
+renderer or its atlas. Surface acquisition failures preserve the submitted frame
+for retry; device-loss recovery is still required.
 
-The FP16 test path preserves extended custom-paint RGB and converts the composed,
-premultiplied, gamma-encoded scene to linear scRGB on the GPU. Its shader handles
-alpha and SDR reference-white scaling. This path is not yet connected to the
-window's swap chain; successful pixel tests do not establish monitor reproduction.
+The picker widgets currently still produce an sRGB preview. Selecting FP16 does
+not by itself establish wide-gamut monitor reproduction or widen those widgets.
+The GPU tests additionally exercise extended P3/Rec.2020 custom-paint values.
+
+Read-only discovery uses the window's principal display, active color mode, bit
+depth and reference white. Support flags alone do not enable wide output. Native
+window-position, DPI, display-change and setting-change messages invalidate the
+cached discovery and request a frame. The following draw refreshes it outside the
+window callback. Actual cross-monitor/HDR transitions, including reference-white
+slider notifications, still need native validation; the message hook is not proof
+that every OS setting produces the expected notification.
 The linear scRGB and 80-nit reference follow Microsoft's
 [Advanced Color guidance](https://learn.microsoft.com/en-us/windows/win32/direct3darticles/high-dynamic-range).
 The display-query ABI is checked against Windows SDK 10.0.26100.0; older APIs
@@ -64,8 +72,10 @@ at window creation; the renderer verifies the actual HWND before creating the
 swap chain. See [the backend patch](../vendor/zgui-platform-winit/README.md) for
 its scope and update procedure. Do not replace this with a post-creation style change.
 The [shader vocabulary patch](../vendor/zgui-wgsl/README.md) preserves extended
-RGB in custom paint while retaining upstream alpha clamping. Both patches use
-the same pinned revision; their READMEs describe the limited changes.
+RGB in custom paint while retaining upstream alpha clamping. The
+[renderer patch](../vendor/zgui-render-wgpu/README.md) exposes its offscreen GPU
+texture for the final conversion. All patches use the same pinned revision;
+their READMEs describe the limited changes.
 See [Color contracts](COLOR_CONTRACT.md) for input, output, gamut and history semantics.
 
 The Windows caption bridge exposes the painted maximize button as `HTMAXBUTTON`
@@ -103,11 +113,13 @@ headless platform. Set `OKCOLOR_TEST_RGBA` to an output path to capture the init
 per-frame path.
 The Windows-only `native_caption` test opens its own temporary Picker window.
 It checks native hit testing against painted bounds, capture, release-outside
-cancellation, and a maximize/restore round trip through winit and zgui. It sends
+cancellation, and a maximize/restore round trip through winit and zgui. It also
+requires successfully presented frames at both maximized and restored extents. It sends
 messages only to the test window and does not inject desktop input.
 `wide_pipeline` reads FP16 GPU pixels after retained custom paint and the scRGB
 conversion, comparing P3/Rec.2020 colors, alpha and white scaling against the
-f64 core. `native_display` uses its own hidden window to read the current display
+f64 core, including texture growth/shrink and both SDR output byte orders.
+`native_display` uses its own hidden window to read the current display
 configuration without changing OS settings. It requires local display access;
 remote sessions or mirrored displays may prevent an unambiguous query.
 
