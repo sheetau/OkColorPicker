@@ -45,6 +45,30 @@ impl History {
     pub fn current(&self) -> Oklch {
         self.current
     }
+
+    /// During a preview, this remains the last committed value.
+    pub fn committed(&self) -> Oklch {
+        self.before_edit.unwrap_or(self.current)
+    }
+
+    /// Restore recents without inventing undo steps. Input order is newest first.
+    pub fn restored(
+        initial: Oklch,
+        history_limit: usize,
+        recent_limit: usize,
+        recent: impl IntoIterator<Item = Oklch>,
+    ) -> Self {
+        let mut history = Self::new(initial, history_limit, recent_limit);
+        for color in recent {
+            if history.recent.len() == recent_limit {
+                break;
+            }
+            if !history.recent.contains(&color) {
+                history.recent.push_back(color);
+            }
+        }
+        history
+    }
     /// Newest committed color first; undo/redo navigation does not add entries.
     pub fn recent(&self) -> &VecDeque<Oklch> {
         &self.recent

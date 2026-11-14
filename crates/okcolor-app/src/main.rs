@@ -1,6 +1,7 @@
 use okcolor_app::{
-    fonts, graphics,
+    autosave, fonts, graphics,
     model::PickerModel,
+    persistence::{StartupState, state_directory},
     ui::{self, PickerProps, PickerRefs},
 };
 use std::{cell::Cell, rc::Rc};
@@ -17,6 +18,7 @@ impl zgui::runtime::FrameProbe for FrameCount {
 }
 
 fn main() -> Result<(), zgui::Error> {
+    let mut startup = StartupState::open(state_directory());
     let mut application = app()
         .with_application_id("io.github.sheetau.OkColorPicker")
         .with_title("OkColorPicker")
@@ -31,5 +33,12 @@ fn main() -> Result<(), zgui::Error> {
     if std::env::var_os("OKCOLOR_TRACE_FRAMES").is_some() {
         application = application.with_probe(Rc::new(FrameCount::default()));
     }
-    application.run(|| view! { Picker(model=PickerModel::default(),refs=PickerRefs::default()) })
+    application.run(move || {
+        let model = PickerModel::restore(startup.state.clone());
+        model.storage_message.set(startup.warning.clone());
+        if let Some(store) = startup.store.take() {
+            autosave::bind(model, store, startup.state.clone());
+        }
+        view! { Picker(model=model,refs=PickerRefs::default()) }
+    })
 }

@@ -1,3 +1,4 @@
+use crate::persistence::{RECENT_LIMIT, SavedState};
 use okcolor_core::{ColorFormat, Gamut, GamutMapping, History, Oklch, format_color, parse_color};
 use zgui::prelude::*;
 
@@ -18,35 +19,54 @@ pub struct PickerModel {
     pub can_redo: RwSignal<bool>,
     pub message: RwSignal<String>,
     pub editing_text: RwSignal<bool>,
+    pub storage_message: RwSignal<String>,
+    pub can_save: RwSignal<bool>,
+    pub save_request: RwSignal<u64>,
+    committed: RwSignal<Oklch>,
     history: RwSignal<History, LocalStorage>,
     before_drag: RwSignal<Oklch>,
 }
 
 impl Default for PickerModel {
     fn default() -> Self {
-        Self::new(parse_color("#4e83a3", 0.0).expect("built-in color"))
+        Self::restore(SavedState::default())
     }
 }
 
 impl PickerModel {
     pub fn new(initial: Oklch) -> Self {
+        Self::restore(SavedState {
+            current: initial,
+            previous: initial,
+            ..SavedState::default()
+        })
+    }
+
+    pub fn restore(saved: SavedState) -> Self {
+        let initial = saved.current;
+        let history = History::restored(initial, 100, RECENT_LIMIT, saved.recent);
+        let recent = history.recent().iter().copied().collect();
         let [l, c, h, alpha] = initial.components();
         Self {
             l: RwSignal::new(l),
             c: RwSignal::new(c),
             h: RwSignal::new(h),
             alpha: RwSignal::new(alpha),
-            gamut: RwSignal::new(Gamut::Srgb),
-            mapping: RwSignal::new(GamutMapping::LocalMinde),
-            format: RwSignal::new(ColorFormat::Hex),
-            max_chroma: RwSignal::new(0.4),
-            recent: RwSignal::new(Vec::new()),
-            previous: RwSignal::new(initial),
+            gamut: RwSignal::new(saved.gamut),
+            mapping: RwSignal::new(saved.mapping),
+            format: RwSignal::new(saved.format),
+            max_chroma: RwSignal::new(saved.max_chroma),
+            recent: RwSignal::new(recent),
+            previous: RwSignal::new(saved.previous),
             can_undo: RwSignal::new(false),
             can_redo: RwSignal::new(false),
             message: RwSignal::new(String::new()),
             editing_text: RwSignal::new(false),
-            history: RwSignal::new_local(History::new(initial, 100, 24)),
+            storage_message: RwSignal::new(String::new()),
+            can_save: RwSignal::new(false),
+            save_request: RwSignal::new(0),
+            committed: RwSignal::new(initial),
+            history: RwSignal::new_local(history),
             before_drag: RwSignal::new(initial),
         }
     }
@@ -57,6 +77,38 @@ impl PickerModel {
     }
     pub fn current(self) -> Oklch {
         self.history.with_untracked(History::current)
+    }
+
+    /// Reactive durable state; preview channels deliberately are not dependencies.
+    pub fn saved_state(self) -> SavedState {
+        SavedState {
+            current: self.committed.get(),
+            previous: self.previous.get(),
+            recent: self.recent.get(),
+            gamut: self.gamut.get(),
+            mapping: self.mapping.get(),
+            format: self.format.get(),
+            max_chroma: self.max_chroma.get(),
+        }
+    }
+
+    /// Shutdown also captures a commit made before the next reactive flush.
+    pub fn saved_state_untracked(self) -> SavedState {
+        let (current, recent) = self.history.with_untracked(|history| {
+            (
+                history.committed(),
+                history.recent().iter().copied().collect(),
+            )
+        });
+        SavedState {
+            current,
+            recent,
+            previous: self.previous.get_untracked(),
+            gamut: self.gamut.get_untracked(),
+            mapping: self.mapping.get_untracked(),
+            format: self.format.get_untracked(),
+            max_chroma: self.max_chroma.get_untracked(),
+        }
     }
 
     pub fn select(self, color: Oklch) -> bool {
@@ -182,7 +234,14 @@ impl PickerModel {
             self.can_undo.set(history.can_undo());
             self.can_redo.set(history.can_redo());
             if committed {
-                self.recent.set(history.recent().iter().copied().collect());
+                let color = history.committed();
+                if self.committed.get_untracked() != color {
+                    self.committed.set(color);
+                }
+                let recent = history.recent().iter().copied().collect::<Vec<_>>();
+                if self.recent.get_untracked() != recent {
+                    self.recent.set(recent);
+                }
             }
         });
     }

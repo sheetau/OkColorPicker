@@ -9,6 +9,7 @@ use zgui::{prelude::*, reactive::RenderEffect};
 /// Stable handles also let application tests exercise the actual mounted controls.
 #[derive(Clone, Copy)]
 pub struct PickerRefs {
+    pub recents: NodeRef,
     pub slice: NodeRef,
     pub bars: [NodeRef; 4],
     pub numbers: [NodeRef; 4],
@@ -17,6 +18,7 @@ pub struct PickerRefs {
 impl Default for PickerRefs {
     fn default() -> Self {
         Self {
+            recents: NodeRef::new(),
             slice: NodeRef::new(),
             bars: std::array::from_fn(|_| NodeRef::new()),
             numbers: std::array::from_fn(|_| NodeRef::new()),
@@ -75,14 +77,7 @@ pub fn Picker(model: PickerModel, refs: PickerRefs) -> impl IntoView {
         column(class="app",on:key_down=shortcut) {
             Titlebar()
             column(class="body") {
-                row(class="recents",a11y:label="Recent colors") {
-                    if move || model.recent.get().is_empty() {text(class="empty-recent") {"Recent colors"}}
-                    for entry in move || model.recent.get(), key=|entry:&Oklch| entry.components().map(f64::to_bits) {
-                        control(class="recent",tabindex=Focus::Sequential,a11y:label="Recall recent color",
-                            style:background-color=move || Some(preview_css(entry,model.mapping.get())),
-                            on:click=move |_| {model.select(entry);}) {}
-                    }
-                }
+                RecentColors(model=model,node=refs.recents)
                 row(class="options") {
                     control(class="gamut",
                         class:selected=move ||model.gamut.get()==Gamut::Srgb,
@@ -161,6 +156,15 @@ pub fn Picker(model: PickerModel, refs: PickerRefs) -> impl IntoView {
                     CodeField(model=model,node=refs.codes[1],primary=false)
                 }
                 column(class="status") {
+                    if move || !model.storage_message.get().is_empty() {
+                        column(class="storage-warning") {
+                            text {{move ||model.storage_message.get()}}
+                            if move ||model.can_save.get() {
+                                control(class="retry-save",tabindex=Focus::Sequential,
+                                    on:click=move |_|model.save_request.update(|request|*request=request.wrapping_add(1))) {"Retry save"}
+                            }
+                        }
+                    }
                     row {
                         text {"sRGB preview"}
                         spacer()
@@ -176,6 +180,54 @@ pub fn Picker(model: PickerModel, refs: PickerRefs) -> impl IntoView {
                 }
             }
             ResizeEdges()
+        }
+    }
+}
+
+#[component]
+fn RecentColors(model: PickerModel, node: NodeRef) -> impl IntoView {
+    use zgui::geom::{CssPx, DevicePx, Point};
+    let position = node.observe_scroll();
+    let scale = use_window().scale();
+    let shift = move |direction: f32| {
+        let extent = node.scroll_position().scrollport.width.0;
+        node.scroll_to(
+            ScrollTarget::By(Point::new(
+                DevicePx(direction * extent * 0.75),
+                DevicePx(0.0),
+            )),
+            ScrollBehavior::Instant,
+        );
+    };
+    let reset = RenderEffect::new(move |_| {
+        model.recent.track();
+        node.scroll_to(
+            ScrollTarget::Offset(Point::new(DevicePx(0.0), DevicePx(0.0))),
+            ScrollBehavior::Instant,
+        );
+    });
+    on_cleanup_local(move || drop(reset));
+    view! {
+        box(class="recent-strip") {
+            row(class="recents",node_ref=node,a11y:label="Recent colors",on:wheel=move |cx| {
+                let delta=cx.delta.to_pixels(CssPx(22.0));
+                let amount=if delta.width.0.abs()>delta.height.0.abs() {delta.width.0} else {delta.height.0};
+                node.scroll_to(ScrollTarget::By(Point::new(DevicePx(amount*scale.get_untracked()),DevicePx(0.0))),ScrollBehavior::Instant);
+                cx.prevent_default();cx.stop_propagation();
+            }) {
+                if move ||model.recent.get().is_empty() {text(class="empty-recent") {"Recent colors"}}
+                for entry in move ||model.recent.get(), key=|entry:&Oklch|entry.components().map(f64::to_bits) {
+                    control(class="recent",tabindex=Focus::Sequential,a11y:label="Recall recent color",
+                        style:background-color=move ||Some(preview_css(entry,model.mapping.get())),
+                        on:click=move |_|{model.select(entry);}) {}
+                }
+            }
+            if move ||position.get().content_size.width.0>position.get().scrollport.width.0 {
+                control(class="recent-nav newer",tabindex=Focus::Sequential,a11y:label="Newer recent colors",
+                    disabled=move ||position.get().offset.x.0<=0.0,on:click=move |_|shift(-1.0)) {box(class="history-arrow") {}}
+                control(class="recent-nav older",tabindex=Focus::Sequential,a11y:label="Older recent colors",
+                    disabled=move ||position.get().is_at_end_horizontally(),on:click=move |_|shift(1.0)) {box(class="history-arrow redo") {}}
+            }
         }
     }
 }

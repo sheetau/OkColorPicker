@@ -6,9 +6,10 @@ Explore a fixed-hue lightness/chroma slice, adjust L/C/H/alpha, and edit or copy
 CSS color values. The picker preserves the original color while displaying
 sRGB, Display P3 and Rec.2020 boundaries with an sRGB screen preview.
 
-The application is in early development. Recent colors and undo work within a
-session; persistence, CLIP STUDIO PAINT integration and validated wide-gamut
-monitor output are still being developed. There is no release yet.
+The application saves committed colors, recent colors and picker preferences
+between sessions. Undo history stays within the current session.
+CLIP STUDIO PAINT integration and validated wide-gamut monitor output are still
+being developed. There is no release yet.
 
 ## Development
 

@@ -1,7 +1,8 @@
 //! Mounted UI contracts. These exercise actual event dispatch and GPU presentation.
 use okcolor_app::{
-    fonts,
+    autosave, fonts,
     model::PickerModel,
+    persistence::{SavedState, StartupState, StateStore},
     ui::{PickerProps, PickerRefs, STYLE},
 };
 use std::{
@@ -15,7 +16,10 @@ use zgui::{
     platform::{PlatformCx, Surface, SurfaceEvent},
     prelude::*,
     render::{RenderTarget, Renderer},
-    vocab::{ImeEvent, KeyEvent, KeyState, PhysicalKey, PointerAction, PointerEvent, Timestamp},
+    vocab::{
+        ImeEvent, KeyEvent, KeyState, PhysicalKey, PointerAction, PointerEvent, PointerId,
+        PointerKind, ScrollDelta, ScrollPhase, Timestamp, WheelEvent,
+    },
 };
 use zgui_platform_headless::Harness;
 use zgui_render_wgpu::{Builder, wgpu};
@@ -25,6 +29,9 @@ use support::Capture;
 #[test]
 #[ignore = "requires a graphics device; run with --ignored"]
 fn mounted_picker_draws_and_drag_is_one_undo() {
+    let profile = tempfile::tempdir().unwrap();
+    let profile_path = profile.path().to_path_buf();
+    let mut startup = StartupState::open(Ok(profile_path.clone()));
     let frames = Arc::new(Mutex::new(Vec::new()));
     let capture = frames.clone();
     let state = Rc::new(Cell::new(None));
@@ -296,6 +303,30 @@ fn mounted_picker_draws_and_drag_is_one_undo() {
                 model.undo();
                 harness.settle(32);
                 assert_eq!(model.current(), before_slice);
+                // All 24 recent colors remain reachable in the compact strip.
+                for index in 0..24 {
+                    model.select(okcolor_core::Oklch::new(0.6,0.08,f64::from(index)*15.0,1.0).unwrap());
+                }
+                harness.settle(64);
+                let recent=refs.recents.window_bounds().unwrap();
+                let last=Point::new(CssPx((recent.origin.x.0+recent.size.width.0-4.0)/2.0),CssPx((recent.origin.y.0+recent.size.height.0*0.5)/2.0));
+                harness.deliver_to_first(SurfaceEvent::Wheel {event:WheelEvent {
+                    delta:ScrollDelta::Pixels(Size::new(CssPx(0.0),CssPx(1000.0))),phase:ScrollPhase::Discrete,
+                    position:last,id:PointerId::MOUSE,kind:PointerKind::Mouse,
+                },modifiers:Modifiers::NONE,timestamp:Timestamp::ORIGIN});
+                harness.settle(32);
+                assert!(refs.recents.scroll_position().offset.x.0>0.0);
+                assert!(refs.recents.scroll_position().is_at_end_horizontally());
+                if let Ok(path)=std::env::var("OKCOLOR_TEST_RECENTS_RGBA") {
+                    let frames=frames.lock().unwrap();
+                    std::fs::write(path,frames.last().unwrap().bytes()).unwrap();
+                }
+                for action in [PointerAction::Pressed,PointerAction::Released] {
+                    harness.deliver_to_first(SurfaceEvent::Pointer {action,event:PointerEvent::mouse(last).with_button(PointerButton::Primary),modifiers:Modifiers::NONE,timestamp:Timestamp::ORIGIN});
+                    harness.settle(32);
+                }
+                assert_eq!(model.current(),okcolor_core::Oklch::new(0.6,0.08,0.0,1.0).unwrap(),"oldest recent color is reachable");
+                assert_eq!(refs.recents.scroll_position().offset.x.0,0.0,"recalling a color reveals the newest entry");
                 refs.slice.focus();
                 harness.settle(32);
                 assert_eq!(
@@ -303,10 +334,28 @@ fn mounted_picker_draws_and_drag_is_one_undo() {
                     0,
                     "idle UI must settle"
                 );
+                // A final commit immediately followed by shutdown must not depend on another frame.
+                model.input("oklch(.6543210987654321 .3210987654321098 123.4567890123456 / .3456789012345678)");
+                let expected = model.saved_state_untracked();
+                harness.shut_down();
+                let reopened =
+                    StateStore::open(&profile_path).expect("shutdown released the profile");
+                assert_eq!(
+                    reopened.load().unwrap(),
+                    expected,
+                    "shutdown flushed the final committed snapshot"
+                );
+                Owner::new().with(|| {
+                    let model = PickerModel::restore(reopened.load().unwrap());
+                    assert_eq!(model.current(), expected.current);
+                    assert_eq!(model.recent.get_untracked(), expected.recent);
+                    assert!(!model.can_undo.get_untracked());
+                });
                 Ok(())
             },
             move || {
-                let model = PickerModel::default();
+                let model = PickerModel::restore(startup.state.clone());
+                autosave::bind(model, startup.store.take().unwrap(), SavedState::default());
                 let refs = PickerRefs::default();
                 built.set(Some((model, refs)));
                 view! { Picker(model=model,refs=refs) }

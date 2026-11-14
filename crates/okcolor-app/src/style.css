@@ -10,7 +10,11 @@ control:disabled { opacity: 0.25; }
 .menu-button { width: 30px; height: 28px; text-align: center; font-size: 18px; }
 .window-button { width: 35px; height: 30px; text-align: center; font-family: "Segoe UI", sans-serif; font-size: 13px; }
 .window-button.close:hover { background-color: #a52432; color: white; }
-.recents { margin: 16px 20px 10px; height: 22px; min-height: 22px; gap: 1px; overflow: hidden; align-items: center; }
+.recent-strip { position: relative; margin: 16px 20px 10px; height: 22px; min-height: 22px; }
+/* This zgui revision needs one auto axis to register a programmatically scrolled region. */
+.recents { width: 100%; height: 22px; gap: 1px; overflow-x: hidden; overflow-y: auto; align-items: center; }
+.recent-nav { position: absolute; top: 1px; width: 16px; height: 20px; }
+.recent-nav.newer { left: -18px; } .recent-nav.older { right: -18px; }
 .recent { min-width: 22px; width: 22px; height: 22px; border-radius: 0; }
 .empty-recent { color: #555; font-size: 10px; }
 .options { height: 22px; margin: 0 20px; gap: 5px; align-items: center; }
@@ -58,6 +62,8 @@ field:focus { background-color: #17131c; outline: 1px solid #685475; }
 .help-menu { top: 30px; left: 5px; gap: 7px; width: 285px; padding: 12px; }
 .status { padding: 0 20px 12px; gap: 5px; color: #65606b; font-size: 9px; min-height: 28px; }
 .warning { color: #bd9a73; font-size: 9px; }
+.storage-warning { color: #d9aa71; gap: 4px; }
+.retry-save { align-self: flex-start; padding: 3px 7px; background-color: #292018; color: #e4bc8b; }
 .grip { position: absolute; z-index: 30; }
 .grip.north { top: 0; left: 8px; right: 8px; height: 4px; }
 .grip.south { bottom: 0; left: 8px; right: 8px; height: 4px; }

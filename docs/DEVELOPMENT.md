@@ -39,7 +39,9 @@ keyboard steps by ten; Control scales them by one tenth. Enter commits a text
 draft, and Escape cancels it or an active drag. Ctrl+C/V outside text entry copies
 or applies a complete color. Inside text entry, the same shortcuts edit the draft.
 Ctrl+Z, Ctrl+Shift+Z and Ctrl+Y navigate color history outside text entry.
-Recent colors and undo history currently last for the running session only.
+Committed colors, recent colors and picker settings are restored on startup.
+Undo history and unfinished text/drag edits stay within the running session.
+See [Saved state](STATE_FORMAT.md) for profile locations, the schema and failure behavior.
 
 The workspace contains `okcolor-core` for device-independent color calculations
 and `okcolor-app` for zgui and platform integration. zgui is pinned to an exact
