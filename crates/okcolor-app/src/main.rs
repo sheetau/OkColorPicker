@@ -4,11 +4,15 @@ use okcolor_app::{
     persistence::{StartupState, state_directory},
     ui::{self, PickerProps, PickerRefs},
 };
-use std::{cell::Cell, rc::Rc};
+#[cfg(not(target_os = "windows"))]
+use std::cell::Cell;
+use std::rc::Rc;
 use zgui::prelude::*;
 
 #[derive(Default)]
+#[cfg(not(target_os = "windows"))]
 struct FrameCount(Cell<u64>);
+#[cfg(not(target_os = "windows"))]
 impl zgui::runtime::FrameProbe for FrameCount {
     fn frame_ended(&self, _window: &zgui::runtime::Window) {
         let frame = self.0.get() + 1;
@@ -19,6 +23,12 @@ impl zgui::runtime::FrameProbe for FrameCount {
 
 fn main() -> Result<(), zgui::Error> {
     let mut startup = StartupState::open(state_directory());
+    let trace = std::env::var_os("OKCOLOR_TRACE_FRAMES").is_some();
+    let renderer = graphics::factory();
+    #[cfg(target_os = "windows")]
+    let caption = okcolor_app::windows_caption::CaptionBridge::new(trace);
+    #[cfg(target_os = "windows")]
+    let renderer = caption.wrap_renderer(renderer);
     let mut application = app()
         .with_application_id("io.github.sheetau.OkColorPicker")
         .with_title("OkColorPicker")
@@ -27,10 +37,15 @@ fn main() -> Result<(), zgui::Error> {
         .with_decorations(Decorations::NoTitleBar)
         // The composition surface has alpha; the application scene remains opaque.
         .with_transparent(true)
-        .with_renderer(graphics::factory())
+        .with_renderer(renderer)
         .with_fonts(fonts::load())
         .with_stylesheet(ui::STYLE);
-    if std::env::var_os("OKCOLOR_TRACE_FRAMES").is_some() {
+    #[cfg(target_os = "windows")]
+    {
+        application = application.with_probe(Rc::new(caption.clone()));
+    }
+    #[cfg(not(target_os = "windows"))]
+    if trace {
         application = application.with_probe(Rc::new(FrameCount::default()));
     }
     application.run(move || {
@@ -39,6 +54,9 @@ fn main() -> Result<(), zgui::Error> {
         if let Some(store) = startup.store.take() {
             autosave::bind(model, store, startup.state.clone());
         }
-        view! { Picker(model=model,refs=PickerRefs::default()) }
+        let refs = PickerRefs::default();
+        #[cfg(target_os = "windows")]
+        caption.bind_maximize(refs.maximize);
+        view! { Picker(model=model,refs=refs) }
     })
 }

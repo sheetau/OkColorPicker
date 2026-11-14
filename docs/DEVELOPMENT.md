@@ -52,6 +52,12 @@ swap chain. See [the backend patch](../vendor/zgui-platform-winit/README.md) for
 its scope and update procedure. Do not replace this with a post-creation style change.
 See [Color contracts](COLOR_CONTRACT.md) for input, output, gamut and history semantics.
 
+The Windows caption bridge exposes the painted maximize button as `HTMAXBUTTON`
+for Snap layouts. It uses the node's physical bounds from each completed frame,
+invalidates them on resize/DPI changes, and forwards button gestures to zgui so
+there is only one maximize/restore action. Native hover still reaches Windows.
+The MSVC build embeds a Common Controls v6 manifest for the subclassing APIs.
+
 Martian Mono is embedded under OFL. Martian Grotesk is an optional user-installed
 font; set `OKCOLOR_GROTESK_FONT` to a licensed local TTF file to register it under
 the application's family name. Keep machine-specific values outside the repository.
@@ -68,21 +74,27 @@ cargo test --workspace --locked
 cargo test -p okcolor-app --test composition --locked -- --ignored
 cargo test -p okcolor-app --test color_surface --locked -- --ignored
 cargo test -p okcolor-app --test picker --locked -- --ignored
+cargo test -p okcolor-app --test native_caption --locked -- --ignored
 ```
 
-The last three commands require a GPU and fail if no device is available. They
+The four explicit GPU tests fail if no device is available. The first three
 check alpha composition, shader pixels against the f64 color reference, and
 mounted input/clipboard/IME/drag behavior with idle-frame and DPI checks on the
 headless platform. Set `OKCOLOR_TEST_RGBA` to an output path to capture the initial
 330×560 UI as RGBA bytes. Readback occurs only in tests, never in the application's
 per-frame path.
+The Windows-only `native_caption` test opens its own temporary Picker window.
+It checks native hit testing against painted bounds, capture, release-outside
+cancellation, and a maximize/restore round trip through winit and zgui. It sends
+messages only to the test window and does not inject desktop input.
 
 Native Windows validation must additionally cover IME, clipboard, DPI changes,
 resize, minimize/restore, window movement and device loss. Headless pixel tests
 do not establish those behaviors. Measure performance with a release build.
-On Windows, the regular test suite also creates a hidden native window and verifies
-that no-redirection and window-control styles survive backend style updates. This
-does not exercise the shell's Snap menu or interactive movement and resizing.
+On Windows, the regular test suite also creates hidden native windows to verify
+composition styles, caption message forwarding, negative screen coordinates,
+and stale-layout rejection. Native tests do not establish the shell's Snap flyout,
+hardware input, or interactive movement and resizing; verify those separately.
 
 ## Verification and publication
 

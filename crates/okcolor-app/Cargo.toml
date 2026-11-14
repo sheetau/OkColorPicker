@@ -17,7 +17,7 @@ zgui-render-vector-vello.workspace = true
 
 [target.'cfg(target_os = "windows")'.dependencies]
 raw-window-handle = "=0.6.2"
-windows-sys = { version = "=0.61.2", features = ["Win32_UI_WindowsAndMessaging"] }
+windows-sys = { version = "=0.61.2", features = ["Win32_Graphics_Gdi", "Win32_System_Threading", "Win32_UI_Controls", "Win32_UI_HiDpi", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
 zgui-platform-winit = { git = "https://github.com/zortax/zgui", rev = "80baa3c7cb0fbbe1c058f10059e076e41c0a1b9a", features = ["direct-composition"] }
 # Prevent unrelated applications' dxcompiler.dll files on PATH from being loaded.
 wgpu = { version = "=29.0.4", features = ["static-dxc"] }

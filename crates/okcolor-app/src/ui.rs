@@ -9,6 +9,7 @@ use zgui::{prelude::*, reactive::RenderEffect};
 /// Stable handles also let application tests exercise the actual mounted controls.
 #[derive(Clone, Copy)]
 pub struct PickerRefs {
+    pub maximize: NodeRef,
     pub recents: NodeRef,
     pub slice: NodeRef,
     pub bars: [NodeRef; 4],
@@ -18,6 +19,7 @@ pub struct PickerRefs {
 impl Default for PickerRefs {
     fn default() -> Self {
         Self {
+            maximize: NodeRef::new(),
             recents: NodeRef::new(),
             slice: NodeRef::new(),
             bars: std::array::from_fn(|_| NodeRef::new()),
@@ -75,7 +77,7 @@ pub fn Picker(model: PickerModel, refs: PickerRefs) -> impl IntoView {
     };
     view! {
         column(class="app",on:key_down=shortcut) {
-            Titlebar()
+            Titlebar(maximize=refs.maximize)
             column(class="body") {
                 RecentColors(model=model,node=refs.recents)
                 row(class="options") {
@@ -258,7 +260,7 @@ fn dismiss_menu(open: RwSignal<bool>, popup: NodeRef, trigger: NodeRef) {
 }
 
 #[component]
-fn Titlebar() -> impl IntoView {
+fn Titlebar(maximize: NodeRef) -> impl IntoView {
     let window = use_window();
     let help = RwSignal::new(false);
     let popup = NodeRef::new();
@@ -275,14 +277,18 @@ fn Titlebar() -> impl IntoView {
             text(class="title") {"OkColorPicker"}
             spacer()
             control(class="window-button",
+                tabindex=Focus::Sequential,
                 a11y:label="Minimize",
                 on:pointer_down=window.no_drag_handler(),
                 on:click={let w=window.clone();move |_|w.minimize()}) {"−"}
             control(class="window-button",
+                node_ref=maximize,
+                tabindex=Focus::Sequential,
                 a11y:label="Maximize or restore",
                 on:pointer_down=window.no_drag_handler(),
                 on:click={let w=window.clone();move |_|w.toggle_maximized()}) {"□"}
             control(class="window-button close",
+                tabindex=Focus::Sequential,
                 a11y:label="Close",
                 on:pointer_down=window.no_drag_handler(),
                 on:click={let w=window.clone();move |_|w.close()}) {"×"}
