@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/okcolor-core", "crates/okcolor-app"]
+members = ["crates/okcolor-core", "crates/okcolor-app", "crates/okcolor-csp"]
 exclude = ["vendor/zgui-platform-winit", "vendor/zgui-wgsl", "vendor/zgui-render-wgpu", "vendor/zgui-runtime"]
 resolver = "3"
 

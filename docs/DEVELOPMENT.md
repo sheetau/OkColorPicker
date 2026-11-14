@@ -92,7 +92,9 @@ Undo history and unfinished text/drag edits stay within the running session.
 See [Saved state](STATE_FORMAT.md) for profile locations, the schema and failure behavior.
 
 The workspace contains `okcolor-core` for device-independent color calculations
-and `okcolor-app` for zgui and platform integration. zgui is pinned to an exact
+and `okcolor-app` for zgui and platform integration. `okcolor-csp` contains the
+UI-independent companion protocol and bounded blocking socket session; see
+[CSP protocol](CSP_PROTOCOL.md) for its contracts and integration responsibilities. zgui is pinned to an exact
 revision in the workspace manifest; retain `Cargo.lock` when updating it.
 The winit backend is patched locally to request the no-redirection style
 at window creation; the renderer verifies the actual HWND before creating the

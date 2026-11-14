@@ -15,3 +15,12 @@ Martian Mono font, version 1.100
 Copyright 2020 The Martian Mono Project Authors (https://github.com/evilmartians/mono)
 Licensed under SIL Open Font License 1.1; see licenses/MartianMono-OFL.txt.
 The font file is distributed unchanged. Martian Grotesk is not distributed.
+
+The CSP companion protocol implementation uses the framing, QR/authentication
+constants and command schemas documented by chocolatkey/clipremote,
+Copyright (c) 2023 Henry Stark, under the MIT License.
+Reference revision: 582daf23132a892b46d75e24e9ec2e1e0caba0f0.
+See licenses/clipremote-MIT.txt and docs/CSP_PROTOCOL.md.
+
+The vendored zgui-runtime invalidates dependent caches after device recovery;
+see vendor/zgui-runtime/README.md for the modification and source revision.
