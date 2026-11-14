@@ -1,5 +1,6 @@
 use super::*;
 use windows_sys::Win32::Graphics::Gdi::ClientToScreen;
+use windows_sys::Win32::UI::Controls::WM_MOUSELEAVE;
 
 type Messages = RefCell<Vec<(u32, LPARAM)>>;
 struct TestWindow {
@@ -103,7 +104,7 @@ fn native_hit_test_uses_actual_layout_negative_screen_coordinates_and_invalidate
     let hook = unsafe { Hook::install(window.hwnd) }.unwrap();
     let center = window.screen_point(30, 20);
     assert_eq!(window.send(WM_NCHITTEST, 0, center), HTCLIENT as isize);
-    hook.update(Some([20.0, 10.0, 55.0, 40.0]));
+    hook.update([None, Some([20.0, 10.0, 55.0, 40.0]), None]);
     for (x, y, expected) in [
         (20, 10, HTMAXBUTTON),
         (54, 39, HTMAXBUTTON),
@@ -127,17 +128,17 @@ fn native_hit_test_uses_actual_layout_negative_screen_coordinates_and_invalidate
         };
         window.send(message, 0, &suggested as *const RECT as LPARAM);
         assert_eq!(window.send(WM_NCHITTEST, 0, center), HTCLIENT as isize);
-        hook.update(Some([20.0, 10.0, 55.0, 40.0]));
+        hook.update([None, Some([20.0, 10.0, 55.0, 40.0]), None]);
     }
     // Layout changes (including a new DPI) supply new physical pixel bounds.
-    hook.update(Some([40.0, 20.0, 110.0, 80.0]));
+    hook.update([None, Some([40.0, 20.0, 110.0, 80.0]), None]);
     assert_eq!(window.send(WM_NCHITTEST, 0, center), HTCLIENT as isize);
     assert_eq!(
         window.send(WM_NCHITTEST, 0, window.screen_point(80, 50)),
         HTMAXBUTTON as isize
     );
     // Fractional DPI must not round an outside pixel into the button.
-    hook.update(Some([20.25, 10.25, 55.25, 40.25]));
+    hook.update([None, Some([20.25, 10.25, 55.25, 40.25]), None]);
     for (x, y, expected) in [
         (20, 20, HTCLIENT),
         (21, 11, HTMAXBUTTON),
@@ -149,51 +150,102 @@ fn native_hit_test_uses_actual_layout_negative_screen_coordinates_and_invalidate
             expected as isize
         );
     }
-    hook.update(Some([f32::NAN, 0.0, 50.0, 20.0]));
+    hook.update([None, Some([f32::NAN, 0.0, 50.0, 20.0]), None]);
     assert_eq!(window.send(WM_NCHITTEST, 0, center), HTCLIENT as isize);
-    hook.update(Some([20.0, 10.0, 55.0, 40.0]));
+    hook.update([None, Some([20.0, 10.0, 55.0, 40.0]), None]);
     drop(hook);
     assert_eq!(window.send(WM_NCHITTEST, 0, center), HTCLIENT as isize);
 }
 
 #[test]
-fn native_caption_hover_and_click_forward_once_without_a_second_native_click() {
+fn native_caption_owns_three_gestures_and_queues_one_system_command() {
     let window = TestWindow::new();
     // SAFETY: window outlives the hook on this thread.
     let hook = unsafe { Hook::install(window.hwnd) }.unwrap();
-    hook.update(Some([20.0, 10.0, 55.0, 40.0]));
-    window.events();
-    let screen = window.screen_point(30, 20);
-    let client = pack_point(POINT { x: 30, y: 20 });
-    window.send(WM_NCMOUSEMOVE, HTMAXBUTTON as usize, screen);
+    hook.update([
+        Some([0.0, 10.0, 36.0, 41.0]),
+        Some([36.0, 10.0, 72.0, 41.0]),
+        Some([72.0, 10.0, 108.0, 41.0]),
+    ]);
+    let commands = || {
+        let mut commands = vec![];
+        let mut message = MSG::default();
+        // SAFETY: consume only queued system commands belonging to our hidden test HWND.
+        unsafe {
+            while PeekMessageW(
+                &mut message,
+                window.hwnd,
+                WM_SYSCOMMAND,
+                WM_SYSCOMMAND,
+                PM_REMOVE,
+            ) != 0
+            {
+                commands.push(message.wParam as u32);
+            }
+        }
+        commands
+    };
+    for (index, (hit_code, command)) in [
+        (HTMINBUTTON, SC_MINIMIZE),
+        (HTMAXBUTTON, SC_MAXIMIZE),
+        (HTCLOSE, SC_CLOSE),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let screen = window.screen_point(index as i32 * 36 + 18, 20);
+        assert_eq!(window.send(WM_NCHITTEST, 0, screen), hit_code as isize);
+        window.events();
+        window.send(WM_NCMOUSEMOVE, hit_code as usize, screen);
+        assert_eq!(hook.state.hovered.get(), Some(index));
+        assert_eq!(
+            window.events(),
+            [(WM_NCMOUSEMOVE, screen)],
+            "no synthetic client hover"
+        );
+        window.send(WM_NCLBUTTONDOWN, hit_code as usize, screen);
+        // SAFETY: scalar thread-local capture query.
+        assert_eq!(unsafe { GetCapture() }, window.hwnd);
+        assert_eq!(hook.state.pressed.get(), Some(index));
+        window.send(WM_MOUSEMOVE, 0, pack_point(POINT { x: 120, y: 80 }));
+        assert_eq!(hook.state.hovered.get(), None);
+        window.send(WM_LBUTTONUP, 0, pack_point(POINT { x: 120, y: 80 }));
+        assert!(commands().is_empty(), "outside release must cancel");
+        assert_eq!(hook.state.pressed.get(), None);
+        window.send(WM_NCLBUTTONDOWN, hit_code as usize, screen);
+        window.send(WM_NCLBUTTONUP, hit_code as usize, screen);
+        assert_eq!(commands(), [command]);
+        assert!(
+            !window
+                .events()
+                .iter()
+                .any(|(msg, _)| matches!(*msg, WM_LBUTTONDOWN | WM_LBUTTONUP)),
+            "zgui must not get a second click target"
+        );
+        window.send(WM_NCLBUTTONDOWN, hit_code as usize, screen);
+        window.send(WM_CANCELMODE, 0, 0);
+        window.send(WM_NCLBUTTONUP, hit_code as usize, screen);
+        assert!(commands().is_empty());
+    }
+    // SAFETY: alter only our hidden test HWND's capabilities.
+    unsafe {
+        let style = GetWindowLongPtrW(window.hwnd, GWL_STYLE);
+        SetWindowLongPtrW(
+            window.hwnd,
+            GWL_STYLE,
+            style & !(WS_MINIMIZEBOX | WS_MAXIMIZEBOX) as isize,
+        );
+    }
     assert_eq!(
-        window.events(),
-        [(WM_MOUSEMOVE, client), (WM_NCMOUSEMOVE, screen)]
+        window.send(WM_NCHITTEST, 0, window.screen_point(18, 20)),
+        HTCLIENT as isize
     );
-    window.send(WM_NCLBUTTONDOWN, HTMAXBUTTON as usize, screen);
-    window.send(WM_NCLBUTTONUP, HTMAXBUTTON as usize, screen);
     assert_eq!(
-        window.events(),
-        [
-            (WM_MOUSEMOVE, client),
-            (WM_LBUTTONDOWN, client),
-            (WM_MOUSEMOVE, client),
-            (WM_LBUTTONUP, client)
-        ]
+        window.send(WM_NCHITTEST, 0, window.screen_point(54, 20)),
+        HTCLIENT as isize
     );
-    window.send(WM_NCMOUSELEAVE, 0, 0);
-    assert_eq!(window.events(), [(WM_MOUSELEAVE, 0), (WM_NCMOUSELEAVE, 0)]);
-    window.send(WM_NCMOUSEMOVE, HTMAXBUTTON as usize, screen);
-    window.events();
-    window.send(WM_MOUSEMOVE, 0, client);
-    window.send(WM_NCMOUSELEAVE, 0, 0);
     assert_eq!(
-        window.events(),
-        [(WM_MOUSEMOVE, client), (WM_NCMOUSELEAVE, 0)]
+        window.send(WM_NCHITTEST, 0, window.screen_point(90, 20)),
+        HTCLOSE as isize
     );
-    window.send(WM_NCLBUTTONDOWN, HTMAXBUTTON as usize, screen);
-    window.send(WM_CANCELMODE, 0, 0);
-    window.events();
-    window.send(WM_NCLBUTTONUP, HTMAXBUTTON as usize, screen);
-    assert!(!window.events().iter().any(|(msg, _)| *msg == WM_LBUTTONUP));
 }

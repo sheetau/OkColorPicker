@@ -43,6 +43,9 @@ file aside. Future schema versions must define migration explicitly.
 Only committed colors and preferences are submitted to the writer. During a
 drag, preference changes still save the last committed color. Undo/redo changes
 the saved current color while leaving recent-color ordering intact.
+Numeric wheel adjustments likewise save the current color without changing
+recents. CSP gesture samples remain previews until release; a disconnect, local
+takeover or normal shutdown commits the last received sample as one edit.
 
 One background worker keeps the latest pending snapshot. It sleeps when idle,
 does not perform disk I/O on the drawing thread, and skips unchanged snapshots.

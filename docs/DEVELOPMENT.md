@@ -126,10 +126,16 @@ their READMEs describe the limited changes. The
 `FrameOutcome::Recovered`; replaying old chunks alone cannot restore lost textures.
 See [Color contracts](COLOR_CONTRACT.md) for input, output, gamut and history semantics.
 
-The Windows caption bridge exposes the painted maximize button as `HTMAXBUTTON`
-for Snap layouts. It uses the node's physical bounds from each completed frame,
-invalidates them on resize/DPI changes, and forwards button gestures to zgui so
-there is only one maximize/restore action. Native hover still reaches Windows.
+The Windows caption bridge exposes the painted controls as `HTMINBUTTON`,
+`HTMAXBUTTON` and `HTCLOSE`. It uses physical bounds from each completed frame
+and invalidates them on resize/DPI changes. Win32 owns capture, outside-release
+cancellation and queued system commands; zgui paints the shared native state
+without a second pointer target or extra keyboard focus stops. Native hover still
+reaches Windows for Snap layouts. The 36-by-31 CSS-pixel controls sit in a 32-pixel
+title bar and use the installed Segoe Fluent Icons on Windows 11, or Segoe MDL2
+Assets on older Windows. The four minimize/maximize/restore/close glyphs and
+hover/pressed colors follow towavue's caption contract; no replacement symbols
+are drawn and no Windows font files are distributed.
 The MSVC build embeds a Common Controls v6 manifest for the subclassing APIs.
 
 Martian Mono is embedded under OFL. Martian Grotesk is an optional user-installed
@@ -195,7 +201,7 @@ Native Windows validation must additionally cover IME, clipboard, DPI changes,
 resize, minimize/restore, window movement and device loss. Headless pixel tests
 do not establish those behaviors. Measure performance with a release build.
 On Windows, the regular test suite also creates hidden native windows to verify
-composition styles, caption message forwarding, negative screen coordinates,
+composition styles, native caption commands, negative screen coordinates,
 and stale-layout rejection. Native tests do not establish the shell's Snap flyout,
 hardware input, or interactive movement and resizing; verify those separately.
 

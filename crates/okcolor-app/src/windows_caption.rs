@@ -1,4 +1,5 @@
-//! Expose the painted maximize button to Windows Snap while zgui owns its click.
+//! Win32 owns caption gestures; zgui paints the same Segoe controls as towavue.
+use crate::window_frame::CaptionVisual;
 use raw_window_handle::RawWindowHandle;
 use std::{
     cell::{Cell, RefCell},
@@ -11,10 +12,10 @@ use windows_sys::Win32::{
     Graphics::Gdi::ScreenToClient,
     System::Threading::GetCurrentThreadId,
     UI::{
-        Controls::WM_MOUSELEAVE,
         HiDpi::GetDpiForWindow,
         Input::KeyboardAndMouse::{
-            IsWindowEnabled, TME_LEAVE, TME_NONCLIENT, TRACKMOUSEEVENT, TrackMouseEvent,
+            GetCapture, IsWindowEnabled, ReleaseCapture, SetCapture, TME_LEAVE, TME_NONCLIENT,
+            TRACKMOUSEEVENT, TrackMouseEvent,
         },
         Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass},
         WindowsAndMessaging::*,
@@ -22,7 +23,7 @@ use windows_sys::Win32::{
 };
 use zgui::{
     platform::GpuSurface,
-    prelude::NodeRef,
+    prelude::{GetUntracked, NodeRef, RwSignal, Set},
     runtime::{AppError, FrameProbe, RendererFactory, Window},
 };
 
@@ -30,7 +31,8 @@ use zgui::{
 pub struct CaptionBridge(Rc<BridgeState>);
 
 struct BridgeState {
-    button: Cell<Option<NodeRef>>,
+    buttons: Cell<Option<[NodeRef; 3]>>,
+    visual: Cell<Option<RwSignal<CaptionVisual>>>,
     native: RefCell<Option<NativeCaption>>,
     frames: Cell<u64>,
     trace: bool,
@@ -45,15 +47,17 @@ struct NativeCaption {
 impl CaptionBridge {
     pub fn new(trace: bool) -> Self {
         Self(Rc::new(BridgeState {
-            button: Cell::new(None),
+            buttons: Cell::new(None),
+            visual: Cell::new(None),
             native: RefCell::new(None),
             frames: Cell::new(0),
             trace,
         }))
     }
 
-    pub fn bind_maximize(&self, button: NodeRef) {
-        self.0.button.set(Some(button));
+    pub fn bind_controls(&self, buttons: [NodeRef; 3], visual: RwSignal<CaptionVisual>) {
+        self.0.buttons.set(Some(buttons));
+        self.0.visual.set(Some(visual));
     }
 
     pub fn wrap_renderer(&self, mut renderer: RendererFactory) -> RendererFactory {
@@ -98,20 +102,25 @@ fn native_error(error: impl std::fmt::Display) -> AppError {
 impl FrameProbe for CaptionBridge {
     fn frame_ended(&self, _: &Window) {
         if let Some(native) = self.0.native.borrow().as_ref() {
-            let bounds = self
+            let rects = self
                 .0
-                .button
+                .buttons
                 .get()
-                .and_then(|button| button.window_bounds());
-            let rect = bounds.map(|bounds| {
-                [
-                    bounds.origin.x.0,
-                    bounds.origin.y.0,
-                    bounds.origin.x.0 + bounds.size.width.0,
-                    bounds.origin.y.0 + bounds.size.height.0,
-                ]
-            });
-            native.hook.update(rect);
+                .map(|buttons| {
+                    buttons.map(|button| {
+                        button.window_bounds().map(|b| {
+                            [
+                                b.origin.x.0,
+                                b.origin.y.0,
+                                b.origin.x.0 + b.size.width.0,
+                                b.origin.y.0 + b.size.height.0,
+                            ]
+                        })
+                    })
+                })
+                .unwrap_or([None; 3]);
+            native.hook.state.visual.set(self.0.visual.get());
+            native.hook.update(rects);
         }
         if self.0.trace {
             let frames = self.0.frames.get() + 1;
@@ -123,7 +132,7 @@ impl FrameProbe for CaptionBridge {
 
 #[derive(Clone, Copy)]
 struct Layout {
-    rect: [f32; 4],
+    rects: [Option<[f32; 4]>; 3],
     extent: [i32; 2],
     dpi: u32,
     maximized: bool,
@@ -132,8 +141,9 @@ struct Layout {
 #[derive(Default)]
 struct State {
     layout: Cell<Option<Layout>>,
-    hovered: Cell<bool>,
-    pressed: Cell<bool>,
+    hovered: Cell<Option<usize>>,
+    pressed: Cell<Option<usize>>,
+    visual: Cell<Option<RwSignal<CaptionVisual>>>,
     alive: Cell<bool>,
 }
 
@@ -169,27 +179,26 @@ impl Hook {
         }
     }
 
-    fn update(&self, bounds: Option<[f32; 4]>) {
+    fn update(&self, bounds: [Option<[f32; 4]>; 3]) {
         // Never use guessed button coordinates while layout is missing or stale.
-        let layout = bounds
-            .filter(|b| b.iter().all(|v| v.is_finite()))
-            .filter(|b| b[2] > b[0] && b[3] > b[1])
-            .and_then(|bounds| {
-                // SAFETY: Hook's owner retains the same-thread native window.
-                unsafe { window_state(self.hwnd) }.map(|(extent, dpi, maximized)| Layout {
-                    rect: bounds,
-                    extent,
-                    dpi,
-                    maximized,
-                })
-            });
+        let rects = bounds
+            .map(|b| b.filter(|b| b.iter().all(|v| v.is_finite()) && b[2] > b[0] && b[3] > b[1]));
+        // SAFETY: Hook's owner retains the same-thread native window.
+        let layout = unsafe { window_state(self.hwnd) }.map(|(extent, dpi, maximized)| Layout {
+            rects,
+            extent,
+            dpi,
+            maximized,
+        });
         self.state.layout.set(layout);
+        self.state.publish(self.hwnd);
     }
 }
 
 impl Drop for Hook {
     fn drop(&mut self) {
         if self.state.alive.replace(false) {
+            self.state.clear(self.hwnd);
             // SAFETY: owner retains the HWND on this thread; detach before freeing State.
             unsafe {
                 RemoveWindowSubclass(self.hwnd, Some(caption_proc), SUBCLASS_ID);
@@ -212,23 +221,68 @@ unsafe fn window_state(hwnd: HWND) -> Option<([i32; 2], u32, bool)> {
     }
 }
 
-unsafe fn hit(hwnd: HWND, state: &State, point: POINT) -> bool {
-    let Some(layout) = state.layout.get() else {
-        return false;
-    };
+unsafe fn hit(hwnd: HWND, state: &State, point: POINT) -> Option<usize> {
+    let layout = state.layout.get()?;
     // SAFETY: synchronous scalar queries on the callback's HWND.
     unsafe {
-        if IsWindowEnabled(hwnd) == 0
-            || GetWindowLongPtrW(hwnd, GWL_STYLE) as u32 & WS_MAXIMIZEBOX == 0
-            || window_state(hwnd) != Some((layout.extent, layout.dpi, layout.maximized))
-        {
-            return false;
+        if window_state(hwnd) != Some((layout.extent, layout.dpi, layout.maximized)) {
+            return None;
         }
     }
-    point.x as f32 >= layout.rect[0]
-        && (point.x as f32) < layout.rect[2]
-        && point.y as f32 >= layout.rect[1]
-        && (point.y as f32) < layout.rect[3]
+    layout.rects.iter().enumerate().find_map(|(index, rect)| {
+        let rect = rect.as_ref()?;
+        (enabled(hwnd, index)
+            && point.x as f32 >= rect[0]
+            && (point.x as f32) < rect[2]
+            && point.y as f32 >= rect[1]
+            && (point.y as f32) < rect[3])
+            .then_some(index)
+    })
+}
+
+fn enabled(hwnd: HWND, index: usize) -> bool {
+    // SAFETY: all callers retain the same-thread HWND through the hook callback.
+    unsafe {
+        if IsWindowEnabled(hwnd) == 0 {
+            return false;
+        }
+        let style = GetWindowLongPtrW(hwnd, GWL_STYLE) as u32;
+        match index {
+            0 => style & WS_MINIMIZEBOX != 0,
+            1 => style & WS_MAXIMIZEBOX != 0,
+            2 => GetClassLongPtrW(hwnd, GCL_STYLE) & CS_NOCLOSE as usize == 0,
+            _ => false,
+        }
+    }
+}
+
+impl State {
+    fn publish(&self, hwnd: HWND) {
+        if let Some(signal) = self.visual.get() {
+            // SAFETY: scalar query of the hook's retained HWND.
+            let value = CaptionVisual {
+                hovered: self.hovered.get(),
+                pressed: self.pressed.get(),
+                enabled: std::array::from_fn(|i| enabled(hwnd, i)),
+                maximized: unsafe { IsZoomed(hwnd) != 0 },
+            };
+            if signal.try_get_untracked().is_some_and(|old| old != value) {
+                signal.try_set(value);
+            }
+        }
+    }
+    fn clear(&self, hwnd: HWND) {
+        self.hovered.set(None);
+        if self.pressed.take().is_some() {
+            // SAFETY: release only this window's capture; callbacks may reenter through Cells.
+            unsafe {
+                if GetCapture() == hwnd {
+                    ReleaseCapture();
+                }
+            }
+        }
+        self.publish(hwnd);
+    }
 }
 
 fn unpack_point(lparam: LPARAM) -> POINT {
@@ -238,6 +292,7 @@ fn unpack_point(lparam: LPARAM) -> POINT {
     }
 }
 
+#[cfg(test)]
 fn pack_point(point: POINT) -> LPARAM {
     (point.x as u16 as u32 | ((point.y as u16 as u32) << 16)) as LPARAM
 }
@@ -250,11 +305,12 @@ unsafe extern "system" fn caption_proc(
     _: usize,
     data: usize,
 ) -> LRESULT {
-    // SAFETY: Hook retains the boxed State until subclass removal. No mutable
-    // borrow spans a forwarded message; callbacks may reenter through winit.
+    // SAFETY: Hook retains State until subclass removal. Only Cells span reentrant
+    // native calls; actions are queued after capture is released.
     unsafe {
         let state = &*(data as *const State);
         if message == WM_NCDESTROY {
+            state.clear(hwnd);
             state.alive.set(false);
             RemoveWindowSubclass(hwnd, Some(caption_proc), SUBCLASS_ID);
             return DefSubclassProc(hwnd, message, wparam, lparam);
@@ -264,49 +320,84 @@ unsafe extern "system" fn caption_proc(
         }
         if matches!(
             message,
-            WM_CANCELMODE | WM_CAPTURECHANGED | WM_KILLFOCUS | WM_LBUTTONUP
+            WM_CANCELMODE | WM_CAPTURECHANGED | WM_KILLFOCUS | WM_SIZE | WM_DPICHANGED | WM_ENABLE
         ) {
-            state.pressed.set(false);
+            state.clear(hwnd);
         }
-        if message == WM_MOUSEMOVE {
-            // A later non-client leave must not clear a newer client hover.
-            state.hovered.set(false);
-        }
-        if message == WM_NCMOUSELEAVE && state.hovered.replace(false) {
-            DefSubclassProc(hwnd, WM_MOUSELEAVE, 0, 0);
+        if message == WM_NCMOUSELEAVE {
+            state.hovered.set(None);
+            state.publish(hwnd);
         }
         if matches!(
             message,
-            WM_NCHITTEST | WM_NCMOUSEMOVE | WM_NCLBUTTONDOWN | WM_NCLBUTTONDBLCLK | WM_NCLBUTTONUP
+            WM_NCHITTEST
+                | WM_NCMOUSEMOVE
+                | WM_NCLBUTTONDOWN
+                | WM_NCLBUTTONDBLCLK
+                | WM_NCLBUTTONUP
+                | WM_MOUSEMOVE
+                | WM_LBUTTONUP
         ) {
             let mut point = unpack_point(lparam);
-            if ScreenToClient(hwnd, &mut point) != 0 {
-                let over_button = hit(hwnd, state, point);
-                if message == WM_NCHITTEST && over_button {
-                    return HTMAXBUTTON as LRESULT;
+            if matches!(message, WM_MOUSEMOVE | WM_LBUTTONUP)
+                || ScreenToClient(hwnd, &mut point) != 0
+            {
+                let over = hit(hwnd, state, point);
+                if message == WM_NCHITTEST
+                    && let Some(index) = over
+                {
+                    return [HTMINBUTTON, HTMAXBUTTON, HTCLOSE][index] as LRESULT;
                 }
-                if message == WM_NCMOUSEMOVE && over_button {
-                    if !state.hovered.replace(true) {
-                        TrackMouseEvent(&mut TRACKMOUSEEVENT {
-                            cbSize: std::mem::size_of::<TRACKMOUSEEVENT>() as u32,
-                            dwFlags: TME_NONCLIENT | TME_LEAVE,
-                            hwndTrack: hwnd,
-                            dwHoverTime: 0,
-                        });
+                if message == WM_NCMOUSEMOVE {
+                    state.hovered.set(over);
+                    state.publish(hwnd);
+                    TrackMouseEvent(&mut TRACKMOUSEEVENT {
+                        cbSize: std::mem::size_of::<TRACKMOUSEEVENT>() as u32,
+                        dwFlags: TME_NONCLIENT | TME_LEAVE,
+                        hwndTrack: hwnd,
+                        dwHoverTime: 0,
+                    });
+                    // Default non-client processing preserves Windows Snap hover.
+                }
+                if over.is_some() && matches!(message, WM_NCLBUTTONDOWN | WM_NCLBUTTONDBLCLK) {
+                    state.pressed.set(over);
+                    state.hovered.set(over);
+                    SetForegroundWindow(hwnd);
+                    SetCapture(hwnd);
+                    state.publish(hwnd);
+                    return 0;
+                }
+                if message == WM_MOUSEMOVE {
+                    let captured = state.pressed.get().is_some();
+                    state.hovered.set(if captured { over } else { None });
+                    state.publish(hwnd);
+                    if captured {
+                        return 0;
                     }
-                    DefSubclassProc(hwnd, WM_MOUSEMOVE, 0, pack_point(point));
-                    // Windows still receives native hover for the Snap flyout.
                 }
-                if over_button && matches!(message, WM_NCLBUTTONDOWN | WM_NCLBUTTONDBLCLK) {
-                    state.pressed.set(true);
-                    DefSubclassProc(hwnd, WM_MOUSEMOVE, 0, pack_point(point));
-                    // Winit captures the mouse and zgui runs the existing button
-                    // gesture. Do not also invoke the default native maximize.
-                    return DefSubclassProc(hwnd, WM_LBUTTONDOWN, 0, pack_point(point));
-                }
-                if message == WM_NCLBUTTONUP && state.pressed.replace(false) {
-                    DefSubclassProc(hwnd, WM_MOUSEMOVE, 0, pack_point(point));
-                    return DefSubclassProc(hwnd, WM_LBUTTONUP, 0, pack_point(point));
+                if matches!(message, WM_NCLBUTTONUP | WM_LBUTTONUP)
+                    && let Some(pressed) = state.pressed.take()
+                {
+                    if GetCapture() == hwnd {
+                        ReleaseCapture();
+                    }
+                    state.hovered.set(over);
+                    state.publish(hwnd);
+                    if over == Some(pressed) && enabled(hwnd, pressed) {
+                        let command = match pressed {
+                            0 => SC_MINIMIZE,
+                            1 if IsZoomed(hwnd) != 0 => SC_RESTORE,
+                            1 => SC_MAXIMIZE,
+                            _ => SC_CLOSE,
+                        };
+                        if PostMessageW(hwnd, WM_SYSCOMMAND, command as WPARAM, 0) == 0 {
+                            eprintln!(
+                                "Cannot queue caption action: {}",
+                                io::Error::last_os_error()
+                            );
+                        }
+                    }
+                    return 0;
                 }
             }
         }

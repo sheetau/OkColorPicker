@@ -94,7 +94,7 @@ fn run() -> Result<(), zgui::Error> {
         }
         let refs = PickerRefs::default();
         #[cfg(target_os = "windows")]
-        caption.bind_maximize(refs.maximize);
+        caption.bind_controls([refs.minimize, refs.maximize, refs.close], refs.caption);
         view! { Picker(model=model,refs=refs) }
     })
 }

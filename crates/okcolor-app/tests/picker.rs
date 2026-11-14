@@ -258,6 +258,51 @@ fn mounted_picker_draws_and_drag_is_one_undo() {
                 let mut harness = Harness::new(handler);
                 harness.settle(64);
                 let (model, refs): (PickerModel, PickerRefs) = state.get().expect("mounted model");
+                for node in [refs.minimize, refs.maximize, refs.close] {
+                    let bounds = node.window_bounds().unwrap();
+                    assert!((bounds.size.width.0 - 36.0).abs() < 0.01);
+                    assert!((bounds.size.height.0 - 31.0).abs() < 0.01);
+                }
+                for (index, pressed, expected) in [
+                    (0, false, [0x16, 0x16, 0x16]), (0, true, [0x1f, 0x1f, 0x1f]),
+                    (2, false, [0xe8, 0x11, 0x20]), (2, true, [0xba, 0x0e, 0x1a]),
+                ] {
+                    refs.caption.set(okcolor_app::window_frame::CaptionVisual {
+                        hovered: Some(index), pressed: pressed.then_some(index), maximized: pressed,
+                        ..Default::default()
+                    });
+                    harness.settle(32);
+                    let node = [refs.minimize, refs.maximize, refs.close][index];
+                    let bounds = node.window_bounds().unwrap();
+                    let frames = frames.lock().unwrap();
+                    let pixels = frames.last().unwrap();
+                    let offset = ((bounds.origin.y.0 as usize + 3) * 330 + bounds.origin.x.0 as usize + 3) * 4;
+                    for (actual, expected) in pixels.bytes()[offset..offset + 3].iter().zip(expected) {
+                        assert!(actual.abs_diff(expected) <= 1, "caption background {actual} != {expected}");
+                    }
+                    #[cfg(target_os="windows")]
+                    assert_eq!(refs.maximize.text_content(), if pressed {"\u{e923}"} else {"\u{e922}"});
+                }
+                refs.caption.set(Default::default());
+                harness.settle(32);
+                #[cfg(target_os="windows")]
+                {
+                    let frames = frames.lock().unwrap();
+                    let pixels = frames.last().unwrap().bytes();
+                    for node in [refs.minimize,refs.maximize,refs.close] {
+                        let bounds = node.window_bounds().unwrap();
+                        let (x,y) = (bounds.origin.x.0 as usize,bounds.origin.y.0 as usize);
+                        let mut ink = vec![];
+                        for dy in 0..31 { for dx in 0..36 {
+                            let offset = ((y+dy)*330+x+dx)*4;
+                            if pixels[offset..offset+3].iter().all(|v| *v>150) { ink.push((dx,dy)); }
+                        }}
+                        assert!(!ink.is_empty(), "installed Segoe caption glyph must be painted");
+                        let center_x = (ink.iter().map(|p|p.0).min().unwrap()+ink.iter().map(|p|p.0).max().unwrap()) as f32/2.0;
+                        let center_y = (ink.iter().map(|p|p.1).min().unwrap()+ink.iter().map(|p|p.1).max().unwrap()) as f32/2.0;
+                        assert!((center_x-17.5).abs()<=2.0 && (center_y-15.0).abs()<=2.0,"caption glyph is not centered: {center_x},{center_y}");
+                    }
+                }
                 let before = model.current();
                 let saved_before_status = model.saved_state_untracked();
                 for status in [

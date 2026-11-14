@@ -96,7 +96,7 @@ impl FrameProbe for Probe {
                     assert_eq!(
                         GetCapture(),
                         hwnd,
-                        "Winit must capture the translated press"
+                        "The native caption must capture its own press"
                     );
                     // Releasing outside the button must cancel the first gesture.
                     let release = if cancel {
@@ -201,7 +201,7 @@ fn painted_native_maximize_button_round_trips_through_winit_and_zgui() {
             },
             move || {
                 let refs = PickerRefs::default();
-                caption.bind_maximize(refs.maximize);
+                caption.bind_controls([refs.minimize, refs.maximize, refs.close], refs.caption);
                 button.set(Some(refs.maximize));
                 let model = PickerModel::default();
                 display.bind(model.display);

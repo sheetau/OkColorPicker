@@ -13,6 +13,9 @@ pub struct PickerRefs {
     pub csp_pull: NodeRef,
     pub csp_send: NodeRef,
     pub maximize: NodeRef,
+    pub minimize: NodeRef,
+    pub close: NodeRef,
+    pub caption: RwSignal<crate::window_frame::CaptionVisual>,
     pub recents: NodeRef,
     pub swatches: [NodeRef; 2],
     pub slice: NodeRef,
@@ -27,6 +30,9 @@ impl Default for PickerRefs {
             csp_pull: NodeRef::new(),
             csp_send: NodeRef::new(),
             maximize: NodeRef::new(),
+            minimize: NodeRef::new(),
+            close: NodeRef::new(),
+            caption: RwSignal::new(crate::window_frame::CaptionVisual::default()),
             recents: NodeRef::new(),
             swatches: std::array::from_fn(|_| NodeRef::new()),
             slice: NodeRef::new(),
@@ -74,7 +80,7 @@ pub fn Picker(model: PickerModel, refs: PickerRefs) -> impl IntoView {
     };
     view! {
         column(class="app",on:key_down=shortcut) {
-            Titlebar(maximize=refs.maximize)
+            Titlebar(refs=refs)
             column(class="body") {
                 RecentColors(model=model,node=refs.recents)
                 row(class="options") {
@@ -283,7 +289,7 @@ fn dismiss_menu(open: RwSignal<bool>, popup: NodeRef, trigger: NodeRef) {
 }
 
 #[component]
-fn Titlebar(maximize: NodeRef) -> impl IntoView {
+fn Titlebar(refs: PickerRefs) -> impl IntoView {
     let window = use_window();
     let help = RwSignal::new(false);
     let popup = NodeRef::new();
@@ -299,22 +305,9 @@ fn Titlebar(maximize: NodeRef) -> impl IntoView {
                 on:click=move |_|help.update(|v|*v = !*v)) {"≡"}
             text(class="title") {"OkColorPicker"}
             spacer()
-            control(class="window-button",
-                tabindex=Focus::Sequential,
-                a11y:label="Minimize",
-                on:pointer_down=window.no_drag_handler(),
-                on:click={let w=window.clone();move |_|w.minimize()}) {"−"}
-            control(class="window-button",
-                node_ref=maximize,
-                tabindex=Focus::Sequential,
-                a11y:label="Maximize or restore",
-                on:pointer_down=window.no_drag_handler(),
-                on:click={let w=window.clone();move |_|w.toggle_maximized()}) {"□"}
-            control(class="window-button close",
-                tabindex=Focus::Sequential,
-                a11y:label="Close",
-                on:pointer_down=window.no_drag_handler(),
-                on:click={let w=window.clone();move |_|w.close()}) {"×"}
+            CaptionControl(index=0,node=refs.minimize,visual=refs.caption)
+            CaptionControl(index=1,node=refs.maximize,visual=refs.caption)
+            CaptionControl(index=2,node=refs.close,visual=refs.caption)
             if move ||help.get() {
                 column(class="help-menu",node_ref=popup,on:pointer_down=window.no_drag_handler()) {
                     text {"Ctrl C / V · Copy / paste color"}
@@ -325,6 +318,26 @@ fn Titlebar(maximize: NodeRef) -> impl IntoView {
                     text {"Enter · Commit   Escape · Cancel drag"}
                 }
             }
+        }
+    }
+}
+
+#[component]
+fn CaptionControl(
+    index: usize,
+    node: NodeRef,
+    visual: RwSignal<crate::window_frame::CaptionVisual>,
+) -> impl IntoView {
+    let window = use_window();
+    view! {
+        control(class="caption-control",node_ref=node,
+            class:caption_close=index==2,
+            class:caption_hover=move ||{let state=visual.get();state.enabled[index] && state.hovered==Some(index)},
+            class:caption_pressed=move ||{let state=visual.get();state.enabled[index] && state.pressed==Some(index)},
+            disabled=move ||!visual.get().enabled[index],
+            a11y:label=move ||match index {0=>"Minimize",1 if visual.get().maximized=>"Restore",1=>"Maximize",_=>"Close"},
+            on:click=move |_|match index {0=>window.minimize(),1=>window.toggle_maximized(),_=>window.close()}) {
+            {move ||crate::window_frame::caption_glyph(index,visual.get().maximized)}
         }
     }
 }
