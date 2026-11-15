@@ -29,3 +29,6 @@ pub mod windows_display;
 mod windows_display_watch;
 #[cfg(target_os = "windows")]
 mod windows_qr;
+
+mod tools_ui;
+pub mod workspace;

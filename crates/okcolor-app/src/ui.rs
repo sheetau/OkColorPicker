@@ -3,12 +3,17 @@ use crate::{
     surface::{ColorControlProps, ColorSwatchProps, SurfaceKind},
     window_frame::ResizeEdgesProps,
 };
+use crate::{tools_ui::ToolPageProps, workspace::Tab};
 use okcolor_core::{ColorFormat, Gamut, GamutMapping, Oklch};
 use zgui::{geom::CssPx, prelude::*, reactive::RenderEffect, vocab::ScrollPhase};
 
 /// Stable handles also let application tests exercise the actual mounted controls.
 #[derive(Clone, Copy)]
 pub struct PickerRefs {
+    pub tool_page: NodeRef,
+    pub title: NodeRef,
+    pub tabs: [NodeRef; 3],
+    pub tools: [NodeRef; 8],
     pub menu: NodeRef,
     pub gamut_toggles: [NodeRef; 2],
     pub companion: NodeRef,
@@ -29,6 +34,10 @@ pub struct PickerRefs {
 impl Default for PickerRefs {
     fn default() -> Self {
         Self {
+            tool_page: NodeRef::new(),
+            title: NodeRef::new(),
+            tabs: std::array::from_fn(|_| NodeRef::new()),
+            tools: std::array::from_fn(|_| NodeRef::new()),
             menu: NodeRef::new(),
             gamut_toggles: std::array::from_fn(|_| NodeRef::new()),
             companion: NodeRef::new(),
@@ -53,7 +62,32 @@ impl Default for PickerRefs {
 pub fn Picker(model: PickerModel, refs: PickerRefs) -> impl IntoView {
     let clipboard = use_clipboard();
     let shortcut = move |cx: &mut EventCx<'_, events::KeyDown>| {
-        if model.editing_text.get_untracked() || !cx.modifiers.contains(Modifiers::CONTROL) {
+        if !cx.modifiers.contains(Modifiers::CONTROL) {
+            return;
+        }
+        let tab = if cx.key == Key::Named(NamedKey::Tab) {
+            Some(
+                model
+                    .tab
+                    .get_untracked()
+                    .next(cx.modifiers.contains(Modifiers::SHIFT)),
+            )
+        } else {
+            match cx.key.as_str() {
+                Some("1") => Some(Tab::Picker),
+                Some("2") => Some(Tab::Swatches),
+                Some("3") => Some(Tab::Harmonies),
+                Some("4") => Some(Tab::Apca),
+                _ => None,
+            }
+        };
+        if let Some(tab) = tab {
+            switch_tab(model, refs, tab);
+            cx.prevent_default();
+            cx.stop_propagation();
+            return;
+        }
+        if model.editing_text.get_untracked() {
             return;
         }
         let Some(key) = cx.key.as_str() else {
@@ -88,6 +122,8 @@ pub fn Picker(model: PickerModel, refs: PickerRefs) -> impl IntoView {
         column(class="app",on:key_down=shortcut) {
             Titlebar(model=model,refs=refs)
             column(class="body") {
+                if move ||model.tab.get()==Tab::Picker {
+                column(class="picker-page") {
                 RecentColors(model=model,node=refs.recents)
                 row(class="options") {
                     spacer()
@@ -153,6 +189,8 @@ pub fn Picker(model: PickerModel, refs: PickerRefs) -> impl IntoView {
                     CodeField(model=model,node=refs.codes[0],primary=true)
                     CodeField(model=model,node=refs.codes[1],primary=false)
                 }
+                }
+                } else {ToolPage(model=model,refs=refs)}
                 column(class="status") {
                     row {
                         text {{move ||model.display.get().label()}}
@@ -198,7 +236,7 @@ pub fn Picker(model: PickerModel, refs: PickerRefs) -> impl IntoView {
 }
 
 #[component]
-fn RecentColors(model: PickerModel, node: NodeRef) -> impl IntoView {
+pub(crate) fn RecentColors(model: PickerModel, node: NodeRef) -> impl IntoView {
     use zgui::geom::{CssPx, DevicePx, Point};
     let position = node.observe_scroll();
     let scale = use_window().scale();
@@ -250,7 +288,7 @@ fn RecentColors(model: PickerModel, node: NodeRef) -> impl IntoView {
 // controls. Remount only this two-swatch branch when selection changes; ordinary
 // color edits still update the existing paint handles without rebuilding the view.
 #[component]
-fn SlotSwatch(model: PickerModel, refs: PickerRefs, index: usize) -> impl IntoView {
+pub(crate) fn SlotSwatch(model: PickerModel, refs: PickerRefs, index: usize) -> impl IntoView {
     let slot = index;
     view! {
         control(class="swatch",class:main=slot==0,class:sub=slot==1,
@@ -304,7 +342,13 @@ fn Titlebar(model: PickerModel, refs: PickerRefs) -> impl IntoView {
                 a11y:label="Picker settings and shortcuts",
                 on:pointer_down=window.no_drag_handler(),
                 on:click=move |_|help.update(|v|*v = !*v)) {"≡"}
-            text(class="title") {"OkColorPicker"}
+            control(class="title",node_ref=refs.title,tabindex=Focus::Sequential,a11y:label="Picker · Ctrl+1",
+                on:pointer_down=window.no_drag_handler(),on:click=move |_|switch_tab(model,refs,Tab::Picker)) {"OkColorPicker"}
+            for entry in move || [(0,Tab::Swatches,"Swatches · Ctrl+2","S"),(1,Tab::Harmonies,"Harmonies · Ctrl+3","H"),(2,Tab::Apca,"APCA · Ctrl+4","A")],key=|entry:&(usize,Tab,&str,&str)|entry.0 {
+                control(class="tab-button",node_ref=refs.tabs[entry.0],tabindex=Focus::Sequential,a11y:label=entry.2,
+                    class:active=move ||model.tab.get()==entry.1,on:pointer_down=use_window().no_drag_handler(),
+                    on:click=move |_|switch_tab(model,refs,entry.1)) {{entry.3}}
+            }
             spacer()
             CaptionControl(index=0,node=refs.minimize,visual=refs.caption)
             CaptionControl(index=1,node=refs.maximize,visual=refs.caption)
@@ -317,6 +361,8 @@ fn Titlebar(model: PickerModel, refs: PickerRefs) -> impl IntoView {
                     control(node_ref=refs.gamut_toggles[1],tabindex=Focus::Sequential,
                         a11y:label="Toggle Rec.2020",class:selected=move ||model.show_rec2020.get(),
                         on:click=move |_|model.toggle_gamut(Gamut::Rec2020)) {{move ||if model.show_rec2020.get() {"✓ Rec.2020"} else {"Rec.2020"}}}
+                    text {"Ctrl 1–4 · Picker / Swatches / Harmonies / APCA"}
+                    text {"Ctrl Tab / Shift Tab · Next / previous tab"}
                     text {"Ctrl C / V · Copy / paste color"}
                     text {"Ctrl Z / Shift Z · Undo / redo"}
                     text {"Arrow keys · Adjust a focused control"}
@@ -648,3 +694,13 @@ fn CodeField(model: PickerModel, node: NodeRef, primary: bool) -> impl IntoView 
 }
 
 pub const STYLE: &str = include_str!("style.css");
+
+fn switch_tab(model: PickerModel, refs: PickerRefs, tab: Tab) {
+    if model.dragging.get_untracked() {
+        return;
+    }
+    refs.title.focus();
+    model.editing_text.set(false);
+    model.tab.set(tab);
+    model.message.set(String::new());
+}

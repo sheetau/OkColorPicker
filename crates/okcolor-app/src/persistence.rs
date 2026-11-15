@@ -1,4 +1,5 @@
 //! Versioned user state. No display-rounded values or transient undo steps enter this file.
+use crate::workspace::{Library, ToolSettings};
 use okcolor_core::{ColorFormat, Gamut, GamutMapping, Oklch, parse_color};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -8,8 +9,8 @@ use std::{
 };
 
 pub const RECENT_LIMIT: usize = 24;
-const VERSION: u32 = 3;
-const MAX_FILE_BYTES: u64 = 128 * 1024;
+const VERSION: u32 = 4;
+const MAX_FILE_BYTES: u64 = 256 * 1024;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct SavedState {
@@ -24,6 +25,8 @@ pub struct SavedState {
     pub mapping: GamutMapping,
     pub format: ColorFormat,
     pub max_chroma: f64,
+    pub library: Library,
+    pub tools: ToolSettings,
 }
 
 impl Default for SavedState {
@@ -40,6 +43,8 @@ impl Default for SavedState {
             mapping: GamutMapping::LocalMinde,
             format: ColorFormat::Hex,
             max_chroma: 0.37,
+            library: Library::default(),
+            tools: ToolSettings::default(),
         }
     }
 }
@@ -58,6 +63,8 @@ struct WireState {
     mapping: String,
     format: String,
     max_chroma: f64,
+    library: Library,
+    tools: ToolSettings,
 }
 
 fn invalid(message: impl Into<Box<dyn std::error::Error + Send + Sync>>) -> io::Error {
@@ -113,6 +120,8 @@ fn read_color(value: [f64; 4]) -> io::Result<Oklch> {
 
 impl SavedState {
     fn validate(&self) -> io::Result<()> {
+        self.library.validate().map_err(invalid)?;
+        self.tools.validate().map_err(invalid)?;
         if self.selected > 1 {
             return Err(invalid("Unknown color slot"));
         }
@@ -143,15 +152,20 @@ impl SavedState {
             .into(),
             format: format_name(self.format).into(),
             max_chroma: self.max_chroma,
+            library: self.library.clone(),
+            tools: self.tools.clone(),
         };
         let mut bytes = serde_json::to_vec_pretty(&wire).map_err(invalid)?;
         bytes.push(b'\n');
+        if bytes.len() as u64 > MAX_FILE_BYTES {
+            return Err(invalid("State file exceeds 256 KiB"));
+        }
         Ok(bytes)
     }
 
     pub fn decode(bytes: &[u8]) -> io::Result<Self> {
         if bytes.len() as u64 > MAX_FILE_BYTES {
-            return Err(invalid("State file exceeds 128 KiB"));
+            return Err(invalid("State file exceeds 256 KiB"));
         }
         #[derive(Deserialize)]
         struct Header {
@@ -214,6 +228,25 @@ impl SavedState {
                     0.37.into()
                 },
             );
+            object.insert("version".into(), 3.into());
+            return Self::decode(&serde_json::to_vec(&value).map_err(invalid)?);
+        }
+        if header.version == 3 {
+            let mut value: serde_json::Value = serde_json::from_slice(bytes).map_err(invalid)?;
+            let object = value
+                .as_object_mut()
+                .ok_or_else(|| invalid("Invalid state object"))?;
+            if object.contains_key("library") || object.contains_key("tools") {
+                return Err(invalid("Unexpected version 3 tool fields"));
+            }
+            object.insert(
+                "library".into(),
+                serde_json::to_value(Library::default()).map_err(invalid)?,
+            );
+            object.insert(
+                "tools".into(),
+                serde_json::to_value(ToolSettings::default()).map_err(invalid)?,
+            );
             object.insert("version".into(), VERSION.into());
             return Self::decode(&serde_json::to_vec(&value).map_err(invalid)?);
         }
@@ -243,6 +276,8 @@ impl SavedState {
             },
             format: parse_format(&wire.format)?,
             max_chroma: wire.max_chroma,
+            library: wire.library,
+            tools: wire.tools,
         };
         state.validate()?;
         Ok(state)

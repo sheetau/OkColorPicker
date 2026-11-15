@@ -29,3 +29,8 @@ The Windows binary statically links mach-dxcompiler through mach-dxcompiler-rs.
 This includes the DirectX Shader Compiler and its LLVM-derived components.
 See licenses/dxc/README.md, the original license and third-party notice texts in
 that directory, and sources.json for the exact source revisions and archive hash.
+
+The APCA 0.0.98G calculation adapts Color.js under the MIT License,
+Copyright 2021 Lea Verou, Chris Lilley.
+Reference revision: 091d5a6cb6f2a236fb65a67d16d6e2856494f2cf.
+See licenses/Colorjs-MIT.txt and docs/CONTRAST.md.

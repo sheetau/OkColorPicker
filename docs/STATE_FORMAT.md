@@ -11,13 +11,13 @@ the writable session. Its presence alone does not mean a process is running;
 the operating system releases the lock when the process exits. A second writer
 opens a session without persistence and displays a warning.
 
-## Version 3
+## Version 4
 
 The UTF-8 JSON object contains:
 
 | Field | Contract |
 | --- | --- |
-| `version` | Integer `3` |
+| `version` | Integer `4` |
 | `main`, `sub` | Original `[L, C, H, alpha]` values, stored as f64 numbers |
 | `selected` | `0` for main or `1` for sub |
 | `recent` | Up to 24 color arrays, newest first |
@@ -31,16 +31,28 @@ Color components follow the [color contracts](COLOR_CONTRACT.md). Serialization
 and parsing preserve their f64 values, including alpha, wide-gamut values and the
 editing hue of a neutral color. Duplicate recent colors are removed on restore,
 retaining their first occurrence. Restoring recents creates no undo steps.
+The `library` object contains `next_id`, `folders` and `swatches`. Each folder
+has a unique integer `id` and `name`. Each swatch has `id`, `name`, original
+`color` components and a `folder` ID or null. Names contain 1–64 characters;
+there are at most 256 swatches and 32 folders. IDs are unique and below the
+monotonic `next_id`. Removing a folder moves its colors to the unfiled section.
+
+The `tools` object stores an opaque `background` color, signed `target_lc`
+from -110 through 110, and a `harmony` index from 0 through 4. Tool selection,
+field drafts and the active tab are transient; startup opens the picker.
+Library edits are independent of the session color Undo history.
+
 No clipboard contents, font paths, pairing credentials or undo stack are stored.
 
 Version 1 migrates explicitly: its `current` becomes `main`, its `previous`
 becomes `sub`, and `selected` starts at zero. Both original colors are preserved.
 Version 2 migrates its selected gamut to visibility flags and resets the display extent to 0.37, or 0.47 for Rec.2020.
-A successful later save writes version 3; invalid legacy fields are still rejected.
-Older application versions cannot read a version 3 profile.
+Version 3 gains an empty library and default tool settings.
+A successful later save writes version 4; invalid legacy fields are still rejected.
+Older application versions cannot read a version 4 profile.
 
 The schema rejects invalid components, unknown fields/choices, unsupported
-versions and files larger than 128 KiB. A missing file starts a fresh profile.
+versions and files larger than 256 KiB. A missing file starts a fresh profile.
 An unreadable or invalid file remains untouched: the picker opens with defaults,
 displays a session-only warning, and disables automatic saving for that run.
 Close the application before restoring a known-good copy or moving an invalid
@@ -48,7 +60,7 @@ file aside. Future schema versions must define migration explicitly.
 
 ## Save lifecycle
 
-Only committed colors, the selected slot and preferences are submitted to the writer. During a
+Only committed colors, the selected slot, library and preferences are submitted to the writer. During a
 drag, preference changes still save the last committed color. Undo/redo changes
 the saved color pair while leaving recent-color ordering intact.
 Numeric wheel adjustments likewise save the current color without changing

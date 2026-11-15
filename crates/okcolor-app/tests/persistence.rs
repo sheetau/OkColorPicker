@@ -29,6 +29,8 @@ fn varied_state() -> SavedState {
         mapping: GamutMapping::Clip,
         format: ColorFormat::Color(Gamut::DisplayP3),
         max_chroma: 0.47,
+        library: Default::default(),
+        tools: Default::default(),
     }
 }
 
@@ -82,7 +84,7 @@ fn malformed_unknown_and_oversized_profiles_are_preserved_and_disable_writes() {
     let base: serde_json::Value = serde_json::from_slice(&valid).unwrap();
     let mut cases = vec![
         b"{broken".to_vec(),
-        vec![b' '; 128 * 1024 + 1],
+        vec![b' '; 256 * 1024 + 1],
         b"{\"version\":999}".to_vec(),
     ];
     for (field, value) in [
@@ -117,6 +119,8 @@ fn version_one_preserves_both_colors_and_rejects_unexpected_fields() {
     let main = fields.remove("main").unwrap();
     let sub = fields.remove("sub").unwrap();
     fields.remove("selected");
+    fields.remove("library");
+    fields.remove("tools");
     fields.remove("show_p3");
     fields.remove("show_rec2020");
     fields.insert("current".into(), main);
@@ -268,6 +272,8 @@ fn version_two_migrates_visibility_and_new_flags_round_trip_independently() {
         let mut old: serde_json::Value =
             serde_json::from_slice(&original.encode().unwrap()).unwrap();
         let fields = old.as_object_mut().unwrap();
+        fields.remove("library");
+        fields.remove("tools");
         fields.remove("show_p3");
         fields.remove("show_rec2020");
         fields.insert("version".into(), 2.into());

@@ -267,8 +267,8 @@ fn mounted_picker_draws_and_drag_is_one_undo() {
                     assert!((bounds.size.height.0 - 31.0).abs() < 0.01);
                 }
                 for (index, pressed, expected) in [
-                    (0, false, [0, 0, 0]), (0, true, [0, 0, 0]),
-                    (2, false, [0, 0, 0]), (2, true, [0, 0, 0]),
+                    (0, false, [22, 22, 22]), (0, true, [31, 31, 31]),
+                    (2, false, [232, 17, 32]), (2, true, [186, 14, 26]),
                 ] {
                     refs.caption.set(okcolor_app::window_frame::CaptionVisual {
                         hovered: Some(index), pressed: pressed.then_some(index), maximized: pressed,

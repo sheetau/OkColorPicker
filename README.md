@@ -7,7 +7,12 @@ CSS color values. The picker preserves the original color while displaying
 sRGB, Display P3 and Rec.2020 boundaries. The preview uses the detected Windows
 display mode and falls back to sRGB when extended color output is unavailable.
 
-The application saves committed colors, recent colors and picker preferences
+Swatches stores named colors and folders. Harmonies generates shades, tints,
+tones and hue harmonies in the working gamut. The APCA tab compares text colors
+and adjusts lightness toward a signed contrast target.
+See [color tools](docs/TOOLS.md) for usage.
+
+The application saves committed colors, recent colors, swatches and tool preferences
 between sessions. Undo history stays within the current session.
 Connect to CLIP STUDIO PAINT through Companion Mode to receive and send color
 edits while preserving the picker's alpha. See [CSP pairing and synchronization](docs/CSP_PROTOCOL.md)

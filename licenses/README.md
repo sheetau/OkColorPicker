@@ -1,7 +1,8 @@
 # Distribution license materials
 
 `NOTICE` at the repository root introduces the embedded components. This folder
-keeps upstream notices for zgui, Martian Mono, the CSP protocol reference and
+keeps upstream notices for zgui, Martian Mono, the CSP protocol reference,
+the Color.js APCA implementation and
 [static DXC](dxc/README.md). Local zgui patches retain their own LICENSE/NOTICE
 files. Preserve upstream text, copyright lines and the marked modifications.
 

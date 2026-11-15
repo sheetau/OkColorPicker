@@ -168,8 +168,9 @@ reaches Windows for Snap layouts. The 36-by-31 CSS-pixel controls sit in a 32-pi
 title bar and use the installed Segoe Fluent Icons on Windows 11, or Segoe MDL2
 Assets on older Windows. The four minimize/maximize/restore/close glyphs retain
 towavue's installed icon family, with an explicit ten-pixel line box centered in
-each control. Like the other icon buttons, their ink is #424242 normally and
-#e0e0e0 on hover, without a hover background. No replacement symbols are drawn
+each control. Caption controls retain their fixed native style: #e0e0e0 ink,
+#161616 hover and #1f1f1f pressed backgrounds. Close uses #e81120 with white
+ink on hover and #ba0e1a with #cccccc ink when pressed. No replacement symbols are drawn
 and no Windows font files are distributed.
 The MSVC build embeds a Common Controls v6 manifest for the subclassing APIs.
 
@@ -288,3 +289,16 @@ linked compiler and corresponding source for covered dependencies.
 
 Check document links and `git diff --check` for documentation changes.
 Run the product checks above after Rust changes.
+
+## Tool tabs
+
+`cargo test -p okcolor-app --test tool_tabs --locked -- --ignored` exercises
+the mounted Swatches, Harmonies and APCA controls with headless input and GPU
+readback. `workspace` and `persistence` tests cover library edits, validation
+and migration; `okcolor-core` tool tests cover APCA polarity, alpha, inverse
+lightness adjustment and gamut-bounded related colors.
+
+Only the active page is mounted. Generated colors use reactive memos; color
+surfaces retain the existing GPU paint path. Library and tool preferences are
+separate signals from channel edits. Tool changes do not rebuild the titlebar
+or create a continuous frame loop.

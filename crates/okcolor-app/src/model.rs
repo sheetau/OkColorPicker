@@ -40,6 +40,9 @@ pub struct ColorEdit {
 /// Each display dependency has its own signal; history is read only on commands.
 #[derive(Clone, Copy)]
 pub struct PickerModel {
+    pub tab: RwSignal<crate::workspace::Tab>,
+    pub library: RwSignal<crate::workspace::Library>,
+    pub tools: RwSignal<crate::workspace::ToolSettings>,
     pub companion: crate::companion::Companion,
     pub edit: RwSignal<ColorEdit>,
     pub dragging: RwSignal<bool>,
@@ -94,6 +97,9 @@ impl PickerModel {
         let history = History::new(colors, 100, 0);
         let [l, c, h, alpha] = initial.components();
         Self {
+            tab: RwSignal::new(crate::workspace::Tab::Picker),
+            library: RwSignal::new(saved.library),
+            tools: RwSignal::new(saved.tools),
             companion: crate::companion::Companion::default(),
             edit: RwSignal::new(ColorEdit {
                 color: initial,
@@ -179,6 +185,8 @@ impl PickerModel {
             mapping: self.mapping.get(),
             format: self.format.get(),
             max_chroma: self.max_chroma.get(),
+            library: self.library.get(),
+            tools: self.tools.get(),
         }
     }
 
@@ -196,6 +204,8 @@ impl PickerModel {
             mapping: self.mapping.get_untracked(),
             format: self.format.get_untracked(),
             max_chroma: self.max_chroma.get_untracked(),
+            library: self.library.get_untracked(),
+            tools: self.tools.get_untracked(),
         }
     }
 

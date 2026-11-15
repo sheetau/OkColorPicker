@@ -13,3 +13,8 @@ pub use format::{ColorFormat, FormattedColor, format_color};
 pub use history::{EditError, History};
 pub use parse::{ParseColorError, parse_color};
 pub use slice::{GamutProjection, GamutSlice};
+
+mod contrast;
+mod related;
+pub use contrast::{apca, lightness_for_contrast};
+pub use related::{Harmony, Ramp, harmony, ramp};
