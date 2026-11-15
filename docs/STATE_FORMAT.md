@@ -11,16 +11,17 @@ the writable session. Its presence alone does not mean a process is running;
 the operating system releases the lock when the process exits. A second writer
 opens a session without persistence and displays a warning.
 
-## Version 2
+## Version 3
 
 The UTF-8 JSON object contains:
 
 | Field | Contract |
 | --- | --- |
-| `version` | Integer `2` |
+| `version` | Integer `3` |
 | `main`, `sub` | Original `[L, C, H, alpha]` values, stored as f64 numbers |
 | `selected` | `0` for main or `1` for sub |
 | `recent` | Up to 24 color arrays, newest first |
+| `show_p3`, `show_rec2020` | Independent visibility toggles; sRGB is always visible |
 | `gamut` | `srgb`, `display-p3`, or `rec2020` |
 | `mapping` | `local-minde` or `clip` |
 | `format` | `hex`, `hex8`, `rgb`, `hsl`, `oklab`, `oklch`, `lab`, `lch`, or a gamut name for `color(...)` |
@@ -33,9 +34,10 @@ retaining their first occurrence. Restoring recents creates no undo steps.
 No clipboard contents, font paths, pairing credentials or undo stack are stored.
 
 Version 1 migrates explicitly: its `current` becomes `main`, its `previous`
-becomes `sub`, and `selected` starts at zero. Both original colors and settings
-are preserved. A successful later save writes version 2; invalid legacy fields
-are still rejected. Older application versions cannot read a version 2 profile.
+becomes `sub`, and `selected` starts at zero. Both original colors are preserved.
+Version 2 migrates its selected gamut to visibility flags and resets the display extent to 0.37, or 0.47 for Rec.2020.
+A successful later save writes version 3; invalid legacy fields are still rejected.
+Older application versions cannot read a version 3 profile.
 
 The schema rejects invalid components, unknown fields/choices, unsupported
 versions and files larger than 128 KiB. A missing file starts a fresh profile.

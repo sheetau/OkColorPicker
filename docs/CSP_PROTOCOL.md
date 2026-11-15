@@ -87,10 +87,10 @@ Outgoing serials start at zero per connection and never wrap. A reply must match
 both the pending serial and command. Stale serials cannot satisfy another request.
 During authentication and low-level synchronous calls, peer commands are
 acknowledged and retained in a bounded queue of 16 events. The connected worker
-instead holds one outstanding request and returns each acknowledged host push
-to the UI before that request completes. A slow heartbeat or setter ACK cannot
-batch later color notifications behind it. Authentication requires a success packet with a recognized
-success body; a missing/malformed body or explicit rejection is not success.
+instead holds at most one color transaction and one independent heartbeat,
+and returns each acknowledged host push to the UI before either completes. A slow
+heartbeat or setter ACK cannot batch later color notifications behind it.
+Authentication requires a success packet with a recognized success body; a missing/malformed body or explicit rejection is not success.
 
 Each operation has a deadline. A command timeout closes the socket, so a delayed
 reply cannot be mistaken for a later request. An idle `poll` timeout instead keeps
@@ -130,13 +130,18 @@ If the slot changed during that read, the unconfirmed RGB is discarded and read
 again. Tab-only responses cannot confirm RGB. Color Mix state does not stand in
 for the active drawing color.
 
-The worker polls circle state every 500 ms, reads Sub View as needed, and consumes
-pushes. It drains queued pushes in wire order before applying a later response.
+The worker polls circle state with an empty object every 25 ms (start to start),
+reads Sub View as needed, and consumes pushes. It drains queued pushes in wire order before applying a later response.
 Pending commands coalesce independently per main/sub slot and are sent in
 revision order; connection replacement or loss clears both. A swap sends the
-inactive slot first and the selected slot last, retaining the intended selection. Setter acknowledgement produces `Sent`, and each observation
-reports the last acknowledged local write revision. A poll follows a successful
-write even if the remote color is unchanged. This metadata lets the UI reject
+inactive slot first and the selected slot last, retaining the intended selection.
+Setter acknowledgement produces `Sent`, and each observation reports the last
+acknowledged local write revision. Slow replies never accumulate requests; color
+reads and writes remain serialized
+to preserve confirmation order. Heartbeat replies do not block polling. Recognized
+color fields in other panel notifications use the same parser after the original
+command has been acknowledged. A poll follows a successful write even if the
+remote color is unchanged. This metadata lets the UI reject
 observations predating a newer local edit. Transport errors do not replay writes
 after reconnect. ACK alone does not establish that CSP applied the color.
 

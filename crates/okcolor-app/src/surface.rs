@@ -25,9 +25,11 @@ pub struct ColorParams {
     pub mapping: f32,
     pub max_chroma: f32,
     pub wide: f32,
-    pub padding0: f32,
-    pub padding1: f32,
-    pub padding2: f32,
+    pub show_p3: f32,
+    pub show_rec2020: f32,
+    pub outline_dark: f32,
+    pub checker_offset: [f32; 2],
+    pub padding: [f32; 2],
 }
 
 static COLOR_SURFACE: ShaderEffect<ColorParams> = shader! {
@@ -102,6 +104,8 @@ impl SurfaceKind {
                 0.0
             },
             max_chroma: model.max_chroma.get() as f32,
+            show_p3: if model.show_p3.get() { 1.0 } else { 0.0 },
+            show_rec2020: if model.show_rec2020.get() { 1.0 } else { 0.0 },
             wide: if model.display.get().wide_output {
                 1.0
             } else {
@@ -146,16 +150,38 @@ impl SurfaceKind {
 
 /// A color sample uses the same GPU preview policy as the editing surfaces.
 #[component]
-pub fn ColorSwatch(model: PickerModel, color: Memo<Oklch>) -> impl IntoView {
-    color_sample(model, color, 5.0)
+pub fn ColorSwatch(model: PickerModel, color: Memo<Oklch>, outline_dark: bool) -> impl IntoView {
+    color_sample(model, color, 5.0, outline_dark, || [0.0; 2])
 }
 
 #[component]
-pub fn ColorMarker(model: PickerModel, color: Memo<Oklch>) -> impl IntoView {
-    color_sample(model, color, 6.0)
+pub fn ColorMarker(
+    model: PickerModel,
+    color: Memo<Oklch>,
+    kind: SurfaceKind,
+    bar: NodeRef,
+) -> impl IntoView {
+    let size = bar.observe_border_size();
+    let scale = use_window().scale();
+    color_sample(model, color, 6.0, false, move || {
+        let Some(size) = size.get() else {
+            return [0.0; 2];
+        };
+        let marker = kind.marker(model);
+        [
+            size.width.0 * marker[0].clamp(0.0, 1.0) as f32 - 8.0 * scale.get(),
+            size.height.0 - 8.0 * scale.get(),
+        ]
+    })
 }
 
-fn color_sample(model: PickerModel, color: Memo<Oklch>, kind: f32) -> impl IntoView {
+fn color_sample(
+    model: PickerModel,
+    color: Memo<Oklch>,
+    kind: f32,
+    outline_dark: bool,
+    checker_offset: impl Fn() -> [f32; 2] + 'static,
+) -> impl IntoView {
     let (surface, handle) = zgui::custom::custom(ColorSurface::new(ColorParams {
         kind,
         ..Default::default()
@@ -165,6 +191,8 @@ fn color_sample(model: PickerModel, color: Memo<Oklch>, kind: f32) -> impl IntoV
         let params = ColorParams {
             channels: [l as f32, c.min(10000.0) as f32, h as f32, alpha as f32],
             kind,
+            outline_dark: if outline_dark { 1.0 } else { 0.0 },
+            checker_offset: checker_offset(),
             mapping: if model.mapping.get() == GamutMapping::Clip {
                 1.0
             } else {
@@ -337,7 +365,7 @@ pub fn ColorControl(model: PickerModel, kind: SurfaceKind, node: NodeRef) -> imp
                 style:left=move || Some(format!("{}%",kind.marker(model)[0].clamp(0.0,1.0)*100.0)),
                 style:top=move || Some(format!("{}%",kind.marker(model)[1].clamp(0.0,1.0)*100.0))) {
                 if move || kind != SurfaceKind::Slice {
-                        ColorMarker(model=model,color=Memo::new(move |_| {
+                        ColorMarker(model=model,kind=kind,bar=node,color=Memo::new(move |_| {
                             let [l,c,h,a]=model.color().components();
                             Oklch::new(l,c,h,if kind==SurfaceKind::Alpha {a} else {1.0}).expect("valid marker color")
                         }))

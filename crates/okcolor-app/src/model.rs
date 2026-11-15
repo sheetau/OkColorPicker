@@ -49,6 +49,8 @@ pub struct PickerModel {
     pub h: RwSignal<f64>,
     pub alpha: RwSignal<f64>,
     pub gamut: RwSignal<Gamut>,
+    pub show_p3: RwSignal<bool>,
+    pub show_rec2020: RwSignal<bool>,
     pub mapping: RwSignal<GamutMapping>,
     pub format: RwSignal<ColorFormat>,
     pub max_chroma: RwSignal<f64>,
@@ -107,6 +109,8 @@ impl PickerModel {
             h: RwSignal::new(h),
             alpha: RwSignal::new(alpha),
             gamut: RwSignal::new(saved.gamut),
+            show_p3: RwSignal::new(saved.show_p3),
+            show_rec2020: RwSignal::new(saved.show_rec2020),
             mapping: RwSignal::new(saved.mapping),
             format: RwSignal::new(saved.format),
             max_chroma: RwSignal::new(saved.max_chroma),
@@ -124,6 +128,24 @@ impl PickerModel {
             history: RwSignal::new_local(history),
             remote_edit: RwSignal::new(false),
         }
+    }
+
+    /// Settings change the editing extent, never the original color or history.
+    pub fn toggle_gamut(self, gamut: Gamut) {
+        match gamut {
+            Gamut::DisplayP3 => self.show_p3.update(|v| *v = !*v),
+            Gamut::Rec2020 => self.show_rec2020.update(|v| *v = !*v),
+            Gamut::Srgb => return,
+        }
+        let wide = self.show_rec2020.get_untracked();
+        self.gamut.set(if wide {
+            Gamut::Rec2020
+        } else if self.show_p3.get_untracked() {
+            Gamut::DisplayP3
+        } else {
+            Gamut::Srgb
+        });
+        self.max_chroma.set(if wide { 0.47 } else { 0.37 });
     }
 
     pub fn color(self) -> Oklch {
@@ -152,6 +174,8 @@ impl PickerModel {
             selected: self.selected.get(),
             recent: self.recent.get(),
             gamut: self.gamut.get(),
+            show_p3: self.show_p3.get(),
+            show_rec2020: self.show_rec2020.get(),
             mapping: self.mapping.get(),
             format: self.format.get(),
             max_chroma: self.max_chroma.get(),
@@ -167,6 +191,8 @@ impl PickerModel {
             selected: self.selected.get_untracked(),
             recent: self.recent.get_untracked(),
             gamut: self.gamut.get_untracked(),
+            show_p3: self.show_p3.get_untracked(),
+            show_rec2020: self.show_rec2020.get_untracked(),
             mapping: self.mapping.get_untracked(),
             format: self.format.get_untracked(),
             max_chroma: self.max_chroma.get_untracked(),

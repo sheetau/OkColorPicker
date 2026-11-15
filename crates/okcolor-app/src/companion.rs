@@ -287,7 +287,11 @@ mod tests {
             let poll = receive(&mut socket);
             assert_eq!(poll.command, "SyncColorCircleUIState");
             respond(&mut socket, &poll, Some(state));
-            assert_eq!(socket.read(&mut [0]).unwrap(), 0);
+            while let Ok(count) = socket.read(&mut [0; 4096]) {
+                if count == 0 {
+                    break;
+                }
+            }
         });
         let owner = Owner::new();
         owner.with(|| {

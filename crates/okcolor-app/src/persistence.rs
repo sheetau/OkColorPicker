@@ -8,7 +8,7 @@ use std::{
 };
 
 pub const RECENT_LIMIT: usize = 24;
-const VERSION: u32 = 2;
+const VERSION: u32 = 3;
 const MAX_FILE_BYTES: u64 = 128 * 1024;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -19,6 +19,8 @@ pub struct SavedState {
     /// Newest first; duplicates are removed when the history is restored.
     pub recent: Vec<Oklch>,
     pub gamut: Gamut,
+    pub show_p3: bool,
+    pub show_rec2020: bool,
     pub mapping: GamutMapping,
     pub format: ColorFormat,
     pub max_chroma: f64,
@@ -33,9 +35,11 @@ impl Default for SavedState {
             selected: 0,
             recent: Vec::new(),
             gamut: Gamut::Srgb,
+            show_p3: false,
+            show_rec2020: false,
             mapping: GamutMapping::LocalMinde,
             format: ColorFormat::Hex,
-            max_chroma: 0.4,
+            max_chroma: 0.37,
         }
     }
 }
@@ -49,6 +53,8 @@ struct WireState {
     selected: u8,
     recent: Vec<[f64; 4]>,
     gamut: String,
+    show_p3: bool,
+    show_rec2020: bool,
     mapping: String,
     format: String,
     max_chroma: f64,
@@ -128,6 +134,8 @@ impl SavedState {
             selected: self.selected,
             recent: self.recent.iter().map(|color| color.components()).collect(),
             gamut: gamut_name(self.gamut).into(),
+            show_p3: self.show_p3,
+            show_rec2020: self.show_rec2020,
             mapping: match self.mapping {
                 GamutMapping::Clip => "clip",
                 GamutMapping::LocalMinde => "local-minde",
@@ -172,6 +180,40 @@ impl SavedState {
             object.insert("main".into(), current);
             object.insert("sub".into(), previous);
             object.insert("selected".into(), 0.into());
+            object.insert("version".into(), 2.into());
+            return Self::decode(&serde_json::to_vec(&value).map_err(invalid)?);
+        }
+        if header.version == 2 {
+            let mut value: serde_json::Value = serde_json::from_slice(bytes).map_err(invalid)?;
+            let object = value
+                .as_object_mut()
+                .ok_or_else(|| invalid("Invalid state object"))?;
+            if object.contains_key("show_p3") || object.contains_key("show_rec2020") {
+                return Err(invalid("Unexpected version 2 gamut flags"));
+            }
+            let gamut = parse_gamut(
+                object
+                    .get("gamut")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| invalid("Missing working gamut"))?,
+            )?;
+            let old_extent = object
+                .get("max_chroma")
+                .and_then(|v| v.as_f64())
+                .ok_or_else(|| invalid("Missing chroma range"))?;
+            if !old_extent.is_finite() || !(0.01..=1.0).contains(&old_extent) {
+                return Err(invalid("Invalid legacy chroma range"));
+            }
+            object.insert("show_p3".into(), (gamut == Gamut::DisplayP3).into());
+            object.insert("show_rec2020".into(), (gamut == Gamut::Rec2020).into());
+            object.insert(
+                "max_chroma".into(),
+                if gamut == Gamut::Rec2020 {
+                    0.47.into()
+                } else {
+                    0.37.into()
+                },
+            );
             object.insert("version".into(), VERSION.into());
             return Self::decode(&serde_json::to_vec(&value).map_err(invalid)?);
         }
@@ -192,6 +234,8 @@ impl SavedState {
                 .map(read_color)
                 .collect::<io::Result<_>>()?,
             gamut: parse_gamut(&wire.gamut)?,
+            show_p3: wire.show_p3,
+            show_rec2020: wire.show_rec2020,
             mapping: match wire.mapping.as_str() {
                 "clip" => GamutMapping::Clip,
                 "local-minde" => GamutMapping::LocalMinde,

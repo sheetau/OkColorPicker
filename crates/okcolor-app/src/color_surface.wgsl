@@ -7,9 +7,11 @@ struct Params {
     mapping: f32,
     max_chroma: f32,
     wide: f32,
-    padding0: f32,
-    padding1: f32,
-    padding2: f32,
+    show_p3: f32,
+    show_rec2020: f32,
+    outline_dark: f32,
+    checker_offset: vec2<f32>,
+    padding: vec2<f32>,
 }
 
 fn xyz_from_lab(lab: vec3<f32>) -> vec3<f32> {
@@ -134,14 +136,17 @@ fn shade(input: ShaderInput, params: Params) -> vec4<f32> {
         else { rgb = preview_rgb(lab, params.mapping); }
     }
     if params.kind > 3.5 {
-        let tile = (u32(input.local.x / 5.0) + u32(input.local.y / 5.0)) % 2u;
-        let backdrop = select(0.13, 0.23, tile == 1u);
+        // Marker coordinates are relative to the bar's fixed checker origin.
+        let cell = floor((input.local + params.checker_offset) / (5.0 * input.scale));
+        let tile = (i32(cell.x) + i32(cell.y)) & 1;
+        let backdrop = select(0.13, 0.23, tile == 1);
         let alpha = select(uv.x, params.channels.w, params.kind > 4.5);
         rgb = mix(vec3<f32>(backdrop), rgb, alpha);
     } else {
         // A crossing in either axis marks the exact RGB-boundary neighborhood.
         let step = vec2<f32>(0.65) / max(input.size, vec2<f32>(1.0));
         for (var g = 2; g >= 0; g -= 1) {
+            if (g == 1 && params.show_p3 < 0.5) || (g == 2 && params.show_rec2020 < 0.5) { continue; }
             let gamut = f32(g);
             let left = in_gamut(color_at(clamp(uv - vec2<f32>(step.x, 0.0), vec2<f32>(0.0), vec2<f32>(1.0)), params), gamut);
             let right = in_gamut(color_at(clamp(uv + vec2<f32>(step.x, 0.0), vec2<f32>(0.0), vec2<f32>(1.0)), params), gamut);
@@ -156,6 +161,10 @@ fn shade(input: ShaderInput, params: Params) -> vec4<f32> {
                 rgb = mix(rgb, ink, 0.85);
             }
         }
+    }
+    if params.outline_dark > 0.5 && max(max(rgb.r, rgb.g), rgb.b) < 9.0 / 255.0 {
+        let edge = min(min(input.local.x,input.local.y),min(input.size.x-input.local.x,input.size.y-input.local.y));
+        if edge < input.scale { rgb = vec3<f32>(40.0 / 255.0); }
     }
     if params.kind > 5.5 {
         // A screen-aligned checkerboard inside a diamond, with a white outline.

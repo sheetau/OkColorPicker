@@ -248,11 +248,13 @@ impl Session {
         if let Some(frame) = self.events.pop_front() {
             return Ok(Some(frame));
         }
-        let deadline = deadline(timeout)?;
-        match self.read_packet(deadline) {
+        let read_deadline = deadline(timeout)?;
+        match self.read_packet(read_deadline) {
             Ok(frame) => {
                 if frame.kind == Kind::Command {
-                    self.acknowledge(&frame, deadline)?;
+                    // A packet arriving at the end of the read wait still gets a
+                    // complete, bounded write opportunity for its immediate ACK.
+                    self.acknowledge(&frame, deadline(Duration::from_millis(500))?)?;
                 }
                 Ok(Some(frame))
             }

@@ -27,7 +27,10 @@ pub fn format_color(
 ) -> Result<FormattedColor, ColorError> {
     let [l, c, h, alpha] = color.components();
     let suffix = if alpha < 1.0 {
-        format!(" / {}", decimal(alpha))
+        format!(
+            " / {}",
+            decimal_places(alpha, if format == ColorFormat::Oklch { 4 } else { 6 })
+        )
     } else {
         String::new()
     };
@@ -35,9 +38,9 @@ pub fn format_color(
     let text = match format {
         ColorFormat::Oklch => format!(
             "oklch({} {} {}{suffix})",
-            decimal(l),
-            decimal(c),
-            decimal(h)
+            decimal_places(l, 4),
+            decimal_places(c, 4),
+            decimal_places(h, 4)
         ),
         ColorFormat::Oklab => functional("oklab", color.oklab(), &suffix)?,
         ColorFormat::Lab => functional("lab", color.lab_d50(), &suffix)?,
@@ -128,8 +131,15 @@ fn ensure_finite(values: [f64; 3]) -> Result<(), ColorError> {
     }
 }
 fn decimal(value: f64) -> String {
-    let value = if value.abs() < 0.0000005 { 0.0 } else { value };
-    format!("{value:.6}")
+    decimal_places(value, 6)
+}
+fn decimal_places(value: f64, precision: usize) -> String {
+    let value = if value.abs() < 0.5 * 10.0_f64.powi(-(precision as i32)) {
+        0.0
+    } else {
+        value
+    };
+    format!("{value:.precision$}")
         .trim_end_matches('0')
         .trim_end_matches('.')
         .to_owned()

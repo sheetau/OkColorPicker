@@ -8,11 +8,7 @@ control:disabled { opacity: 0.25; }
 .titlebar { height: 32px; min-height: 32px; align-items: center; position: relative; border-bottom: 1px solid #121212; box-sizing: border-box; }
 .title { color: #e0e0e0; font-size: 12px; white-space: nowrap; }
 .menu-button { width: 30px; height: 28px; text-align: center; font-size: 18px; }
-.caption-control { width: 36px; min-width: 36px; height: 31px; display: flex; align-items: center; justify-content: center; text-align: center; font-family: "Windows Caption"; font-size: 10px; color: #e0e0e0; border-radius: 0; background-color: transparent; pointer-events: none; cursor: default; }
-.caption-control.caption_hover { background-color: #161616; }
-.caption-control.caption_hover.caption_pressed { background-color: #1f1f1f; }
-.caption-control.caption_close.caption_hover { background-color: #e81120; color: #fff; }
-.caption-control.caption_close.caption_hover.caption_pressed { background-color: #ba0e1a; color: #ccc; }
+.caption-control { position: relative; width: 36px; min-width: 36px; height: 31px; display: flex; align-items: center; justify-content: center; text-align: center; color: #424242; border-radius: 0; background-color: transparent; pointer-events: none; cursor: default; }
 .caption-control:disabled { color: #2a2a2a; opacity: 1; }
 .recent-strip { position: relative; margin: 14px 20px 10px; height: 22px; min-height: 22px; }
 /* This zgui revision needs one auto axis to register a programmatically scrolled region. */
@@ -22,7 +18,7 @@ control:disabled { opacity: 0.25; }
 .recent { min-width: 22px; width: 22px; height: 22px; border-radius: 0; }
 .empty-recent { color: #555; font-size: 10px; }
 .options { height: 22px; margin: 0 20px; gap: 5px; align-items: center; }
-.gamut, .mapping { padding: 3px 6px; color: #777; font-size: 10px; }
+.mapping { padding: 3px 6px; color: #777; font-size: 10px; }
 .selected { color: #e0d7ec; background-color: #231e29; }
 .plot-section { height: 0; padding: 14px 20px 12px; gap: 7px; flex: 1; min-height: 77px; }
 .color-control { position: relative; height: 22px; min-width: 0; flex: 1; }
@@ -41,8 +37,6 @@ control:disabled { opacity: 0.25; }
 .swatch.active { border-color: #777; }
 .swap-colors { position: absolute; left: 48px; top: 0; width: 16px; height: 16px; }
 .swap-icon { width: 16px; height: 16px; pointer-events: none; }
-.history-buttons { margin-top: 5px; justify-content: flex-end; gap: 4px; }
-.history-buttons control { width: 20px; height: 20px; position: relative; }
 .history-arrow { position: absolute; width: 8px; height: 8px; border-left: 1px solid #aaa; border-bottom: 1px solid #aaa; transform: rotate(45deg); left: 7px; top: 6px; }
 .history-arrow.redo { transform: rotate(225deg); left: 4px; }
 .quick-colors { gap: 2px; height: 20px; }
@@ -53,12 +47,12 @@ control:disabled { opacity: 0.25; }
 .channels { flex: 1; min-width: 0; gap: 14px; }
 .channel { height: 22px; align-items: center; gap: 8px; }
 .channel-label { width: 16px; min-width: 16px; color: #686868; font-family: "Martian Mono", monospace; font-size: 10px; }
-.number { width: 64px; min-width: 40px; height: 22px; box-sizing: border-box; padding: 4px 5px; font-size: 10px; font-family: "Martian Mono", monospace; background-color: #090909; color: #aaa; border-radius: 3px; white-space: nowrap; overflow: hidden; }
+.number { cursor: ew-resize; width: 64px; min-width: 40px; height: 22px; box-sizing: border-box; padding: 4px 5px; font-size: 10px; font-family: "Martian Mono", monospace; background-color: #090909; color: #aaa; border-radius: 3px; white-space: nowrap; overflow: hidden; }
 field:focus { background-color: #17131c; outline: 1px solid #685475; }
 .formats { padding: 0 20px 12px; gap: 5px; }
 .code-row { position: relative; align-items: center; gap: 5px; height: 24px; }
 .code-box { flex: 1; min-width: 0; height: 24px; background-color: #090909; border-radius: 4px; align-items: center; }
-.code { flex: 1; min-width: 0; height: 24px; box-sizing: border-box; padding: 5px 7px; color: #aaa; font-size: 10px; font-family: "Martian Mono", monospace; white-space: nowrap; overflow: hidden; }
+.code { border-radius: 4px; flex: 1; min-width: 0; height: 24px; box-sizing: border-box; padding: 5px 7px; color: #aaa; font-size: 10px; font-family: "Martian Mono", monospace; white-space: nowrap; overflow: hidden; }
 .format-trigger { width: 20px; min-width: 20px; height: 24px; position: relative; }
 .chevron { position: absolute; width: 6px; height: 6px; border-right: 1px solid #aaa; border-bottom: 1px solid #aaa; transform: rotate(45deg); top: 7px; left: 6px; }
 .copy { width: 24px; min-width: 24px; height: 24px; background-color: #090909; position: relative; }
@@ -68,10 +62,9 @@ field:focus { background-color: #17131c; outline: 1px solid #685475; }
 .format-menu { bottom: 28px; right: 28px; width: 130px; }
 .format-menu control { padding: 5px 8px; }
 .help-menu { top: 32px; left: 5px; gap: 7px; width: 285px; padding: 12px; }
-.status > row { flex-wrap: wrap; min-width: 0; gap: 4px; }
+.status > row { flex-wrap: nowrap; min-width: 0; gap: 4px; }
 .status { padding: 0 20px 12px; gap: 5px; color: #65606b; font-size: 9px; min-height: 28px; }
-.warning { color: #bd9a73; font-size: 9px; }
-.storage-warning { color: #d9aa71; gap: 4px; }
+.warning { height: 12px; min-height: 12px; color: #bd9a73; font-size: 9px; }
 .retry-save { align-self: flex-start; padding: 3px 7px; background-color: #292018; color: #e4bc8b; }
 .csp-connect { color: #9c94a8; }
 .csp-connect:hover { color: #e0d4ef; }
@@ -87,3 +80,21 @@ field:focus { background-color: #17131c; outline: 1px solid #685475; }
 .grip.north-east { top: 0; right: 0; width: 8px; height: 8px; }
 .grip.south-west { bottom: 0; left: 0; width: 8px; height: 8px; }
 .grip.south-east { bottom: 0; right: 0; width: 8px; height: 8px; }
+
+/* Icons inherit one ink color; hovering does not add a backing plate. */
+.menu-button, .swap-colors, .format-trigger, .recent-nav, .copy { color: #424242; }
+.menu-button:hover, .swap-colors:hover, .format-trigger:hover, .recent-nav:hover { color: #e0e0e0; background-color: transparent; }
+.copy:hover { color: #e0e0e0; background-color: #181818; }
+.swap-icon { --zgui-fill: currentColor; }
+.chevron, .history-arrow, .copy-mark, .copy-back { border-color: currentColor; pointer-events: none; }
+.number:hover { background-color: #181818; }
+.help-menu control { padding: 4px; }
+.status text { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.status > row > text { flex: 1; }
+.caption-control.caption_hover, .caption-control.caption_hover.caption_pressed,
+.caption-control.caption_close.caption_hover, .caption-control.caption_close.caption_hover.caption_pressed { color: #e0e0e0; background-color: transparent; }
+
+.status > row { height: 12px; min-height: 12px; }
+.status-hint { height: 12px; min-height: 12px; }
+.status > .status-actions { height: 22px; min-height: 22px; }
+.caption-icon { font-family: "Windows Caption"; font-size: 10px; line-height: 10px; pointer-events: none; }

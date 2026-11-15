@@ -15,6 +15,71 @@ use support::Capture;
 const WIDTH: i32 = 256;
 const HEIGHT: i32 = 64;
 
+#[test]
+#[ignore = "requires a graphics device; run with --ignored"]
+fn marker_checker_has_a_fixed_origin_and_dark_samples_have_inner_borders() {
+    let frames = Arc::new(Mutex::new(Vec::new()));
+    let capture = frames.clone();
+    let factory = move |_: &Arc<dyn Surface>, target: RenderTarget| {
+        let renderer = Builder::new()
+            .offscreen(target, wgpu::TextureFormat::Rgba8Unorm, false)
+            .map_err(zgui::runtime::AppError::GpuUnavailable)?;
+        Ok(Box::new(Capture {
+            renderer,
+            frames: capture.clone(),
+        }) as Box<dyn Renderer>)
+    };
+    let cases = [
+        ColorParams {
+            kind: 6.0,
+            checker_offset: [0.0, 14.0],
+            ..Default::default()
+        },
+        ColorParams {
+            kind: 6.0,
+            checker_offset: [3.0, 14.0],
+            ..Default::default()
+        },
+        ColorParams {
+            kind: 5.0,
+            channels: [0.0, 0.0, 0.0, 1.0],
+            outline_dark: 1.0,
+            ..Default::default()
+        },
+        ColorParams {
+            kind: 5.0,
+            channels: [1.0, 0.0, 0.0, 1.0],
+            outline_dark: 1.0,
+            ..Default::default()
+        },
+    ];
+    app().with_size(16.0,64.0).with_renderer(Box::new(factory))
+        .with_stylesheet(":root { background-color: #000; } .sample { width: 16px; height: 16px; min-height: 16px; }")
+        .run_on(|handler| {let mut harness=Harness::new(handler);harness.settle(32);Ok(())}, move || {
+            zgui::elements::column().child(cases.into_iter().map(|params| zgui::custom::custom(ColorSurface::new(params)).0.class("sample").into_view()).collect::<Vec<_>>())
+        }).unwrap();
+    let frames = frames.lock().unwrap();
+    let image = frames.last().unwrap();
+    assert_eq!(
+        image.rgba(8, 8),
+        image.rgba(5, 24),
+        "a three-pixel move must leave checker cells fixed in bar coordinates"
+    );
+    assert_ne!(
+        image.rgba(7, 8),
+        image.rgba(7, 24),
+        "checker cells must not travel with the marker"
+    );
+    assert_eq!(image.rgba(0, 40), [40, 40, 40, 255]);
+    assert_eq!(image.rgba(1, 40), [0, 0, 0, 255]);
+    assert_eq!(image.rgba(8, 40), [0, 0, 0, 255]);
+    assert_eq!(
+        image.rgba(0, 56),
+        [255, 255, 255, 255],
+        "bright samples must not gain a border"
+    );
+}
+
 fn color(params: ColorParams, x: f64, y: f64) -> Oklch {
     let [mut l, mut c, mut h, _] = params.channels.map(f64::from);
     match params.kind as u8 {

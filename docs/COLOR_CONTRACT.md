@@ -46,8 +46,10 @@ is limited to 4,096 bytes. Invalid text never mutates a committed color.
 
 ## Output and preview
 
-Text output rounds to six decimal places; HEX rounds to 8-bit channels. HEX
-automatically includes alpha when it is below one; HEX8 always includes it.
+OKLCH text output rounds to four decimal places; other functional formats round
+to six decimal places. Stored colors retain their original f64 precision. HEX
+rounds to 8-bit channels and automatically includes alpha when it is below one;
+HEX8 always includes it.
 These formatted strings are for interchange, not lossless state persistence.
 
 HEX, RGB and HSL are bounded sRGB outputs. Their result includes a `mapped` flag

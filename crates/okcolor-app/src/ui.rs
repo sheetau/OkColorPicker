@@ -9,6 +9,8 @@ use zgui::{geom::CssPx, prelude::*, reactive::RenderEffect, vocab::ScrollPhase};
 /// Stable handles also let application tests exercise the actual mounted controls.
 #[derive(Clone, Copy)]
 pub struct PickerRefs {
+    pub menu: NodeRef,
+    pub gamut_toggles: [NodeRef; 2],
     pub companion: NodeRef,
     pub csp_pull: NodeRef,
     pub csp_send: NodeRef,
@@ -27,6 +29,8 @@ pub struct PickerRefs {
 impl Default for PickerRefs {
     fn default() -> Self {
         Self {
+            menu: NodeRef::new(),
+            gamut_toggles: std::array::from_fn(|_| NodeRef::new()),
             companion: NodeRef::new(),
             csp_pull: NodeRef::new(),
             csp_send: NodeRef::new(),
@@ -82,22 +86,10 @@ pub fn Picker(model: PickerModel, refs: PickerRefs) -> impl IntoView {
     };
     view! {
         column(class="app",on:key_down=shortcut) {
-            Titlebar(refs=refs)
+            Titlebar(model=model,refs=refs)
             column(class="body") {
                 RecentColors(model=model,node=refs.recents)
                 row(class="options") {
-                    control(class="gamut",
-                        class:selected=move ||model.gamut.get()==Gamut::Srgb,
-                        tabindex=Focus::Sequential,
-                        on:click=move |_|model.gamut.set(Gamut::Srgb)) {"sRGB"}
-                    control(class="gamut",
-                        class:selected=move ||model.gamut.get()==Gamut::DisplayP3,
-                        tabindex=Focus::Sequential,
-                        on:click=move |_|model.gamut.set(Gamut::DisplayP3)) {"P3"}
-                    control(class="gamut",
-                        class:selected=move ||model.gamut.get()==Gamut::Rec2020,
-                        tabindex=Focus::Sequential,
-                        on:click=move |_|model.gamut.set(Gamut::Rec2020)) {"2020"}
                     spacer()
                     control(class="mapping",tabindex=Focus::Sequential,a11y:label="Toggle sRGB fallback mapping",
                         on:click=move |_|model.mapping.update(|m|*m=if *m==GamutMapping::Clip {GamutMapping::LocalMinde}else{GamutMapping::Clip})) {
@@ -110,8 +102,8 @@ pub fn Picker(model: PickerModel, refs: PickerRefs) -> impl IntoView {
                         text {"L ↑"}
                         spacer()
                         text(class="legend srgb") {"sRGB"}
-                        text(class="legend p3") {"P3"}
-                        text(class="legend rec2020") {"2020"}
+                        if move ||model.show_p3.get() {text(class="legend p3") {"P3"}}
+                        if move ||model.show_rec2020.get() {text(class="legend rec2020") {"2020"}}
                         spacer()
                         text {{move ||format!("C 0–{} →",model.max_chroma.get())}}
                     }
@@ -131,16 +123,6 @@ pub fn Picker(model: PickerModel, refs: PickerRefs) -> impl IntoView {
                                 on:click=move |_|model.swap()) {
                                 {zgui::elements::vector().document(include_str!("../assets/swap.svg")).class("swap-icon")}
                             }
-                        }
-                        row(class="history-buttons") {
-                            control(tabindex=Focus::Sequential,
-                                a11y:label="Undo",
-                                disabled=move ||!model.can_undo.get(),
-                                on:click=move |_|model.undo()) {box(class="history-arrow") {}}
-                            control(tabindex=Focus::Sequential,
-                                a11y:label="Redo",
-                                disabled=move ||!model.can_redo.get(),
-                                on:click=move |_|model.redo()) {box(class="history-arrow redo") {}}
                         }
                         spacer()
                         row(class="quick-colors") {
@@ -172,15 +154,6 @@ pub fn Picker(model: PickerModel, refs: PickerRefs) -> impl IntoView {
                     CodeField(model=model,node=refs.codes[1],primary=false)
                 }
                 column(class="status") {
-                    if move || !model.storage_message.get().is_empty() {
-                        column(class="storage-warning") {
-                            text {{move ||model.storage_message.get()}}
-                            if move ||model.can_save.get() {
-                                control(class="retry-save",tabindex=Focus::Sequential,
-                                    on:click=move |_|model.save_request.update(|request|*request=request.wrapping_add(1))) {"Retry save"}
-                            }
-                        }
-                    }
                     row {
                         text {{move ||model.display.get().label()}}
                         spacer()
@@ -191,24 +164,25 @@ pub fn Picker(model: PickerModel, refs: PickerRefs) -> impl IntoView {
                                 else {model.companion.scan();}
                             }) {{move ||model.companion.label()}}
                     }
-                    if move ||matches!(model.companion.state.get(),okcolor_csp::worker::State::Failed(_)) {
-                        text(class="warning") {{move ||match model.companion.state.get() {
-                            okcolor_csp::worker::State::Failed(message)=>message,
-                            _=>String::new(),
-                        }}}
-                    }
-                    if move || !model.companion.hint.get().is_empty() {
-                        text {{move ||model.companion.hint.get()}}
-                    }
-                    if move ||model.companion.can_resolve.get() {
-                        row(class="csp-resolution") {
-                            control(node_ref=refs.csp_pull,tabindex=Focus::Sequential,on:click=move |_|model.companion.use_csp()) {"Use CSP color"}
-                            control(node_ref=refs.csp_send,tabindex=Focus::Sequential,on:click=move |_|model.companion.send_current()) {"Send this color"}
+                    text(class="status-hint") {{move ||model.companion.hint.get()}}
+                    row(class="status-actions") {
+                        if move ||!model.storage_message.get().is_empty() && model.can_save.get() {
+                            control(class="retry-save",tabindex=Focus::Sequential,
+                                on:click=move |_|model.save_request.update(|request|*request=request.wrapping_add(1))) {"Retry save"}
+                        }
+                        if move ||model.companion.can_resolve.get() {
+                            row(class="csp-resolution") {
+                                control(node_ref=refs.csp_pull,tabindex=Focus::Sequential,on:click=move |_|model.companion.use_csp()) {"Use CSP color"}
+                                control(node_ref=refs.csp_send,tabindex=Focus::Sequential,on:click=move |_|model.companion.send_current()) {"Send this color"}
+                            }
                         }
                     }
                     text(class="warning") {{move || {
                         let message=model.message.get();
-                        if !message.is_empty() {message}
+                        let storage=model.storage_message.get();
+                        if !storage.is_empty() {storage}
+                        else if let okcolor_csp::worker::State::Failed(error)=model.companion.state.get() {error}
+                        else if !message.is_empty() {message}
                         else if !model.color().in_gamut(model.gamut.get()) {"Outside working gamut — original retained".into()}
                         else if !model.display.get().wide_output && !model.color().in_gamut(Gamut::Srgb) {
                             if model.mapping.get()==GamutMapping::Clip {"sRGB Clipped preview — original retained".into()}
@@ -258,7 +232,7 @@ fn RecentColors(model: PickerModel, node: NodeRef) -> impl IntoView {
                 for entry in move ||model.recent.get(), key=|entry:&Oklch|entry.components().map(f64::to_bits) {
                     control(class="recent",tabindex=Focus::Sequential,a11y:label="Recall recent color",
                         on:click=move |_|{model.select(entry);}) {
-                        ColorSwatch(model=model,color=Memo::new(move |_|entry))
+                        ColorSwatch(model=model,color=Memo::new(move |_|entry),outline_dark=true)
                     }
                 }
             }
@@ -285,7 +259,7 @@ fn SlotSwatch(model: PickerModel, refs: PickerRefs, index: usize) -> impl IntoVi
             a11y:label=if slot==0 {"Main color"} else {"Sub color"},
             on:pointer_down=move |_|refs.swatches[slot].focus(),
             on:click=move |_|model.select_slot(slot as u8)) {
-            ColorSwatch(model=model,color=Memo::new(move |_|model.slots[slot].get()))
+            ColorSwatch(model=model,color=Memo::new(move |_|model.slots[slot].get()),outline_dark=false)
         }
     }
 }
@@ -316,18 +290,18 @@ fn dismiss_menu(open: RwSignal<bool>, popup: NodeRef, trigger: NodeRef) {
 }
 
 #[component]
-fn Titlebar(refs: PickerRefs) -> impl IntoView {
+fn Titlebar(model: PickerModel, refs: PickerRefs) -> impl IntoView {
     let window = use_window();
     let help = RwSignal::new(false);
     let popup = NodeRef::new();
-    let trigger = NodeRef::new();
+    let trigger = refs.menu;
     dismiss_menu(help, popup, trigger);
     view! {
         row(class="titlebar",on:pointer_down=window.move_drag_handler()) {
             control(class="menu-button",
                 node_ref=trigger,
                 tabindex=Focus::Sequential,
-                a11y:label="Keyboard shortcuts",
+                a11y:label="Picker settings and shortcuts",
                 on:pointer_down=window.no_drag_handler(),
                 on:click=move |_|help.update(|v|*v = !*v)) {"≡"}
             text(class="title") {"OkColorPicker"}
@@ -337,10 +311,16 @@ fn Titlebar(refs: PickerRefs) -> impl IntoView {
             CaptionControl(index=2,node=refs.close,visual=refs.caption)
             if move ||help.get() {
                 column(class="help-menu",node_ref=popup,on:pointer_down=window.no_drag_handler()) {
+                    control(node_ref=refs.gamut_toggles[0],tabindex=Focus::Sequential,
+                        a11y:label="Toggle Display P3",class:selected=move ||model.show_p3.get(),
+                        on:click=move |_|model.toggle_gamut(Gamut::DisplayP3)) {{move ||if model.show_p3.get() {"✓ Display P3"} else {"Display P3"}}}
+                    control(node_ref=refs.gamut_toggles[1],tabindex=Focus::Sequential,
+                        a11y:label="Toggle Rec.2020",class:selected=move ||model.show_rec2020.get(),
+                        on:click=move |_|model.toggle_gamut(Gamut::Rec2020)) {{move ||if model.show_rec2020.get() {"✓ Rec.2020"} else {"Rec.2020"}}}
                     text {"Ctrl C / V · Copy / paste color"}
                     text {"Ctrl Z / Shift Z · Undo / redo"}
                     text {"Arrow keys · Adjust a focused control"}
-                    text {"Wheel · Adjust a focused number"}
+                    text {"Drag / wheel · Adjust a number"}
                     text {"Shift · ×10   Ctrl · ×0.1"}
                     text {"Enter · Commit   Escape · Cancel drag"}
                 }
@@ -364,7 +344,7 @@ fn CaptionControl(
             disabled=move ||!visual.get().enabled[index],
             a11y:label=move ||match index {0=>"Minimize",1 if visual.get().maximized=>"Restore",1=>"Maximize",_=>"Close"},
             on:click=move |_|match index {0=>window.minimize(),1=>window.toggle_maximized(),_=>window.close()}) {
-            {move ||crate::window_frame::caption_glyph(index,visual.get().maximized)}
+            text(class="caption-icon") {{move ||crate::window_frame::caption_glyph(index,visual.get().maximized)}}
         }
     }
 }
@@ -384,16 +364,10 @@ fn Channel(
     let composing = RwSignal::new(false);
     let wheel_remainder = RwSignal::new((Modifiers::NONE, 0.0_f64));
     let value = [model.l, model.c, model.h, model.alpha][index];
-    let display = move |value: f64| {
-        if index == 1 {
-            format!("{value:.4}")
-        } else {
-            format!("{value:.3}")
-        }
-    };
+    let display = move |value: f64| format!("{value:.4}");
     let driving = RenderEffect::new(move |_| {
         let value = value.get();
-        if !focused.get() {
+        if !focused.get() || model.dragging.get() {
             dirty.set(false);
             let text = display(value);
             draft.set(text.clone());
@@ -436,7 +410,7 @@ fn Channel(
         }
     };
     let wheel = move |cx: &mut EventCx<'_, events::Wheel>| {
-        if !focused.get_untracked() || composing.get_untracked() {
+        if composing.get_untracked() || model.dragging.get_untracked() {
             return;
         }
         let phase = cx.payload().as_wheel().expect("wheel payload").phase;
@@ -470,11 +444,67 @@ fn Channel(
             adjust(steps, cx.modifiers, false);
         }
     };
+    let gesture = RwSignal::new(None::<(f32, f64, bool)>);
+    let move_number = move |cx: &mut EventCx<'_, events::PointerMove>| {
+        let Some((start, base, mut active)) = gesture.get_untracked() else {
+            return;
+        };
+        let dx = cx.position.x.0 - start;
+        if !active && dx.abs() >= 3.0 {
+            if !model.begin() {
+                return;
+            }
+            active = true;
+            number.focus();
+        }
+        if active {
+            let mut channels = model.current().components();
+            channels[index] = stepped_channel(index, base, f64::from(dx) / 4.0, cx.modifiers);
+            if let Ok(color) = Oklch::new(channels[0], channels[1], channels[2], channels[3]) {
+                model.preview(color);
+            }
+            cx.prevent_default();
+            cx.stop_propagation();
+        }
+        gesture.set(Some((start, base, active)));
+    };
+    let cancel_number = move || {
+        if gesture.get_untracked().is_some_and(|g| g.2) {
+            model.cancel();
+        }
+        gesture.set(None);
+        dirty.set(false);
+        let text = display(model.current().components()[index]);
+        draft.set(text.clone());
+        number.set_value(&text);
+        bar.focus();
+    };
     view! {
         row(class="channel") {
             text(class="channel-label") {{label}}
             ColorControl(model=model,kind=kind,node=bar)
             field(class="number",node_ref=number,a11y:label=label,
+                on:pointer_down=move |cx| {
+                    if !cx.primary || cx.button!=Some(PointerButton::Primary) || composing.get_untracked() { return; }
+                    let mut channels=model.current().components();
+                    if dirty.get_untracked() {
+                        let Ok(base)=draft.get_untracked().trim().parse::<f64>() else { return; };
+                        channels[index]=base;
+                        if Oklch::new(channels[0],channels[1],channels[2],channels[3]).is_err() { return; }
+                    }
+                    gesture.set(Some((cx.position.x.0,channels[index],false)));
+                    cx.capture_pointer();cx.prevent_default();cx.stop_propagation();
+                },
+                on:pointer_move=move_number,
+                on:pointer_up=move |cx| {
+                    if cx.button!=Some(PointerButton::Primary) { return; }
+                    if let Some((_,_,active))=gesture.get_untracked() {
+                        gesture.set(None);cx.release_pointer();
+                        if active { model.commit();bar.focus(); } else { number.focus(); }
+                        cx.prevent_default();cx.stop_propagation();
+                    }
+                },
+                on:pointer_cancel=move |_|cancel_number(),
                 on:focus_in=move |_|{focused.set(true);model.editing_text.set(true);wheel_remainder.set((Modifiers::NONE,0.0));},
                 on:focus_out=move |_|{focused.set(false);model.editing_text.set(false);},
                 on:input=move |cx|{if let Some(v)=cx.payload().as_value(){draft.set(v.value.to_string());dirty.set(true);wheel_remainder.set((Modifiers::NONE,0.0));}},
@@ -486,6 +516,9 @@ fn Channel(
                 on:wheel=wheel,
                 on:key_down=move |cx|{
                     if composing.get_untracked() { return; }
+                    if cx.key==Key::Named(NamedKey::Escape) && gesture.get_untracked().is_some() {
+                        cancel_number();cx.release_pointer();cx.prevent_default();return;
+                    }
                     wheel_remainder.set((Modifiers::NONE,0.0));
                     if matches!(cx.key, Key::Named(NamedKey::ArrowUp | NamedKey::ArrowDown)) {
                         let steps = if cx.key == Key::Named(NamedKey::ArrowUp) { 1.0 } else { -1.0 };

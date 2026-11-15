@@ -44,10 +44,15 @@ fn all_output_formats_parse_back_with_only_documented_output_rounding() {
         let output = format_color(original, format, GamutMapping::LocalMinde).unwrap();
         assert!(!output.mapped);
         let parsed = parse_color(&output.text, 0.0).expect(&output.text);
+        let tolerance = if format == ColorFormat::Oklch {
+            0.000051
+        } else {
+            2e-6
+        };
         for (a, b) in original.oklab().into_iter().zip(parsed.oklab()) {
-            assert!((a - b).abs() < 2e-6, "{}: {a} != {b}", output.text);
+            assert!((a - b).abs() < tolerance, "{}: {a} != {b}", output.text);
         }
-        assert!((original.components()[3] - parsed.components()[3]).abs() < 1e-6);
+        assert!((original.components()[3] - parsed.components()[3]).abs() < tolerance);
     }
 }
 
@@ -101,4 +106,19 @@ fn mapping_is_finite_at_extremes_and_has_identity_inside_each_gamut() {
     let huge = Oklch::new(0.5, 1e300, 0.0, 1.0).unwrap();
     assert!(huge.clipped_rgb(Gamut::Srgb).is_err());
     assert!(format_color(huge, ColorFormat::Lab, GamutMapping::Clip).is_err());
+}
+
+#[test]
+fn oklch_text_rounds_four_places_without_changing_source_values() {
+    let original = Oklch::new(0.512345678, 0.123456789, 123.456789, 0.567891).unwrap();
+    assert_eq!(
+        format_color(original, ColorFormat::Oklch, GamutMapping::Clip)
+            .unwrap()
+            .text,
+        "oklch(0.5123 0.1235 123.4568 / 0.5679)"
+    );
+    assert_eq!(
+        original.components(),
+        [0.512345678, 0.123456789, 123.456789, 0.567891]
+    );
 }

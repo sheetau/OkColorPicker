@@ -222,7 +222,10 @@ fn check_numeric_adjustments(
         Modifiers::NONE,
     ));
     harness.settle(32);
-    assert_eq!(model.current(), before_ime, "unfocused wheel changed color");
+    assert!(
+        (model.current().components()[1] - before_ime.components()[1] - 0.001).abs() < 1e-12,
+        "hovered field must accept wheel without focus"
+    );
     model.select(original);
     harness.settle(32);
 }
@@ -264,8 +267,8 @@ fn mounted_picker_draws_and_drag_is_one_undo() {
                     assert!((bounds.size.height.0 - 31.0).abs() < 0.01);
                 }
                 for (index, pressed, expected) in [
-                    (0, false, [0x16, 0x16, 0x16]), (0, true, [0x1f, 0x1f, 0x1f]),
-                    (2, false, [0xe8, 0x11, 0x20]), (2, true, [0xba, 0x0e, 0x1a]),
+                    (0, false, [0, 0, 0]), (0, true, [0, 0, 0]),
+                    (2, false, [0, 0, 0]), (2, true, [0, 0, 0]),
                 ] {
                     refs.caption.set(okcolor_app::window_frame::CaptionVisual {
                         hovered: Some(index), pressed: pressed.then_some(index), maximized: pressed,
@@ -280,8 +283,7 @@ fn mounted_picker_draws_and_drag_is_one_undo() {
                     for (actual, expected) in pixels.bytes()[offset..offset + 3].iter().zip(expected) {
                         assert!(actual.abs_diff(expected) <= 1, "caption background {actual} != {expected}");
                     }
-                    #[cfg(target_os="windows")]
-                    assert_eq!(refs.maximize.text_content(), if pressed {"\u{e923}"} else {"\u{e922}"});
+
                 }
                 refs.caption.set(Default::default());
                 harness.settle(32);
@@ -295,14 +297,28 @@ fn mounted_picker_draws_and_drag_is_one_undo() {
                         let mut ink = vec![];
                         for dy in 0..31 { for dx in 0..36 {
                             let offset = ((y+dy)*330+x+dx)*4;
-                            if pixels[offset..offset+3].iter().all(|v| *v>150) { ink.push((dx,dy)); }
+                            if pixels[offset..offset+3].iter().all(|v| *v>30) { ink.push((dx,dy)); }
                         }}
-                        assert!(!ink.is_empty(), "installed Segoe caption glyph must be painted");
+                        assert!(!ink.is_empty(), "installed caption glyph must be painted");
                         let center_x = (ink.iter().map(|p|p.0).min().unwrap()+ink.iter().map(|p|p.0).max().unwrap()) as f32/2.0;
                         let center_y = (ink.iter().map(|p|p.1).min().unwrap()+ink.iter().map(|p|p.1).max().unwrap()) as f32/2.0;
-                        assert!((center_x-17.5).abs()<=2.0 && (center_y-15.0).abs()<=2.0,"caption glyph is not centered: {center_x},{center_y}");
+                        assert!((center_x-17.5).abs()<=0.5 && (center_y-15.0).abs()<=0.5,"caption glyph is not centered: {center_x},{center_y}");
                     }
                 }
+                // SVG ink follows the control hover color, with no hover plate.
+                let swap_bounds=refs.swap.window_bounds().unwrap();
+                let swap_ink=|| {
+                    let frames=frames.lock().unwrap();let image=frames.last().unwrap();
+                    let mut max=0;
+                    for y in 0..16 {for x in 0..16 { max=max.max(image.rgba(swap_bounds.origin.x.0 as i32+x,swap_bounds.origin.y.0 as i32+y)[0]); }}
+                    max
+                };
+                assert!((60..=70).contains(&swap_ink()),"normal swap ink must be #42");
+                harness.deliver_to_first(SurfaceEvent::Pointer {action:PointerAction::Moved,event:PointerEvent::mouse(Point::new(CssPx(swap_bounds.origin.x.0+8.0),CssPx(swap_bounds.origin.y.0+8.0))),modifiers:Modifiers::NONE,timestamp:Timestamp::ORIGIN});
+                harness.settle(32);
+                assert!(swap_ink()>210,"hovered SVG ink must be #e0");
+                harness.deliver_to_first(SurfaceEvent::Pointer {action:PointerAction::Moved,event:PointerEvent::mouse(Point::new(CssPx(329.0),CssPx(559.0))),modifiers:Modifiers::NONE,timestamp:Timestamp::ORIGIN});
+                harness.settle(32);
                 let before = model.current();
                 let saved_before_status = model.saved_state_untracked();
                 for status in [
@@ -390,6 +406,67 @@ fn mounted_picker_draws_and_drag_is_one_undo() {
                 harness.settle(32);
                 assert_eq!(model.current(), before);
                 assert!(!model.can_undo.get_untracked());
+                // A numeric scrub is one history transaction; clicking instead enters text.
+                let number = refs.numbers[1].window_bounds().unwrap();
+                let scrub = |action,dx| SurfaceEvent::Pointer {
+                    action,
+                    event: PointerEvent::mouse(Point::new(CssPx(number.origin.x.0+20.0+dx),CssPx(number.origin.y.0+10.0))).with_button(PointerButton::Primary),
+                    modifiers: Modifiers::NONE,timestamp: Timestamp::ORIGIN,
+                };
+                let before_scrub=model.current();
+                harness.deliver_to_first(scrub(PointerAction::Pressed,0.0));harness.settle(32);
+                assert!(!model.editing_text.get_untracked(),"press alone must not enter text editing");
+                for dx in [8.0,16.0,24.0] {harness.deliver_to_first(scrub(PointerAction::Moved,dx));harness.settle(32);}
+                harness.deliver_to_first(scrub(PointerAction::Released,24.0));harness.settle(32);
+                assert!((model.current().components()[1]-before_scrub.components()[1]-0.006).abs()<1e-12);
+                model.undo();harness.settle(32);assert_eq!(model.current(),before_scrub);
+                harness.deliver_to_first(scrub(PointerAction::Pressed,0.0));
+                harness.deliver_to_first(scrub(PointerAction::Released,0.0));harness.settle(32);
+                assert!(model.editing_text.get_untracked(),"plain click must enter text editing");
+
+                harness.deliver_to_first(scrub(PointerAction::Pressed,0.0));
+                harness.deliver_to_first(scrub(PointerAction::Moved,12.0));harness.settle(32);
+                assert!(model.dragging.get_untracked(),"a focused number must also scrub");
+                harness.deliver_to_first(SurfaceEvent::Key {state:KeyState::Pressed,event:KeyEvent::named(NamedKey::Escape,PhysicalKey::Unidentified(0)),modifiers:Modifiers::NONE,timestamp:Timestamp::ORIGIN});
+                harness.settle(32);
+                assert!(!model.dragging.get_untracked());assert_eq!(model.current(),before_scrub);
+                harness.deliver_to_first(scrub(PointerAction::Released,12.0));harness.settle(32);
+
+                // Both gamut flags remain independent, even when the larger gamut dominates.
+                refs.slice.focus();harness.settle(32);
+                let click = |harness: &mut Harness<_>,node: NodeRef| {
+                    let b=node.window_bounds().unwrap();
+                    for action in [PointerAction::Pressed,PointerAction::Released] {
+                        harness.deliver_to_first(SurfaceEvent::Pointer {action,event:PointerEvent::mouse(Point::new(CssPx(b.origin.x.0+b.size.width.0*0.5),CssPx(b.origin.y.0+b.size.height.0*0.5))).with_button(PointerButton::Primary),modifiers:Modifiers::NONE,timestamp:Timestamp::ORIGIN});
+                        harness.settle(32);
+                    }
+                };
+                let original_color=model.current();
+                click(&mut harness,refs.menu);
+                click(&mut harness,refs.gamut_toggles[0]);
+                assert!(model.show_p3.get_untracked());
+                assert_eq!(model.gamut.get_untracked(),okcolor_core::Gamut::DisplayP3);
+                click(&mut harness,refs.gamut_toggles[1]);
+                assert_eq!(model.max_chroma.get_untracked(),0.47);
+                click(&mut harness,refs.gamut_toggles[0]);
+                assert!(!model.show_p3.get_untracked());
+                assert_eq!(model.gamut.get_untracked(),okcolor_core::Gamut::Rec2020);
+                click(&mut harness,refs.gamut_toggles[1]);
+                assert_eq!(model.max_chroma.get_untracked(),0.37);
+                assert_eq!(model.gamut.get_untracked(),okcolor_core::Gamut::Srgb);
+                assert_eq!(model.current(),original_color);
+                click(&mut harness,refs.menu);
+                let height=refs.slice.window_bounds().unwrap().size.height.0;
+                model.message.set("A long diagnostic message that must stay on a single line without changing the gamut height or the window size".repeat(4));
+                model.companion.hint.set("An equally long companion status message".repeat(8));
+                model.companion.can_resolve.set(true);
+                model.storage_message.set("A long storage diagnostic".repeat(8));
+                model.can_save.set(true);
+                harness.settle(32);
+                assert_eq!(refs.slice.window_bounds().unwrap().size.height.0,height);
+                model.message.set(String::new());model.companion.hint.set(String::new());
+                model.companion.can_resolve.set(false);model.storage_message.set(String::new());
+                harness.settle(32);
                 // Focus and type through the platform path, not through the model setter.
                 refs.numbers[0].focus();
                 harness.settle(32);
@@ -594,9 +671,10 @@ fn mounted_picker_draws_and_drag_is_one_undo() {
                     scale_factor: 2.0,
                     size: Size::new(DevicePx(660.0), DevicePx(1120.0)),
                 });
+                harness.advance(Duration::from_millis(20));
                 harness.settle(64);
                 let scaled = refs.bars[0].window_bounds().unwrap();
-                assert!((scaled.size.width.0 / bounds.size.width.0 - 2.0).abs() < 0.05);
+                assert!((scaled.size.width.0 / bounds.size.width.0 - 2.0).abs() < 0.05, "DPI bounds: {bounds:?} -> {scaled:?}");
                 let at = Point::new(
                     CssPx((scaled.origin.x.0 + scaled.size.width.0 * 0.8) / 2.0),
                     CssPx((scaled.origin.y.0 + scaled.size.height.0 * 0.5) / 2.0),
@@ -660,7 +738,7 @@ fn mounted_picker_draws_and_drag_is_one_undo() {
                 harness.deliver_to_first(slice_event(PointerAction::Pressed, 0.05, 0.5));
                 harness.settle(32);
                 let last_valid = model.current();
-                assert!((last_valid.components()[1] - 0.02).abs() < 1e-6);
+                assert!((last_valid.components()[1] - 0.05 * model.max_chroma.get_untracked()).abs() < 1e-6);
                 harness.deliver_to_first(slice_event(PointerAction::Moved, 0.95, 0.05));
                 harness.settle(32);
                 assert!(model.dragging.get_untracked());

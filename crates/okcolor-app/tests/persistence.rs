@@ -24,9 +24,11 @@ fn varied_state() -> SavedState {
             Oklch::new(0.9, 0.01, 200.0, 1.0).unwrap(),
         ],
         gamut: Gamut::Rec2020,
+        show_p3: false,
+        show_rec2020: true,
         mapping: GamutMapping::Clip,
         format: ColorFormat::Color(Gamut::DisplayP3),
-        max_chroma: 0.5,
+        max_chroma: 0.47,
     }
 }
 
@@ -115,6 +117,8 @@ fn version_one_preserves_both_colors_and_rejects_unexpected_fields() {
     let main = fields.remove("main").unwrap();
     let sub = fields.remove("sub").unwrap();
     fields.remove("selected");
+    fields.remove("show_p3");
+    fields.remove("show_rec2020");
     fields.insert("current".into(), main);
     fields.insert("previous".into(), sub);
     fields.insert("version".into(), 1.into());
@@ -252,4 +256,45 @@ fn worker_reports_failure_and_retries_without_treating_failed_data_as_saved() {
         StateStore::open(root.path()).unwrap().load().unwrap(),
         varied_state()
     );
+}
+
+#[test]
+fn version_two_migrates_visibility_and_new_flags_round_trip_independently() {
+    for gamut in [Gamut::Srgb, Gamut::DisplayP3, Gamut::Rec2020] {
+        let original = SavedState {
+            gamut,
+            ..varied_state()
+        };
+        let mut old: serde_json::Value =
+            serde_json::from_slice(&original.encode().unwrap()).unwrap();
+        let fields = old.as_object_mut().unwrap();
+        fields.remove("show_p3");
+        fields.remove("show_rec2020");
+        fields.insert("version".into(), 2.into());
+        fields.insert("max_chroma".into(), 0.4.into());
+        let restored = SavedState::decode(&serde_json::to_vec(&old).unwrap()).unwrap();
+        assert_eq!(restored.main, original.main);
+        assert_eq!(restored.sub, original.sub);
+        assert_eq!(restored.show_p3, gamut == Gamut::DisplayP3);
+        assert_eq!(restored.show_rec2020, gamut == Gamut::Rec2020);
+        assert_eq!(
+            restored.max_chroma,
+            if gamut == Gamut::Rec2020 { 0.47 } else { 0.37 }
+        );
+        for invalid in [serde_json::Value::Null, 0.0.into(), 2.0.into()] {
+            let mut bad = old.clone();
+            bad["max_chroma"] = invalid;
+            assert!(SavedState::decode(&serde_json::to_vec(&bad).unwrap()).is_err());
+        }
+    }
+    for show_p3 in [false, true] {
+        for show_rec2020 in [false, true] {
+            let state = SavedState {
+                show_p3,
+                show_rec2020,
+                ..varied_state()
+            };
+            assert_eq!(SavedState::decode(&state.encode().unwrap()).unwrap(), state);
+        }
+    }
 }

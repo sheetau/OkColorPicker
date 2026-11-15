@@ -26,10 +26,16 @@ fn color_pushes_are_delivered_before_the_outstanding_heartbeat_reply() {
         reply(&mut socket, &auth);
         let heartbeat = receive(&mut socket);
         assert_eq!(heartbeat.command, "TellHeartbeat");
+        let mut held_poll = None;
         for index in 0..4u32 {
             let push = Frame {
                 kind: Kind::Command,
-                command: "SyncColorCircleUIState".into(),
+                command: if index == 2 {
+                    "SyncOtherColorPanel"
+                } else {
+                    "SyncColorCircleUIState"
+                }
+                .into(),
                 serial: 100 + index,
                 detail: Some(json!({"CurrentColorIndex":0,"ColorSelectionModel":"HLS",
                     "HLSColorMainH":index * 400000000,"HLSColorMainL":2147483648u32,"HLSColorMainS":4294967295u32,
@@ -38,8 +44,20 @@ fn color_pushes_are_delivered_before_the_outstanding_heartbeat_reply() {
                 data: vec![],
             };
             socket.get_mut().write_all(&push.encode().unwrap()).unwrap();
-            let ack = receive(&mut socket);
+            let ack = loop {
+                let frame = receive(&mut socket);
+                if frame.kind == Kind::Command {
+                    assert_eq!(frame.command, "SyncColorCircleUIState");
+                    assert!(
+                        held_poll.replace(frame).is_none(),
+                        "only one color read may be outstanding"
+                    );
+                } else {
+                    break frame;
+                }
+            };
             assert_eq!((ack.kind, ack.serial), (Kind::Success, push.serial));
+            assert_eq!(ack.command, push.command);
             // The test releases the next push only after its UI-facing event. The
             // heartbeat ACK remains withheld throughout, so batching would deadlock.
             assert_eq!(observed.recv_timeout(WAIT).unwrap(), index);
@@ -187,7 +205,11 @@ fn cancellation_during_authentication_discards_late_success_and_closes_socket() 
         ready_tx.send(()).unwrap();
         release.recv_timeout(WAIT).unwrap();
         reply(&mut socket, &auth);
-        assert_eq!(socket.read(&mut [0]).unwrap(), 0);
+        while let Ok(count) = socket.read(&mut [0; 4096]) {
+            if count == 0 {
+                break;
+            }
+        }
     });
     let (tx, rx) = mpsc::channel();
     let worker = Worker::start(
@@ -466,7 +488,11 @@ fn rgb_fallback_rechecks_slot_and_discards_a_color_read_across_a_slot_change() {
                 )
                 .unwrap();
         }
-        assert_eq!(socket.read(&mut [0]).unwrap(), 0);
+        while let Ok(count) = socket.read(&mut [0; 4096]) {
+            if count == 0 {
+                break;
+            }
+        }
     });
     let (tx, rx) = mpsc::channel();
     let worker = Worker::start(
@@ -495,6 +521,55 @@ fn rgb_fallback_rechecks_slot_and_discards_a_color_read_across_a_slot_change() {
             }
             _ => panic!("Unconfirmed RGB was published"),
         }
+    }
+    drop(worker);
+    server.join().unwrap();
+}
+
+#[test]
+fn repeated_color_polls_continue_while_heartbeat_reply_is_withheld() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let credentials = pairing(listener.local_addr().unwrap().port());
+    let server = thread::spawn(move || {
+        let mut socket = accept(&listener);
+        let auth = receive(&mut socket);
+        reply(&mut socket, &auth);
+        let heartbeat = receive(&mut socket);
+        assert_eq!(heartbeat.command, "TellHeartbeat");
+        for index in 0..4u32 {
+            let poll = receive(&mut socket);
+            assert_eq!(poll.command, "SyncColorCircleUIState");
+            assert_eq!(poll.detail, Some(json!({})));
+            socket.get_mut().write_all(&Frame {
+                kind:Kind::Success,command:poll.command,serial:poll.serial,
+                detail:Some(json!({"CurrentColorIndex":0,"ColorSelectionModel":"HSV",
+                    "HSVColorMainH":index*400000000,"HSVColorMainS":4294967295u32,"HSVColorMainV":4294967295u32,
+                    "IsCurrentColorTransparent":false,"CanExecuteSetterCommand":true,"IsManipulating":false})),data:vec![],
+            }.encode().unwrap()).unwrap();
+        }
+        reply(&mut socket, &heartbeat);
+        while let Ok(count) = socket.read(&mut [0; 4096]) {
+            if count == 0 {
+                break;
+            }
+        }
+    });
+    let (tx, rx) = mpsc::channel();
+    let worker = Worker::start(
+        |_| Err(ScanError::NoPairing),
+        move |g, e| {
+            let _ = tx.send((g, e));
+        },
+    )
+    .unwrap();
+    worker.control().pair(credentials);
+    state(&rx, 1, State::Connecting);
+    state(&rx, 1, State::Connected);
+    for _ in 0..4 {
+        assert!(matches!(
+            rx.recv_timeout(WAIT).unwrap(),
+            (1, Event::Color { after_write: 0, .. })
+        ));
     }
     drop(worker);
     server.join().unwrap();

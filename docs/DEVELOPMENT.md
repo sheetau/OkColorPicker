@@ -110,14 +110,17 @@ that cannot distinguish WCG from HDR report an unknown Advanced Color mode.
 
 Drag the slice or channel bars, or focus a bar and use arrow keys. Numeric fields
 also accept Up/Down while focused, plus vertical wheel input when the pointer is
-over the focused field. Steps are
+over a field, without requiring focus. Drag a numeric field horizontally to scrub
+its value (four CSS pixels per step, with a three-pixel activation threshold);
+a plain click enters text editing. One scrub is one undo action, and Escape
+cancels it. Steps are
 0.01 for L/alpha, 0.001 for C and 1 degree for H. Shift scales steps by ten;
 Control scales them by one tenth. Wheel input accumulates one step per reported
 line or 22 CSS pixels, independent of DPI; gesture momentum is ignored. Valid
 wheel adjustments remain undoable and saved, but do not add recent colors. Valid
 drafts are adjusted and committed as one history action; invalid drafts and IME
 composition do not change the color. Untouched fields step from full-precision
-model values, with four displayed decimal places for C and three for other channels.
+model values, with four displayed decimal places for every channel.
 L/alpha stop at their limits, C stops at zero, and hue wraps. Enter commits a text
 draft, and Escape cancels it or an active drag. Ctrl+C/V outside text entry copies
 or applies a complete color. Inside text entry, the same shortcuts edit the draft.
@@ -150,6 +153,9 @@ with the application caption. Maximized client content begins at the visible
 top edge; the first pixel participates in caption dragging. Side/bottom resizing
 uses native hit testing, with a top resize band on restored windows. The product
 does not paint an extra window border or use Windows-side CSS resize grips.
+The settings menu independently toggles P3 and Rec.2020. sRGB stays visible;
+the largest enabled gamut controls selection. The chroma extent is 0.37, or
+0.47 while Rec.2020 is enabled, on both the slice and channel bar.
 Vertical resizing changes the gamut height; the remaining controls keep their
 content height, with no outer scrollbars.
 
@@ -160,9 +166,11 @@ cancellation and queued system commands; zgui paints the shared native state
 without a second pointer target or extra keyboard focus stops. Native hover still
 reaches Windows for Snap layouts. The 36-by-31 CSS-pixel controls sit in a 32-pixel
 title bar and use the installed Segoe Fluent Icons on Windows 11, or Segoe MDL2
-Assets on older Windows. The four minimize/maximize/restore/close glyphs and
-hover/pressed colors follow towavue's caption contract; no replacement symbols
-are drawn and no Windows font files are distributed.
+Assets on older Windows. The four minimize/maximize/restore/close glyphs retain
+towavue's installed icon family, with an explicit ten-pixel line box centered in
+each control. Like the other icon buttons, their ink is #424242 normally and
+#e0e0e0 on hover, without a hover background. No replacement symbols are drawn
+and no Windows font files are distributed.
 The MSVC build embeds a Common Controls v6 manifest for the subclassing APIs.
 
 Martian Mono is embedded under OFL. Martian Grotesk is an optional user-installed
