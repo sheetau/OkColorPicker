@@ -11,5 +11,6 @@
 # Preserve the exact upstream bytes recorded in licenses/dxc/sources.json.
 /licenses/dxc/mach-LICENSE* -text
 /licenses/dxc/compiler-* -text
+/licenses/clarifications/*-MIT.txt -text
 # Preserve upstream license formatting, including its final blank line.
 /vendor/zgui-render-wgpu/LICENSE whitespace=-blank-at-eof
