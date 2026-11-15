@@ -19,18 +19,18 @@ impl fmt::Display for EditError {
 impl std::error::Error for EditError {}
 
 #[derive(Debug)]
-pub struct History {
-    current: Oklch,
-    before_edit: Option<Oklch>,
-    undo: VecDeque<Oklch>,
-    redo: VecDeque<Oklch>,
-    recent: VecDeque<Oklch>,
+pub struct History<T = Oklch> {
+    current: T,
+    before_edit: Option<T>,
+    undo: VecDeque<T>,
+    redo: VecDeque<T>,
+    recent: VecDeque<T>,
     history_limit: usize,
     recent_limit: usize,
 }
 
-impl History {
-    pub fn new(initial: Oklch, history_limit: usize, recent_limit: usize) -> Self {
+impl<T: Copy + PartialEq> History<T> {
+    pub fn new(initial: T, history_limit: usize, recent_limit: usize) -> Self {
         Self {
             current: initial,
             before_edit: None,
@@ -42,21 +42,21 @@ impl History {
         }
     }
 
-    pub fn current(&self) -> Oklch {
+    pub fn current(&self) -> T {
         self.current
     }
 
     /// During a preview, this remains the last committed value.
-    pub fn committed(&self) -> Oklch {
+    pub fn committed(&self) -> T {
         self.before_edit.unwrap_or(self.current)
     }
 
     /// Restore recents without inventing undo steps. Input order is newest first.
     pub fn restored(
-        initial: Oklch,
+        initial: T,
         history_limit: usize,
         recent_limit: usize,
-        recent: impl IntoIterator<Item = Oklch>,
+        recent: impl IntoIterator<Item = T>,
     ) -> Self {
         let mut history = Self::new(initial, history_limit, recent_limit);
         for color in recent {
@@ -70,7 +70,7 @@ impl History {
         history
     }
     /// Newest committed color first; undo/redo navigation does not add entries.
-    pub fn recent(&self) -> &VecDeque<Oklch> {
+    pub fn recent(&self) -> &VecDeque<T> {
         &self.recent
     }
     pub fn is_editing(&self) -> bool {
@@ -89,7 +89,7 @@ impl History {
         Ok(())
     }
 
-    pub fn preview(&mut self, color: Oklch) -> Result<(), EditError> {
+    pub fn preview(&mut self, color: T) -> Result<(), EditError> {
         self.before_edit.ok_or(EditError::NotEditing)?;
         self.current = color;
         Ok(())
@@ -120,14 +120,14 @@ impl History {
     }
 
     /// A completed text entry, paste, preset or external burst is one transaction.
-    pub fn set(&mut self, color: Oklch) -> Result<bool, EditError> {
+    pub fn set(&mut self, color: T) -> Result<bool, EditError> {
         self.begin()?;
         self.preview(color)?;
         self.commit()
     }
 
     /// A wheel adjustment remains undoable without adding intermediate recent colors.
-    pub fn set_without_recent(&mut self, color: Oklch) -> Result<bool, EditError> {
+    pub fn set_without_recent(&mut self, color: T) -> Result<bool, EditError> {
         self.begin()?;
         self.preview(color)?;
         self.commit_with_recent(false)
@@ -162,7 +162,7 @@ impl History {
     }
 }
 
-fn push_bounded(queue: &mut VecDeque<Oklch>, value: Oklch, limit: usize) {
+fn push_bounded<T>(queue: &mut VecDeque<T>, value: T, limit: usize) {
     if limit == 0 {
         return;
     }

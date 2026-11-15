@@ -35,6 +35,7 @@ pub fn caption_glyph(index: usize, maximized: bool) -> &'static str {
 #[component]
 pub fn ResizeEdges() -> impl IntoView {
     view! {
+        if move || !cfg!(target_os = "windows") {
         Grip(edge=ResizeEdge::North,class="grip north")
         Grip(edge=ResizeEdge::South,class="grip south")
         Grip(edge=ResizeEdge::West,class="grip west")
@@ -43,6 +44,7 @@ pub fn ResizeEdges() -> impl IntoView {
         Grip(edge=ResizeEdge::NorthEast,class="grip north-east")
         Grip(edge=ResizeEdge::SouthWest,class="grip south-west")
         Grip(edge=ResizeEdge::SouthEast,class="grip south-east")
+        }
     }
 }
 

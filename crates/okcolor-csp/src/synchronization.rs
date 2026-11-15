@@ -5,10 +5,19 @@ use crate::{
     frame::Frame,
     worker::{Control, Event},
 };
+use crate::{color::ColorCommand, frame::Kind};
+use serde_json::json;
 use std::time::{Duration, Instant};
 const RESPONSE: Duration = Duration::from_millis(500);
 
+struct Pending {
+    serial: u32,
+    command: &'static str,
+    deadline: Instant,
+    write: Option<(u64, ColorCommand)>,
+}
 pub(crate) struct Connection {
+    pending: Option<Pending>,
     session: Session,
     cache: ColorCache,
     remote: Option<ColorState>,
@@ -21,6 +30,7 @@ pub(crate) struct Connection {
 impl Connection {
     pub fn new(session: Session) -> Self {
         Self {
+            pending: None,
             session,
             cache: ColorCache::default(),
             remote: None,
@@ -35,10 +45,62 @@ impl Connection {
         let mut events = vec![];
         // Process queued pushes before any later request/response observation.
         self.drain(&mut events)?;
-        if Instant::now() >= self.heartbeat {
-            self.session.active_heartbeat(RESPONSE)?;
-            self.drain(&mut events)?;
-            self.heartbeat = Instant::now() + Duration::from_secs(1);
+        // A push becomes an event in this step, even while a heartbeat, read or
+        // write is awaiting its ACK. There is at most one outstanding request.
+        if self.pending.is_some() {
+            if let Some(frame) = self.session.receive(Duration::from_millis(25))? {
+                if frame.kind == Kind::Command {
+                    self.absorb(frame, &mut events)?;
+                } else if self
+                    .pending
+                    .as_ref()
+                    .is_some_and(|p| p.serial == frame.serial)
+                {
+                    let pending = self.pending.take().expect("matched pending request");
+                    if frame.command != pending.command {
+                        return Err(Error::InvalidFrame);
+                    }
+                    if let Some((revision, color)) = pending.write {
+                        if frame.kind == Kind::Success {
+                            self.after_write = revision;
+                            events.push(Event::Sent { revision, color });
+                            self.read_due = Instant::now();
+                        } else {
+                            events.push(Event::SendRejected { revision });
+                        }
+                    } else if pending.command == "TellHeartbeat" {
+                        if frame.kind == Kind::Failure {
+                            return Err(Error::CommandRejected);
+                        }
+                        self.heartbeat = Instant::now() + Duration::from_secs(1);
+                    } else {
+                        if frame.kind == Kind::Success {
+                            self.absorb(frame, &mut events)?;
+                        } else {
+                            self.remote = None;
+                            self.need_rgb = false;
+                            self.confirm_rgb = false;
+                            events.push(Event::ColorUnavailable);
+                        }
+                        // Periodic reads only recover missed state; pushed color samples
+                        // are acknowledged and published as they arrive.
+                        self.read_due = Instant::now() + Duration::from_millis(500);
+                    }
+                }
+            }
+            if self
+                .pending
+                .as_ref()
+                .is_some_and(|p| Instant::now() >= p.deadline)
+            {
+                return Err(Error::Timeout);
+            }
+        } else if Instant::now() >= self.heartbeat {
+            self.start(
+                "TellHeartbeat",
+                Some(json!({"IdleTimerResetRequested":true})),
+                None,
+            )?;
         } else if let Some((revision, color)) =
             if !self.need_rgb && !self.confirm_rgb && Instant::now() < self.read_due {
                 control.take_color(generation)
@@ -47,23 +109,17 @@ impl Connection {
             }
         {
             if revision <= self.after_write
-                || !self.remote.is_some_and(|remote| {
-                    remote.can_set && !remote.manipulating && remote.slot == color.slot()
-                })
+                || !self
+                    .remote
+                    .is_some_and(|remote| remote.can_set && !remote.manipulating)
             {
                 events.push(Event::SendRejected { revision });
             } else {
-                let result = self.session.set_color(color, RESPONSE);
-                self.drain(&mut events)?;
-                match result {
-                    Ok(()) => {
-                        self.after_write = revision;
-                        events.push(Event::Sent { revision, color });
-                        self.read_due = Instant::now();
-                    }
-                    Err(Error::CommandRejected) => events.push(Event::SendRejected { revision }),
-                    Err(error) => return Err(error),
-                }
+                self.start("SetCurrentColor", Some(json!({
+                    "ColorSpaceKind":"HSV", "ColorIndex":color.slot(),
+                    "HSVColorH":color.hsv[0], "HSVColorS":color.hsv[1], "HSVColorV":color.hsv[2],
+                    "IsColorTransparent":color.transparent(),
+                })), Some((revision, color)))?;
             }
         } else if self.need_rgb || self.confirm_rgb || Instant::now() >= self.read_due {
             let command = if self.need_rgb {
@@ -72,23 +128,28 @@ impl Connection {
                 "SyncColorCircleUIState"
             };
             self.need_rgb = false;
-            let reply = self.session.command(command, None, RESPONSE);
-            self.drain(&mut events)?;
-            match reply {
-                Ok(frame) => self.absorb(frame, &mut events)?,
-                Err(Error::CommandRejected) => {
-                    self.remote = None;
-                    self.need_rgb = false;
-                    self.confirm_rgb = false;
-                    events.push(Event::ColorUnavailable);
-                }
-                Err(error) => return Err(error),
-            }
-            self.read_due = Instant::now() + Duration::from_millis(500);
-        } else if let Some(frame) = self.session.poll(Duration::from_millis(25))? {
+            self.start(command, None, None)?;
+        } else if let Some(frame) = self.session.receive(Duration::from_millis(25))?
+            && frame.kind == Kind::Command
+        {
             self.absorb(frame, &mut events)?;
         }
         Ok(events)
+    }
+    fn start(
+        &mut self,
+        command: &'static str,
+        detail: Option<serde_json::Value>,
+        write: Option<(u64, ColorCommand)>,
+    ) -> Result<(), Error> {
+        let serial = self.session.start_command(command, detail, RESPONSE)?;
+        self.pending = Some(Pending {
+            serial,
+            command,
+            deadline: Instant::now() + RESPONSE,
+            write,
+        });
+        Ok(())
     }
     fn drain(&mut self, events: &mut Vec<Event>) -> Result<(), Error> {
         while let Some(frame) = self.session.queued_event() {

@@ -9,10 +9,17 @@ use std::{
 };
 use windows_sys::Win32::{
     Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM},
-    Graphics::Gdi::ScreenToClient,
+    Graphics::{
+        Dwm::{
+            DWMWA_CAPTION_COLOR, DWMWA_USE_IMMERSIVE_DARK_MODE, DWMWA_WINDOW_CORNER_PREFERENCE,
+            DWMWCP_ROUND, DwmExtendFrameIntoClientArea, DwmSetWindowAttribute,
+        },
+        Gdi::ScreenToClient,
+    },
     System::Threading::GetCurrentThreadId,
     UI::{
-        HiDpi::GetDpiForWindow,
+        Controls::MARGINS,
+        HiDpi::{GetDpiForWindow, GetSystemMetricsForDpi},
         Input::KeyboardAndMouse::{
             GetCapture, IsWindowEnabled, ReleaseCapture, SetCapture, TME_LEAVE, TME_NONCLIENT,
             TRACKMOUSEEVENT, TrackMouseEvent,
@@ -175,6 +182,56 @@ impl Hook {
                 return Err(io::Error::other("Cannot install the caption callback"));
             }
             state.alive.set(true);
+            let mut before = RECT::default();
+            GetClientRect(hwnd, &mut before);
+            let dark = 1_i32;
+            DwmSetWindowAttribute(
+                hwnd,
+                DWMWA_USE_IMMERSIVE_DARK_MODE as u32,
+                (&dark as *const i32).cast(),
+                4,
+            );
+            let black = 0_u32;
+            DwmSetWindowAttribute(
+                hwnd,
+                DWMWA_CAPTION_COLOR as u32,
+                (&black as *const u32).cast(),
+                4,
+            );
+            let corners = DWMWCP_ROUND;
+            DwmSetWindowAttribute(
+                hwnd,
+                DWMWA_WINDOW_CORNER_PREFERENCE as u32,
+                (&corners as *const i32).cast(),
+                4,
+            );
+            extend_frame(hwnd);
+            SetWindowPos(
+                hwnd,
+                std::ptr::null_mut(),
+                0,
+                0,
+                0,
+                0,
+                SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
+            );
+            // Removing the OS titlebar increases client height. Keep the requested
+            // initial client size rather than changing the application's layout.
+            if IsZoomed(hwnd) == 0 {
+                let mut after = RECT::default();
+                let mut outer = RECT::default();
+                GetClientRect(hwnd, &mut after);
+                GetWindowRect(hwnd, &mut outer);
+                SetWindowPos(
+                    hwnd,
+                    std::ptr::null_mut(),
+                    0,
+                    0,
+                    outer.right - outer.left + before.right - after.right,
+                    outer.bottom - outer.top + before.bottom - after.bottom,
+                    SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE,
+                );
+            }
             Ok(Self { hwnd, state })
         }
     }
@@ -297,6 +354,17 @@ fn pack_point(point: POINT) -> LPARAM {
     (point.x as u16 as u32 | ((point.y as u16 as u32) << 16)) as LPARAM
 }
 
+unsafe fn extend_frame(hwnd: HWND) {
+    // SAFETY: caller retains the window; DWM copies margins synchronously.
+    unsafe {
+        let margins = MARGINS {
+            cyTopHeight: (32 * GetDpiForWindow(hwnd) / 96) as i32,
+            ..Default::default()
+        };
+        DwmExtendFrameIntoClientArea(hwnd, &margins);
+    }
+}
+
 unsafe extern "system" fn caption_proc(
     hwnd: HWND,
     message: u32,
@@ -309,6 +377,28 @@ unsafe extern "system" fn caption_proc(
     // native calls; actions are queued after capture is released.
     unsafe {
         let state = &*(data as *const State);
+        if message == WM_NCCALCSIZE && wparam != 0 {
+            let params = &mut *(lparam as *mut NCCALCSIZE_PARAMS);
+            let top = params.rgrc[0].top;
+            // Keep the OS's left/right/bottom frame. Only replace its titlebar;
+            // the maximized top resize margin stays outside the visible client.
+            DefSubclassProc(hwnd, message, wparam, lparam);
+            let margin = if IsZoomed(hwnd) != 0 {
+                let dpi = GetDpiForWindow(hwnd);
+                GetSystemMetricsForDpi(SM_CYSIZEFRAME, dpi)
+                    + GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi)
+            } else {
+                0
+            };
+            (*(lparam as *mut NCCALCSIZE_PARAMS)).rgrc[0].top = top + margin;
+            return 0;
+        }
+        if matches!(
+            message,
+            WM_ACTIVATE | WM_DWMCOMPOSITIONCHANGED | WM_DPICHANGED
+        ) {
+            extend_frame(hwnd);
+        }
         if message == WM_NCDESTROY {
             state.clear(hwnd);
             state.alive.set(false);
@@ -347,6 +437,24 @@ unsafe extern "system" fn caption_proc(
                     && let Some(index) = over
                 {
                     return [HTMINBUTTON, HTMAXBUTTON, HTCLOSE][index] as LRESULT;
+                }
+                if message == WM_NCHITTEST {
+                    let native = DefSubclassProc(hwnd, message, wparam, lparam);
+                    if !matches!(
+                        native as u32,
+                        HTCLIENT | HTCAPTION | HTMINBUTTON | HTMAXBUTTON | HTCLOSE
+                    ) {
+                        return native;
+                    }
+                    if IsZoomed(hwnd) == 0
+                        && point.y >= 0
+                        && point.y < (4 * GetDpiForWindow(hwnd) / 96) as i32
+                    {
+                        return HTTOP as LRESULT;
+                    }
+                    // The titlebar's mounted controls handle client input, including
+                    // the visible topmost pixel of a maximized window.
+                    return HTCLIENT as LRESULT;
                 }
                 if message == WM_NCMOUSEMOVE {
                     state.hovered.set(over);

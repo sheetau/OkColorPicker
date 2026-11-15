@@ -173,8 +173,8 @@ fn mounted_picker_preserves_wide_color_and_repaints_every_sample_on_display_tran
                         let source = output.borrow().as_ref().unwrap().clone();
                         let pixels = final_pixels(&gpu, &source, white);
                         for (node, color, offset) in [
-                            (refs.swatches[0], green, 8.0),
-                            (refs.swatches[1], red, 18.0),
+                            (refs.swatches[1], green, 32.0),
+                            (refs.swatches[0], red, 18.0),
                             (refs.recents, green, 11.0),
                         ] {
                             let bounds = node.window_bounds().unwrap();
@@ -272,7 +272,7 @@ fn mounted_picker_preserves_wide_color_and_repaints_every_sample_on_display_tran
                     model.select(translucent);
                     harness.settle(64);
                     let pixels = final_pixels(&gpu, output.borrow().as_ref().unwrap(), 1.0);
-                    let bounds = refs.swatches[1].window_bounds().unwrap();
+                    let bounds = refs.swatches[0].window_bounds().unwrap();
                     let rgb = red
                         .encoded_rgb(Gamut::Srgb)
                         .map(|v| 0.13 * (1.0 - alpha) + v * alpha);
@@ -301,8 +301,8 @@ fn mounted_picker_preserves_wide_color_and_repaints_every_sample_on_display_tran
             },
             move || {
                 let model = PickerModel::restore(SavedState {
-                    current: red,
-                    previous: green,
+                    main: red,
+                    sub: green,
                     recent: vec![green, red],
                     gamut: Gamut::Rec2020,
                     ..Default::default()

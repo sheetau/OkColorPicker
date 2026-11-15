@@ -38,7 +38,7 @@ struct Pending {
     generation: u64,
     request: Option<Request>,
     stopping: bool,
-    color: Option<(u64, ColorCommand)>,
+    colors: [Option<(u64, ColorCommand)>; 2],
 }
 #[derive(Clone)]
 pub struct Control(Arc<(Mutex<Pending>, Condvar)>);
@@ -61,7 +61,7 @@ impl Control {
         if pending.stopping || pending.generation != generation || pending.request.is_some() {
             return false;
         }
-        pending.color = Some((revision, color));
+        pending.colors[usize::from(color.slot())] = Some((revision, color));
         self.0.1.notify_one();
         true
     }
@@ -70,7 +70,14 @@ impl Control {
         if pending.stopping || pending.generation != generation {
             return None;
         }
-        pending.color.take()
+        let slot = pending
+            .colors
+            .iter()
+            .enumerate()
+            .filter_map(|(slot, command)| command.map(|(revision, _)| (slot, revision)))
+            .min_by_key(|(_, revision)| *revision)?
+            .0;
+        pending.colors[slot].take()
     }
     fn request(&self, request: Request) {
         let mut pending = self.0.0.lock().unwrap();
@@ -82,7 +89,7 @@ impl Control {
         };
         pending.generation = next;
         pending.request = Some(request);
-        pending.color = None;
+        pending.colors = [None; 2];
         self.0.1.notify_one();
     }
     fn cancelled(&self, generation: u64) -> bool {
@@ -98,7 +105,7 @@ impl Control {
         }
         let next = generation.checked_add(1)?;
         pending.generation = next;
-        pending.color = None;
+        pending.colors = [None; 2];
         Some(next)
     }
     fn wait(&self, duration: Option<Duration>) -> Option<(u64, Request)> {
@@ -149,7 +156,7 @@ impl Drop for Worker {
             let mut pending = self.control.0.0.lock().unwrap();
             pending.stopping = true;
             pending.request = None;
-            pending.color = None;
+            pending.colors = [None; 2];
         }
         self.control.0.1.notify_one();
         if let Some(thread) = self.thread.take()

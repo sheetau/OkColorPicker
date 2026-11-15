@@ -8,6 +8,7 @@ use serde_json::{Map, Value};
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ColorState {
     pub rgb: [f64; 3],
+    pub colors: [Option<[f64; 3]>; 2],
     pub slot: u8,
     pub transparent: bool,
     pub can_set: bool,
@@ -19,9 +20,10 @@ pub struct ColorState {
 #[derive(Clone, Default)]
 pub struct ColorCache {
     hsv: [[Option<u32>; 3]; 2],
+    hls: [[Option<u32>; 3]; 2],
     rgb: [Option<u32>; 3],
     slot: Option<u8>,
-    hsv_selected: Option<bool>,
+    selection: Option<u8>,
     transparent: Option<bool>,
     can_set: Option<bool>,
     manipulating: Option<bool>,
@@ -63,23 +65,30 @@ impl ColorCache {
         if frame.command == "SyncColorCircleUIState" {
             if let Some(value) = object.get("ColorSelectionModel") {
                 let selected = Some(match value.as_str() {
-                    Some("HSV") => true,
-                    Some("HLS" | "Unknown") => false,
+                    Some("HSV") => 0,
+                    Some("HLS") => 1,
+                    Some("Unknown") => 2,
                     _ => return Err(Error::InvalidColorState),
                 });
-                if next.hsv_selected != selected {
+                if next.selection != selected {
                     next.hsv = [[None; 3]; 2];
+                    next.hls = [[None; 3]; 2];
                     next.rgb = [None; 3];
                 }
-                next.hsv_selected = selected;
+                next.selection = selected;
             }
-            for (slot, prefix) in ["HSVColorMain", "HSVColorSub"].iter().enumerate() {
-                for (channel, suffix) in ["H", "S", "V"].iter().enumerate() {
-                    update_channel(
-                        object,
-                        &format!("{prefix}{suffix}"),
-                        &mut next.hsv[slot][channel],
-                    )?;
+            for (prefix, suffixes, channels) in [
+                ("HSVColor", ["H", "S", "V"], &mut next.hsv),
+                ("HLSColor", ["H", "L", "S"], &mut next.hls),
+            ] {
+                for (slot, name) in ["Main", "Sub"].iter().enumerate() {
+                    for (channel, suffix) in suffixes.iter().enumerate() {
+                        update_channel(
+                            object,
+                            &format!("{prefix}{name}{suffix}"),
+                            &mut channels[slot][channel],
+                        )?;
+                    }
                 }
             }
         } else {
@@ -98,18 +107,26 @@ impl ColorCache {
         let slot = self.slot?;
         let rgb = if from_rgb {
             complete(self.rgb)?.map(unit)
-        } else if self.hsv_selected? {
-            hsv_to_rgb(complete(self.hsv[usize::from(slot)])?.map(unit))
         } else {
-            return None;
+            self.slot_rgb(usize::from(slot))?
         };
+        let mut colors = std::array::from_fn(|index| self.slot_rgb(index));
+        colors[usize::from(slot)] = Some(rgb);
         Some(ColorState {
             rgb,
+            colors,
             slot,
             transparent: self.transparent?,
             can_set: self.can_set?,
             manipulating: self.manipulating?,
         })
+    }
+    fn slot_rgb(&self, slot: usize) -> Option<[f64; 3]> {
+        match self.selection? {
+            0 => Some(hsv_to_rgb(complete(self.hsv[slot])?.map(unit))),
+            1 => Some(hls_to_rgb(complete(self.hls[slot])?.map(unit))),
+            _ => None,
+        }
     }
     pub(crate) fn rgb_state(&self) -> Option<ColorState> {
         self.current(true)
@@ -145,6 +162,11 @@ fn update_channel(
 }
 fn unit(value: u32) -> f64 {
     f64::from(value) / f64::from(u32::MAX)
+}
+
+fn hls_to_rgb([h, l, s]: [f64; 3]) -> [f64; 3] {
+    let v = l + s * l.min(1.0 - l);
+    hsv_to_rgb([h, if v == 0.0 { 0.0 } else { 2.0 * (1.0 - l / v) }, v])
 }
 
 fn hsv_to_rgb([h, s, v]: [f64; 3]) -> [f64; 3] {

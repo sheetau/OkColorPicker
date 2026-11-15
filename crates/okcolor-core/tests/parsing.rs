@@ -31,6 +31,33 @@ fn rgb_hex_hsl_and_hue_units_agree() {
 }
 
 #[test]
+fn bare_rgb_and_rgba_hex_are_complete_editor_inputs() {
+    for input in ["ff0000", "aBcDeF", "000000", "12345678", "ffffff00"] {
+        assert_eq!(
+            parse_color(input, 237.0),
+            parse_color(&format!("#{input}"), 237.0)
+        );
+        assert_eq!(
+            parse_color(&format!("  {input}\n"), 237.0),
+            parse_color(input, 237.0)
+        );
+    }
+    for input in [
+        "f00",
+        "1234",
+        "12345",
+        "1234567",
+        "123456789",
+        "ab cd ef",
+        "gg0000",
+        "0xff0000",
+        "１２３４５６",
+    ] {
+        assert!(parse_color(input, 0.0).is_err(), "{input}");
+    }
+}
+
+#[test]
 fn absolute_color_input_keeps_precision_and_out_of_gamut_values() {
     let c = parse_color(
         "oklch(0.1234567890123456 0.2345678901234567 234.5678901234567 / 0.3456789012345678)",

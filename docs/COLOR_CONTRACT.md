@@ -24,11 +24,14 @@ conversion and binary-search local-MINDE mapping.
 
 | Function | Supported forms |
 | --- | --- |
-| HEX | 3, 4, 6 or 8 digits, with `#` |
+| HEX | 3, 4, 6 or 8 digits with `#`; 6 or 8 digits without it |
 | `rgb`, `rgba` | Modern spaces/slash or legacy commas; numbers and percentages |
 | `hsl`, `hsla` | Modern spaces/slash or legacy commas; legacy S/L require percentages |
 | `oklab`, `oklch`, `lab`, `lch` | Modern spaces/slash, numbers and percentages |
 | `color` | `srgb`, `display-p3`, `rec2020`, with extended components |
+
+Bare 6/8-digit HEX is an editor convenience, not CSS syntax. Surrounding
+whitespace is accepted; embedded spaces and bare 3/4-digit shorthand are rejected.
 
 Hue accepts degrees, `deg`, `grad`, `rad` and `turn`. CSS reference components
 are clamped where specified, while `color()` RGB coordinates remain extended.
@@ -64,7 +67,7 @@ unknown display capabilities and 8-bit fallback surfaces use the selected sRGB
 `LocalMinde` or `Clip` policy. Working-gamut boundaries remain independent of this
 choice. Display changes do not create history entries or change saved colors.
 
-All editing surfaces and current/previous/recent samples use this same policy.
+All editing surfaces and main/sub/recent samples use this same policy.
 Sample alpha is composited over a checkerboard. Bounded sRGB text output still
 uses its mapping policy even while the preview uses extended RGB.
 
@@ -79,11 +82,19 @@ An active wide output path does not promise complete P3/Rec.2020 panel coverage.
 A slice fixes hue, puts absolute chroma on the horizontal axis, and increases
 lightness upward. Its chroma extent is explicit and does not change per sample.
 Out-of-gamut clicks do not start a selection. Once a drag starts inside the gamut,
-coordinates stay captured outside the chart: lightness follows the pointer within
-0–1 and chroma is reduced to the selected gamut boundary at that lightness.
+coordinates stay captured outside the chart and project to the nearest valid
+point in the chart's screen coordinates. Both lightness and chroma may change;
+the calculation accounts for the rendered width/height ratio. Boundary samples
+are cached for the gesture, and local minima are refined against the actual
+gamut boundary. Hue and alpha are preserved.
 Reentering the gamut resumes direct selection. Markers are not clamped, so numeric/external colors can
 remain outside the chart. Each gamut boundary is calculated independently;
 Display P3 and Rec.2020 must not be forced into a nested order.
+
+The picker retains independent main/sub colors and a selected slot. Selecting a
+slot brings it forward and changes the editing target without swapping colors or
+adding history. The separate swap command exchanges both values as one undoable
+transaction. Undo/redo stores the pair; slot selection itself stays independent.
 
 `History::begin/preview/commit` creates one undo entry for an entire drag or
 external burst. Cancel restores the exact previous color. Only changed commits

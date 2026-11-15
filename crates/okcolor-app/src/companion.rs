@@ -300,7 +300,10 @@ mod tests {
             model.companion.scan();
             wait_until(|| model.edit.get_untracked().origin == crate::model::EditOrigin::Companion);
             assert_eq!(model.current().components()[3], before.components()[3]);
-            assert_eq!(model.previous.get_untracked(), before);
+            assert_eq!(
+                model.slots[1].get_untracked(),
+                crate::persistence::SavedState::default().sub
+            );
             let source = Oklch::new(
                 0.6543210987654321,
                 0.3210987654321098,

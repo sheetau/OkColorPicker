@@ -94,10 +94,11 @@ impl FrameProbe for Probe {
             1 if model.dragging.get_untracked() => {
                 assert_ne!(model.current(), self.base.get().unwrap());
                 assert_eq!(model.recent.get_untracked().len(), self.recent.get());
+                self.base.set(Some(model.current()));
                 self.stage.set(2);
                 mouse(hwnd, WM_MOUSEMOVE, position(refs.slice, 1.4, 0.3));
             }
-            2 if (model.current().components()[0] - 0.7).abs() < 0.01 => {
+            2 if model.current() != self.base.get().unwrap() => {
                 assert!(model.dragging.get_untracked());
                 assert!(model.current().in_gamut(model.gamut.get_untracked()));
                 self.stage.set(3);

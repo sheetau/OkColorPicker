@@ -10,14 +10,15 @@ use std::{
 
 fn varied_state() -> SavedState {
     SavedState {
-        current: Oklch::new(
+        main: Oklch::new(
             0.7654321098765432,
             0.4567890123456789,
             321.1234567890123,
             0.2345678901234567,
         )
         .unwrap(),
-        previous: Oklch::new(0.4321098765432109, 0.0, 179.9876543210123, 0.0).unwrap(),
+        sub: Oklch::new(0.4321098765432109, 0.0, 179.9876543210123, 0.0).unwrap(),
+        selected: 1,
         recent: vec![
             Oklch::new(0.32, 0.4, 140.0, 0.5).unwrap(),
             Oklch::new(0.9, 0.01, 200.0, 1.0).unwrap(),
@@ -65,7 +66,7 @@ fn schema_preserves_wide_values_alpha_neutral_hue_and_all_output_choices() {
         f64::MAX,
     ] {
         let state = SavedState {
-            current: Oklch::new(0.51, c, 234.1, 0.51).unwrap(),
+            main: Oklch::new(0.51, c, 234.1, 0.51).unwrap(),
             ..varied_state()
         };
         assert_eq!(SavedState::decode(&state.encode().unwrap()).unwrap(), state);
@@ -83,13 +84,14 @@ fn malformed_unknown_and_oversized_profiles_are_preserved_and_disable_writes() {
         b"{\"version\":999}".to_vec(),
     ];
     for (field, value) in [
-        ("current", serde_json::json!([2.0, 0.1, 30.0, 1.0])),
-        ("current", serde_json::json!([0.5, -0.1, 30.0, 1.0])),
+        ("main", serde_json::json!([2.0, 0.1, 30.0, 1.0])),
+        ("main", serde_json::json!([0.5, -0.1, 30.0, 1.0])),
         ("recent", serde_json::json!(vec![[0.5, 0.1, 20.0, 1.0]; 25])),
         ("max_chroma", serde_json::json!(0.0)),
         ("gamut", serde_json::json!("unknown")),
         ("format", serde_json::json!("unknown")),
         ("mapping", serde_json::json!("unknown")),
+        ("selected", serde_json::json!(2)),
         ("extra", serde_json::json!(true)),
     ] {
         let mut invalid = base.clone();
@@ -102,6 +104,32 @@ fn malformed_unknown_and_oversized_profiles_are_preserved_and_disable_writes() {
         assert!(startup.store.is_none());
         assert!(!startup.warning.is_empty());
         assert_eq!(fs::read(root.path().join("state.json")).unwrap(), bytes);
+    }
+}
+
+#[test]
+fn version_one_preserves_both_colors_and_rejects_unexpected_fields() {
+    let original = varied_state();
+    let mut old: serde_json::Value = serde_json::from_slice(&original.encode().unwrap()).unwrap();
+    let fields = old.as_object_mut().unwrap();
+    let main = fields.remove("main").unwrap();
+    let sub = fields.remove("sub").unwrap();
+    fields.remove("selected");
+    fields.insert("current".into(), main);
+    fields.insert("previous".into(), sub);
+    fields.insert("version".into(), 1.into());
+    let decoded = SavedState::decode(&serde_json::to_vec(&old).unwrap()).unwrap();
+    assert_eq!(
+        decoded,
+        SavedState {
+            selected: 0,
+            ..original
+        }
+    );
+    for field in ["selected", "main", "sub", "unexpected"] {
+        let mut invalid = old.clone();
+        invalid[field] = 0.into();
+        assert!(SavedState::decode(&serde_json::to_vec(&invalid).unwrap()).is_err());
     }
 }
 
@@ -152,7 +180,7 @@ fn writer_flushes_the_latest_pending_snapshot_before_shutdown() {
     .unwrap();
     for index in 0..100 {
         let mut state = varied_state();
-        state.current = Oklch::new(index as f64 / 100.0, 0.3, 123.0, 0.7).unwrap();
+        state.main = Oklch::new(index as f64 / 100.0, 0.3, 123.0, 0.7).unwrap();
         worker.submit(state);
     }
     worker.submit(varied_state());

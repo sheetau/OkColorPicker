@@ -1,6 +1,6 @@
 :root { background-color: #000; color: #bdbdbd; font-family: "Martian Grotesk", "Martian Grotesk VF", "Segoe UI", sans-serif; font-size: 10px; }
-.app { position: relative; width: 100%; height: 100%; background-color: #000; border: 1px solid #393939; box-sizing: border-box; }
-.body { flex: 1; min-height: 0; overflow-y: auto; }
+.app { position: relative; width: 100%; height: 100%; background-color: #000; box-sizing: border-box; }
+.body { flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
 control { cursor: pointer; border-radius: 3px; }
 control:hover { background-color: #181818; }
 control:focus-visible, .color-control:focus-visible { outline: 1px solid #a78ac2; outline-offset: 2px; }
@@ -24,32 +24,36 @@ control:disabled { opacity: 0.25; }
 .options { height: 22px; margin: 0 20px; gap: 5px; align-items: center; }
 .gamut, .mapping { padding: 3px 6px; color: #777; font-size: 10px; }
 .selected { color: #e0d7ec; background-color: #231e29; }
-.plot-section { padding: 14px 20px 12px; gap: 7px; }
-.color-control { position: relative; height: 22px; min-width: 30px; flex: 1; }
-.color-control.slice { width: 100%; height: 130px; min-height: 130px; flex: none; }
+.plot-section { height: 0; padding: 14px 20px 12px; gap: 7px; flex: 1; min-height: 77px; }
+.color-control { position: relative; height: 22px; min-width: 0; flex: 1; }
+.color-control.slice { width: 100%; height: 0; min-height: 32px; flex: 1; }
 .color-surface { width: 100%; height: 100%; pointer-events: none; }
-.color-marker { position: absolute; width: 11px; height: 11px; margin-left: -5.5px; margin-top: -5.5px; border: 1px solid #eee; background-color: #ffffff26; transform: rotate(45deg); pointer-events: none; }
-.slice .color-marker { width: 8px; height: 8px; margin-left: -4px; margin-top: -4px; border-radius: 50%; transform: none; box-shadow: 0 0 0 1px #000; }
-.color-marker.outside { border-color: #e4aa6c; background-color: #442d19; }
+.color-marker { position: absolute; width: 16px; height: 16px; margin-left: -8px; margin-top: -8px; pointer-events: auto; }
+.slice .color-marker { width: 8px; height: 8px; margin-left: -4px; margin-top: -4px; border-radius: 50%; border: 1px solid #fff; background-color: #ffffff26; pointer-events: none; transform: none; box-shadow: 0 0 0 1px #000; }
+.slice .color-marker.outside { border-color: #e4aa6c; background-color: #442d19; }
 .plot-caption { height: 12px; align-items: center; gap: 5px; color: #666; font-size: 8px; font-family: "Martian Mono", monospace; }
 .legend.srgb { color: #aaa; } .legend.p3 { color: #ac83c8; } .legend.rec2020 { color: #8795a8; }
 .adjustments { padding: 12px 20px 20px; gap: 15px; }
 .preview-column { width: 64px; min-width: 64px; height: 130px; }
 .swatches { height: 64px; position: relative; }
 .swatch { position: absolute; width: 40px; height: 40px; border-radius: 4px; border: 1px solid #222; overflow: hidden; }
-.previous { top: 0; left: 0; } .current { top: 24px; left: 24px; }
+.main { top: 0; left: 0; } .sub { top: 24px; left: 24px; }
+.swatch.active { border-color: #777; }
+.swap-colors { position: absolute; left: 48px; top: 0; width: 16px; height: 16px; }
+.swap-icon { width: 16px; height: 16px; pointer-events: none; }
 .history-buttons { margin-top: 5px; justify-content: flex-end; gap: 4px; }
 .history-buttons control { width: 20px; height: 20px; position: relative; }
 .history-arrow { position: absolute; width: 8px; height: 8px; border-left: 1px solid #aaa; border-bottom: 1px solid #aaa; transform: rotate(45deg); left: 7px; top: 6px; }
 .history-arrow.redo { transform: rotate(225deg); left: 4px; }
 .quick-colors { gap: 2px; height: 20px; }
 .quick-colors control { width: 20px; height: 20px; border-radius: 0; border: 1px solid #282828; }
-.transparent-color { background-color: #fff; color: #ff3434; font-size: 22px; text-align: center; }
-.black-color { background-color: #000; } .white-color { background-color: #fff; }
+.transparent-color, .transparent-color:hover { background-color: #fff; position: relative; }
+.transparent-mark { position: absolute; left: -1px; top: -1px; width: 20px; height: 20px; pointer-events: none; }
+.black-color, .black-color:hover { background-color: #000; } .white-color, .white-color:hover { background-color: #fff; }
 .channels { flex: 1; min-width: 0; gap: 14px; }
 .channel { height: 22px; align-items: center; gap: 8px; }
 .channel-label { width: 16px; min-width: 16px; color: #686868; font-family: "Martian Mono", monospace; font-size: 10px; }
-.number { width: 64px; min-width: 64px; height: 22px; box-sizing: border-box; padding: 4px 5px; font-size: 10px; font-family: "Martian Mono", monospace; background-color: #090909; color: #aaa; border-radius: 3px; white-space: nowrap; overflow: hidden; }
+.number { width: 64px; min-width: 40px; height: 22px; box-sizing: border-box; padding: 4px 5px; font-size: 10px; font-family: "Martian Mono", monospace; background-color: #090909; color: #aaa; border-radius: 3px; white-space: nowrap; overflow: hidden; }
 field:focus { background-color: #17131c; outline: 1px solid #685475; }
 .formats { padding: 0 20px 12px; gap: 5px; }
 .code-row { position: relative; align-items: center; gap: 5px; height: 24px; }
@@ -64,6 +68,7 @@ field:focus { background-color: #17131c; outline: 1px solid #685475; }
 .format-menu { bottom: 28px; right: 28px; width: 130px; }
 .format-menu control { padding: 5px 8px; }
 .help-menu { top: 32px; left: 5px; gap: 7px; width: 285px; padding: 12px; }
+.status > row { flex-wrap: wrap; min-width: 0; gap: 4px; }
 .status { padding: 0 20px 12px; gap: 5px; color: #65606b; font-size: 9px; min-height: 28px; }
 .warning { color: #bd9a73; font-size: 9px; }
 .storage-warning { color: #d9aa71; gap: 4px; }

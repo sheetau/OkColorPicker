@@ -70,7 +70,11 @@ fn run() -> Result<(), zgui::Error> {
         .with_title("OkColorPicker")
         .with_size(330.0, 560.0)
         .with_min_size(330.0, 520.0)
-        .with_decorations(Decorations::NoTitleBar)
+        .with_decorations(if cfg!(target_os = "windows") {
+            Decorations::Full
+        } else {
+            Decorations::NoTitleBar
+        })
         // The composition surface has alpha; the application scene remains opaque.
         .with_transparent(true)
         .with_renderer(renderer)

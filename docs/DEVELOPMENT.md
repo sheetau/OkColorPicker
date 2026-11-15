@@ -53,7 +53,7 @@ The runtime invalidates dependent paint/atlas caches after recovery, retaining t
 mounted view, focus and model. Uploads to a known lost device are refused until
 recovery, leaving pending CPU data available.
 
-The slice, four channel bars, current/previous samples and recent samples all use
+The slice, four channel bars, main/sub samples and recent samples all use
 custom GPU paint. They retain extended RGB when Windows reports active WCG or HDR,
 reference white is known, and the actual presentation format is FP16. Otherwise
 they use the selected sRGB mapping or clipping policy. The status names the
@@ -125,6 +125,15 @@ their READMEs describe the limited changes. The
 [runtime patch](../vendor/zgui-runtime/README.md) invalidates dependent caches on
 `FrameOutcome::Recovered`; replaying old chunks alone cannot restore lost textures.
 See [Color contracts](COLOR_CONTRACT.md) for input, output, gamut and history semantics.
+
+On Windows, DWM owns the window border, shadow and rounded corners. The normal
+resizable native frame is retained while `WM_NCCALCSIZE` replaces its title bar
+with the application caption. Maximized client content begins at the visible
+top edge; the first pixel participates in caption dragging. Side/bottom resizing
+uses native hit testing, with a top resize band on restored windows. The product
+does not paint an extra window border or use Windows-side CSS resize grips.
+Vertical resizing changes the gamut height; the remaining controls keep their
+content height, with no outer scrollbars.
 
 The Windows caption bridge exposes the painted controls as `HTMINBUTTON`,
 `HTMAXBUTTON` and `HTCLOSE`. It uses physical bounds from each completed frame

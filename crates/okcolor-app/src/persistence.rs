@@ -8,13 +8,14 @@ use std::{
 };
 
 pub const RECENT_LIMIT: usize = 24;
-const VERSION: u32 = 1;
+const VERSION: u32 = 2;
 const MAX_FILE_BYTES: u64 = 128 * 1024;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct SavedState {
-    pub current: Oklch,
-    pub previous: Oklch,
+    pub main: Oklch,
+    pub sub: Oklch,
+    pub selected: u8,
     /// Newest first; duplicates are removed when the history is restored.
     pub recent: Vec<Oklch>,
     pub gamut: Gamut,
@@ -27,8 +28,9 @@ impl Default for SavedState {
     fn default() -> Self {
         let color = parse_color("#4e83a3", 0.0).expect("built-in color");
         Self {
-            current: color,
-            previous: color,
+            main: color,
+            sub: parse_color("#fff", 0.0).expect("built-in color"),
+            selected: 0,
             recent: Vec::new(),
             gamut: Gamut::Srgb,
             mapping: GamutMapping::LocalMinde,
@@ -42,8 +44,9 @@ impl Default for SavedState {
 #[serde(deny_unknown_fields)]
 struct WireState {
     version: u32,
-    current: [f64; 4],
-    previous: [f64; 4],
+    main: [f64; 4],
+    sub: [f64; 4],
+    selected: u8,
     recent: Vec<[f64; 4]>,
     gamut: String,
     mapping: String,
@@ -104,6 +107,9 @@ fn read_color(value: [f64; 4]) -> io::Result<Oklch> {
 
 impl SavedState {
     fn validate(&self) -> io::Result<()> {
+        if self.selected > 1 {
+            return Err(invalid("Unknown color slot"));
+        }
         if self.recent.len() > RECENT_LIMIT {
             return Err(invalid("Too many recent colors"));
         }
@@ -117,8 +123,9 @@ impl SavedState {
         self.validate()?;
         let wire = WireState {
             version: VERSION,
-            current: self.current.components(),
-            previous: self.previous.components(),
+            main: self.main.components(),
+            sub: self.sub.components(),
+            selected: self.selected,
             recent: self.recent.iter().map(|color| color.components()).collect(),
             gamut: gamut_name(self.gamut).into(),
             mapping: match self.mapping {
@@ -143,6 +150,31 @@ impl SavedState {
             version: u32,
         }
         let header: Header = serde_json::from_slice(bytes).map_err(invalid)?;
+        if header.version == 1 {
+            // Version 1 stored a current color and the previous edit, not two slots.
+            // Preserve both originals as main/sub and start on main.
+            let mut value: serde_json::Value = serde_json::from_slice(bytes).map_err(invalid)?;
+            let object = value
+                .as_object_mut()
+                .ok_or_else(|| invalid("Invalid state object"))?;
+            if object.contains_key("main")
+                || object.contains_key("sub")
+                || object.contains_key("selected")
+            {
+                return Err(invalid("Unexpected version 1 slot fields"));
+            }
+            let current = object
+                .remove("current")
+                .ok_or_else(|| invalid("Missing current color"))?;
+            let previous = object
+                .remove("previous")
+                .ok_or_else(|| invalid("Missing previous color"))?;
+            object.insert("main".into(), current);
+            object.insert("sub".into(), previous);
+            object.insert("selected".into(), 0.into());
+            object.insert("version".into(), VERSION.into());
+            return Self::decode(&serde_json::to_vec(&value).map_err(invalid)?);
+        }
         if header.version != VERSION {
             return Err(invalid(format!(
                 "Unsupported state version {}",
@@ -151,8 +183,9 @@ impl SavedState {
         }
         let wire: WireState = serde_json::from_slice(bytes).map_err(invalid)?;
         let state = Self {
-            current: read_color(wire.current)?,
-            previous: read_color(wire.previous)?,
+            main: read_color(wire.main)?,
+            sub: read_color(wire.sub)?,
+            selected: wire.selected,
             recent: wire
                 .recent
                 .into_iter()

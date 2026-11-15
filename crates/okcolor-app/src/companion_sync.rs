@@ -70,6 +70,7 @@ pub(crate) enum Resolution {
 struct Pending {
     revision: u64,
     color: ColorCommand,
+    colors: [Option<[f64; 3]>; 2],
     started: Instant,
 }
 pub(crate) struct Sync {
@@ -77,6 +78,7 @@ pub(crate) struct Sync {
     previous: ColorEdit,
     mapping: GamutMapping,
     dirty: Option<u64>,
+    dirty_slots: [bool; 2],
     pending: Option<Pending>,
     protected: bool,
     revision: u64,
@@ -94,6 +96,7 @@ impl Sync {
             previous: model.edit.get_untracked(),
             mapping: model.mapping.get_untracked(),
             dirty: None,
+            dirty_slots: [false; 2],
             pending: None,
             protected: false,
             revision: 0,
@@ -131,8 +134,17 @@ impl Sync {
         let edit = model.edit.get_untracked();
         let mapping = model.mapping.get_untracked();
         let color_changed = edit.origin == EditOrigin::Local
-            && edit.color.components()[..3] != self.previous.color.components()[..3];
+            && (edit.slot != self.previous.slot
+                || edit
+                    .colors
+                    .into_iter()
+                    .zip(self.previous.colors)
+                    .any(|(a, b)| a.components()[..3] != b.components()[..3]));
         if active && (color_changed || mapping != self.mapping) {
+            for (index, dirty) in self.dirty_slots.iter_mut().enumerate() {
+                *dirty |= edit.colors[index].components()[..3]
+                    != self.previous.colors[index].components()[..3];
+            }
             self.dirty = Some(generation);
             self.pending = None;
             // Offline edits remain local until an explicit reconciliation action.
@@ -158,10 +170,11 @@ impl Sync {
         }
         if resolution == Resolution::Pull && !busy && !remote.manipulating {
             self.dirty = None;
+            self.dirty_slots = [false; 2];
             self.pending = None;
             self.protected = false;
             // Explicitly adopting CSP also resolves a same-RGB wide-gamut source.
-            model.receive_rgb(remote.rgb);
+            model.receive_slots(remote.colors, remote.slot, false);
             self.previous = model.edit.get_untracked();
             self.applied = observation.sequence;
         } else if resolution == Resolution::Send {
@@ -188,27 +201,49 @@ impl Sync {
                     resolve: true,
                 };
             };
-            let Ok(color) = ColorCommand::new(rgb, remote.slot, false) else {
+            let Ok(color) = ColorCommand::new(rgb, model.selected.get_untracked(), false) else {
                 return Feedback {
                     hint: "Cannot represent this color for CSP".into(),
                     resolve: true,
                 };
             };
-            let Some(revision) = self.revision.checked_add(1) else {
-                return Feedback {
-                    hint: "CSP edit counter exhausted; restart the picker".into(),
-                    resolve: false,
-                };
-            };
-            if send(generation, revision, color) {
-                self.revision = revision;
-                self.dirty = None;
-                self.pending = Some(Pending {
-                    revision,
-                    color,
-                    started: now,
-                });
+            let slot = usize::from(color.slot());
+            let other = 1 - slot;
+            let local = model.colors();
+            let mut expected = [None; 2];
+            // Send the inactive slot first, then the selected slot. Coalescing is per
+            // slot, so a swap cannot discard one half or leave CSP on the wrong slot.
+            let mut commands = vec![];
+            if let Ok(rgb) = local[other].mapped_rgb(Gamut::Srgb, mapping)
+                && (self.dirty_slots[other]
+                    || remote.colors[other].is_some_and(|remote| !same_rgb(rgb, remote)))
+            {
+                expected[other] = Some(rgb);
+                commands
+                    .push(ColorCommand::new(rgb, other as u8, false).expect("bounded mapped RGB"));
             }
+            expected[slot] = Some(color.rgb());
+            commands.push(color);
+            for command in commands {
+                let Some(revision) = self.revision.checked_add(1) else {
+                    return Feedback {
+                        hint: "CSP edit counter exhausted; restart the picker".into(),
+                        resolve: false,
+                    };
+                };
+                if !send(generation, revision, command) {
+                    return Feedback::default();
+                }
+                self.revision = revision;
+            }
+            self.dirty = None;
+            self.dirty_slots = [false; 2];
+            self.pending = Some(Pending {
+                revision: self.revision,
+                color,
+                colors: expected,
+                started: now,
+            });
         }
         if let Some(pending) = &self.pending {
             if !self.protected
@@ -216,6 +251,15 @@ impl Sync {
                 && remote.slot == pending.color.slot()
                 && remote.transparent == pending.color.transparent()
                 && same_rgb(remote.rgb, pending.color.rgb())
+                && pending
+                    .colors
+                    .into_iter()
+                    .zip(remote.colors)
+                    .all(|(expected, actual)| {
+                        expected.is_none_or(|expected| {
+                            actual.is_some_and(|actual| same_rgb(expected, actual))
+                        })
+                    })
             {
                 self.pending = None;
                 self.applied = observation.sequence;
@@ -242,12 +286,17 @@ impl Sync {
             };
         }
         if !busy && observation.sequence != self.applied {
-            let matches = model
-                .current()
-                .mapped_rgb(Gamut::Srgb, mapping)
-                .is_ok_and(|rgb| same_rgb(rgb, remote.rgb));
-            if !matches {
-                model.receive_rgb_sample(remote.rgb, remote.manipulating);
+            let local = model.colors();
+            let samples = std::array::from_fn(|index| {
+                remote.colors[index].filter(|rgb| {
+                    !local[index]
+                        .mapped_rgb(Gamut::Srgb, mapping)
+                        .is_ok_and(|local| same_rgb(local, *rgb))
+                })
+            });
+            if samples.iter().any(Option::is_some) || model.selected.get_untracked() != remote.slot
+            {
+                model.receive_slots(samples, remote.slot, remote.manipulating);
             }
             if !remote.manipulating {
                 model.finish_remote();
@@ -271,9 +320,11 @@ impl Sync {
 }
 fn same_rgb(left: [f64; 3], right: [f64; 3]) -> bool {
     // CSP's displayed RGB may be quantized to 8-bit even on its uint32 wire.
-    left.into_iter()
-        .zip(right)
-        .all(|(a, b)| a.is_finite() && b.is_finite() && (a * 255.0).round() == (b * 255.0).round())
+    left.into_iter().zip(right).all(|(a, b)| {
+        a.is_finite()
+            && b.is_finite()
+            && ((a - b).abs() < 1e-7 || (a * 255.0).round() == (b * 255.0).round())
+    })
 }
 
 #[cfg(test)]
@@ -283,6 +334,7 @@ mod tests {
     fn remote(rgb: [f64; 3]) -> ColorState {
         ColorState {
             rgb,
+            colors: [Some(rgb), None],
             slot: 0,
             transparent: false,
             can_set: true,
@@ -330,6 +382,82 @@ mod tests {
             },
         )
     }
+    #[test]
+    fn both_slots_follow_csp_and_local_selection_and_swap_send_explicit_slots() {
+        Owner::new().with(|| {
+            let (model, mut sync, mut inbox) = setup();
+            let now = Instant::now();
+            let mut sent = vec![];
+            let mut state = remote([0.8, 0.1, 0.2]);
+            state.colors[1] = Some([0.1, 0.8, 0.4]);
+            inbox.absorb(
+                1,
+                Event::Color {
+                    state,
+                    after_write: 0,
+                },
+            );
+            tick(&mut sync, model, &inbox, now, Resolution::None, &mut sent);
+            assert!(sent.is_empty());
+            let colors = model.colors();
+            assert!(same_rgb(
+                colors[1]
+                    .mapped_rgb(Gamut::Srgb, GamutMapping::LocalMinde)
+                    .unwrap(),
+                state.colors[1].unwrap()
+            ));
+            model.select_slot(1);
+            tick(&mut sync, model, &inbox, now, Resolution::None, &mut sent);
+            assert_eq!(model.colors(), colors);
+            assert_eq!(sent.len(), 1);
+            assert_eq!(sent[0].2.slot(), 1);
+            state.slot = 1;
+            state.rgb = state.colors[1].unwrap();
+            inbox.absorb(
+                1,
+                Event::Color {
+                    state,
+                    after_write: sent[0].1,
+                },
+            );
+            tick(&mut sync, model, &inbox, now, Resolution::None, &mut sent);
+            assert!(sync.pending.is_none());
+            sent.clear();
+            model.swap();
+            tick(&mut sync, model, &inbox, now, Resolution::None, &mut sent);
+            assert_eq!(sent.len(), 2);
+            assert_eq!((sent[0].2.slot(), sent[1].2.slot()), (0, 1));
+            assert!(sent[0].1 < sent[1].1);
+            state.colors = [Some(sent[0].2.rgb()), Some(sent[1].2.rgb())];
+            state.rgb = state.colors[1].unwrap();
+            inbox.absorb(
+                1,
+                Event::Color {
+                    state,
+                    after_write: sent[1].1,
+                },
+            );
+            tick(&mut sync, model, &inbox, now, Resolution::None, &mut sent);
+            assert!(sync.pending.is_none());
+            assert_eq!(model.colors(), [colors[1], colors[0]]);
+            assert_eq!(model.selected.get_untracked(), 1);
+            // Selecting the other slot remotely changes selection, not the pair.
+            state.slot = 0;
+            state.rgb = state.colors[0].unwrap();
+            inbox.absorb(
+                1,
+                Event::Color {
+                    state,
+                    after_write: sent[1].1,
+                },
+            );
+            tick(&mut sync, model, &inbox, now, Resolution::None, &mut sent);
+            assert_eq!(model.selected.get_untracked(), 0);
+            assert_eq!(model.colors(), [colors[1], colors[0]]);
+            assert_eq!(sent.len(), 2);
+        });
+    }
+
     #[test]
     fn receiving_a_color_preserves_alpha_neutral_hue_and_does_not_echo() {
         Owner::new().with(|| {
@@ -568,9 +696,10 @@ mod tests {
                 "remote preview must not block subsequent samples"
             );
             assert_eq!(model.recent.get_untracked().len(), count);
-            assert_eq!(model.saved_state_untracked().current, before);
+            assert_eq!(model.saved_state_untracked().main, before);
             for step in 1..20 {
                 color.rgb = [1.0 - f64::from(step) / 20.0, f64::from(step) / 20.0, 0.0];
+                color.colors[0] = Some(color.rgb);
                 inbox.absorb(
                     1,
                     Event::Color {
@@ -586,6 +715,7 @@ mod tests {
                 assert!(sent.is_empty());
             }
             color.rgb = [0.0, 1.0, 0.0];
+            color.colors[0] = Some(color.rgb);
             color.manipulating = false;
             inbox.absorb(
                 1,
@@ -663,7 +793,7 @@ mod tests {
                     model.undo();
                 }
                 assert_eq!(model.current(), preview);
-                assert_eq!(model.saved_state_untracked().current, preview);
+                assert_eq!(model.saved_state_untracked().main, preview);
                 model.undo();
                 assert_eq!(model.current(), before);
                 assert!(sent.is_empty(), "remote gestures must not echo");

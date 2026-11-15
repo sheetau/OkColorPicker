@@ -85,6 +85,18 @@ impl FrameProbe for Probe {
                     assert_ne!(ClientToScreen(hwnd, &mut screen), 0);
                     let pack =
                         |p: POINT| (p.x as u16 as u32 | ((p.y as u16 as u32) << 16)) as isize;
+                    assert_ne!(
+                        GetWindowLongPtrW(hwnd, GWL_STYLE) as u32 & WS_CAPTION,
+                        0,
+                        "DWM must retain the native frame"
+                    );
+                    let mut top = POINT { x: 80, y: 0 };
+                    assert_ne!(ClientToScreen(hwnd, &mut top), 0);
+                    assert_eq!(
+                        SendMessageW(hwnd, WM_NCHITTEST, 0, pack(top)),
+                        if maximized { HTCLIENT } else { HTTOP } as isize,
+                        "Visible top pixel must remain draggable when maximized and resizable when restored"
+                    );
                     let hit = SendMessageW(hwnd, WM_NCHITTEST, 0, pack(screen));
                     assert_eq!(
                         hit, HTMAXBUTTON as isize,
@@ -182,7 +194,7 @@ fn painted_native_maximize_button_round_trips_through_winit_and_zgui() {
         .with_title("OkColorPicker native caption test")
         .with_size(330.0, 560.0)
         .with_min_size(330.0, 520.0)
-        .with_decorations(Decorations::NoTitleBar)
+        .with_decorations(Decorations::Full)
         .with_transparent(true)
         .with_fonts(fonts::load())
         .with_stylesheet(STYLE)

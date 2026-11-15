@@ -107,21 +107,55 @@ fn wheel_edits_keep_recents_and_still_save_undo_and_branch() {
 }
 
 #[test]
-fn captured_slice_drag_tracks_the_boundary_and_can_reenter() {
+fn captured_slice_drag_projects_to_the_nearest_screen_point() {
     for gamut in [Gamut::Srgb, Gamut::DisplayP3, Gamut::Rec2020] {
-        for hue in (0..360).step_by(15) {
+        for hue in (0..360).step_by(30) {
             let slice = GamutSlice::new(f64::from(hue), 0.4, gamut).unwrap();
-            for y in [-1.0, 0.0, 0.1, 0.3, 0.5, 0.9, 1.0, 2.0] {
-                let picked = slice.drag(1.5, y, 0.37).unwrap();
-                let [l, c, h, alpha] = picked.components();
-                assert_eq!(l, 1.0 - y.clamp(0.0, 1.0));
-                assert_eq!((h, alpha), (f64::from(hue), 0.37));
-                assert!(picked.in_gamut(gamut));
-                assert!((c - slice.boundary(l, gamut).unwrap().min(0.4)).abs() < 1e-7);
+            let projection = slice.projection();
+            // Independent dense boundary search checks the global minimum, not
+            // the minimizer's chosen bracket. Include portrait and wide charts.
+            let boundary: Vec<_> = (0..=2048)
+                .map(|i| {
+                    let l = f64::from(i) / 2048.0;
+                    (l, slice.boundary(l, gamut).unwrap().min(0.4))
+                })
+                .collect();
+            for aspect in [0.5, 1.0, 2.25] {
+                for (x, y) in [
+                    (-0.2, 0.4),
+                    (0.8, -0.3),
+                    (1.4, 0.6),
+                    (0.95, 0.05),
+                    (0.8, 1.2),
+                ] {
+                    let picked = projection.project(x, y, 0.37, aspect).unwrap();
+                    let [l, c, h, alpha] = picked.components();
+                    assert_eq!((h, alpha), (f64::from(hue), 0.37));
+                    assert!(picked.in_gamut(gamut));
+                    let distance = |l: f64, c: f64| ((c / 0.4 - x) * aspect).hypot(1.0 - l - y);
+                    let actual = distance(l, c);
+                    let oracle = boundary
+                        .iter()
+                        .map(|&(l, c)| distance(l, c.min(x.clamp(0.0, 1.0) * 0.4)))
+                        .fold(f64::INFINITY, f64::min);
+                    assert!(
+                        actual <= oracle + 1e-8,
+                        "{gamut:?} {hue} {aspect} ({x},{y}): {actual} > {oracle}"
+                    );
+                }
+                assert_eq!(
+                    projection.project(0.01, 0.5, 0.37, aspect),
+                    slice.pick(0.01, 0.5, 0.37)
+                );
             }
-            assert_eq!(slice.drag(-1.0, 0.5, 1.0).unwrap().components()[1], 0.0);
-            assert_eq!(slice.drag(0.01, 0.5, 0.37), slice.pick(0.01, 0.5, 0.37));
-            assert!(slice.drag(f64::NAN, 0.5, 1.0).is_none());
+            assert!(projection.project(f64::NAN, 0.5, 1.0, 1.0).is_none());
+            assert!(projection.project(1.0, 0.5, 1.0, 0.0).is_none());
         }
     }
+    let slice = GamutSlice::new(250.0, 0.4, Gamut::Srgb).unwrap();
+    let picked = slice.projection().project(1.4, 0.6, 1.0, 2.25).unwrap();
+    assert!(
+        (picked.components()[0] - 0.4).abs() > 0.05,
+        "nearest projection must also move lightness"
+    );
 }

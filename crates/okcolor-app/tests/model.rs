@@ -36,7 +36,7 @@ fn drag_updates_only_changed_channels_and_commits_once() {
         assert!(model.recent.get().is_empty());
         assert!(!model.can_undo.get());
         model.commit();
-        assert_eq!(model.previous.get(), before);
+        assert_eq!(model.slots[1].get(), SavedState::default().sub);
         assert_eq!(model.recent.get().len(), 1);
         model.undo();
         assert_eq!(model.current(), before);
@@ -57,7 +57,7 @@ fn persisted_snapshots_exclude_previews_even_when_settings_or_failed_edits_publi
         model.gamut.set(Gamut::DisplayP3);
         assert!(!model.input("#ff0"));
         let during = model.saved_state();
-        assert_eq!(during.current, before.current);
+        assert_eq!(during.main, before.main);
         assert_eq!(during.recent, before.recent);
         assert_eq!(during.gamut, Gamut::DisplayP3);
         model.cancel();
@@ -66,29 +66,29 @@ fn persisted_snapshots_exclude_previews_even_when_settings_or_failed_edits_publi
         let final_color = Oklch::new(0.62, 0.32, 144.0, 0.4).unwrap();
         model.preview(final_color);
         model.commit();
-        assert_eq!(model.saved_state().current, final_color);
+        assert_eq!(model.saved_state().main, final_color);
         model.undo();
-        assert_eq!(model.saved_state().current, before.current);
+        assert_eq!(model.saved_state().main, before.main);
         model.redo();
-        assert_eq!(model.saved_state().current, final_color);
+        assert_eq!(model.saved_state().main, final_color);
     });
 }
 
 #[test]
-fn restore_retains_recent_order_and_previous_color_without_restoring_undo() {
+fn restore_retains_recent_order_and_both_slots_without_restoring_undo() {
     Owner::new().with(|| {
         let _zone = zgui::reactive::enter_non_reactive_zone();
         let a = Oklch::new(0.3, 0.5, 140.0, 0.5).unwrap();
         let b = Oklch::new(0.7, 0.0, 259.0, 0.7).unwrap();
         let saved = SavedState {
-            current: b,
-            previous: a,
+            main: b,
+            sub: a,
             recent: vec![a, b, a],
             ..SavedState::default()
         };
         let model = PickerModel::restore(saved);
         assert_eq!(model.current(), b);
-        assert_eq!(model.previous.get_untracked(), a);
+        assert_eq!(model.slots[1].get_untracked(), a);
         assert_eq!(model.recent.get_untracked(), vec![a, b]);
         assert!(!model.can_undo.get_untracked());
         assert!(!model.can_redo.get_untracked());
@@ -97,5 +97,36 @@ fn restore_retains_recent_order_and_previous_color_without_restoring_undo() {
         model.undo();
         assert_eq!(model.current(), b);
         assert!(!model.can_undo.get_untracked());
+    });
+}
+
+#[test]
+fn slots_select_without_swapping_and_swap_undo_restores_both_exact_colors() {
+    Owner::new().with(|| {
+        let model = PickerModel::default();
+        let originals = model.colors();
+        model.select_slot(1);
+        assert_eq!(model.colors(), originals);
+        assert_eq!(model.current(), originals[1]);
+        assert!(!model.can_undo.get_untracked());
+        assert!(model.recent.get_untracked().is_empty());
+        let sub = Oklch::new(0.612345678901, 0.42, 301.123456789, 0.25).unwrap();
+        model.select(sub);
+        model.select_slot(0);
+        assert_eq!(model.colors(), [originals[0], sub]);
+        model.swap();
+        assert_eq!(model.colors(), [sub, originals[0]]);
+        model.undo();
+        assert_eq!(model.colors(), [originals[0], sub]);
+        model.undo();
+        assert_eq!(model.colors(), originals);
+        model.redo();
+        model.redo();
+        model.select_slot(1);
+        let saved = model.saved_state_untracked();
+        let restored = PickerModel::restore(SavedState::decode(&saved.encode().unwrap()).unwrap());
+        assert_eq!(restored.colors(), model.colors());
+        assert_eq!(restored.selected.get_untracked(), 1);
+        assert_eq!(restored.current(), originals[0]);
     });
 }

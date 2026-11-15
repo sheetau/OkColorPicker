@@ -416,6 +416,68 @@ fn mounted_picker_draws_and_drag_is_one_undo() {
                     "number field did not commit: {:?}",
                     model.current()
                 );
+                // Slot selection changes only which color is edited. The separate
+                // swap control exchanges both colors as one undoable transaction.
+                harness.deliver_to_first(SurfaceEvent::ScaleFactorChanged {
+                    scale_factor: 1.0, size: Size::new(DevicePx(330.0), DevicePx(560.0)),
+                });
+                harness.settle(64);
+                let pair = model.colors();
+                let sub = refs.swatches[1].window_bounds().unwrap();
+                let at = Point::new(CssPx(sub.origin.x.0+32.0), CssPx(sub.origin.y.0+32.0));
+                for action in [PointerAction::Pressed,PointerAction::Released] {
+                    harness.deliver_to_first(SurfaceEvent::Pointer {action,event:PointerEvent::mouse(at).with_button(PointerButton::Primary),modifiers:Modifiers::NONE,timestamp:Timestamp::ORIGIN});
+                    harness.settle(32);
+                }
+                assert_eq!(model.selected.get_untracked(),1);
+                assert_eq!(model.colors(),pair);
+                if let Ok(path)=std::env::var("OKCOLOR_SLOT_RGBA") { std::fs::write(path,frames.lock().unwrap().last().unwrap().bytes()).unwrap(); }
+                // The overlapping region now belongs to the selected sub swatch.
+                let at = Point::new(CssPx(sub.origin.x.0+5.0), CssPx(sub.origin.y.0+5.0));
+                for action in [PointerAction::Pressed,PointerAction::Released] {
+                    harness.deliver_to_first(SurfaceEvent::Pointer {action,event:PointerEvent::mouse(at).with_button(PointerButton::Primary),modifiers:Modifiers::NONE,timestamp:Timestamp::ORIGIN});
+                    harness.settle(32);
+                }
+                assert_eq!(model.selected.get_untracked(),1);
+                let swap = refs.swap.window_bounds().unwrap();
+                let at = Point::new(CssPx(swap.origin.x.0+8.0),CssPx(swap.origin.y.0+8.0));
+                for action in [PointerAction::Pressed,PointerAction::Released] {
+                    harness.deliver_to_first(SurfaceEvent::Pointer {action,event:PointerEvent::mouse(at).with_button(PointerButton::Primary),modifiers:Modifiers::NONE,timestamp:Timestamp::ORIGIN});
+                    harness.settle(32);
+                }
+                assert_eq!(model.colors(),[pair[1],pair[0]]);
+                model.undo();
+                assert_eq!(model.colors(),pair);
+                model.select_slot(0);
+
+                // Start on the lower, protruding half of the diamond, then drag
+                // outside its bar. This exercises hit testing and pointer capture.
+                model.set_channel(0,0.5);
+                harness.settle(32);
+                let bar=refs.bars[0].window_bounds().unwrap();
+                for (action,x) in [(PointerAction::Pressed,0.5),(PointerAction::Moved,0.75),(PointerAction::Released,0.75)] {
+                    let at=Point::new(CssPx(bar.origin.x.0+bar.size.width.0*x),CssPx(bar.origin.y.0+bar.size.height.0+4.0));
+                    harness.deliver_to_first(SurfaceEvent::Pointer {action,event:PointerEvent::mouse(at).with_button(PointerButton::Primary),modifiers:Modifiers::NONE,timestamp:Timestamp::ORIGIN});
+                    harness.settle(32);
+                }
+                assert!((model.current().components()[0]-0.75).abs()<1e-6,"protruding knob did not capture the drag");
+                model.undo();
+                assert_eq!(model.current().components()[0],0.5);
+
+                let mut short_slice = 0.0;
+                for (width,height) in [(330.0,520.0),(330.0,720.0),(600.0,720.0),(300.0,520.0),(330.0,560.0)] {
+                    harness.deliver_to_first(SurfaceEvent::Resized(Size::new(DevicePx(width),DevicePx(height))));
+                    harness.advance(Duration::from_millis(20));
+                    harness.settle(64);
+                    for node in [refs.slice,refs.bars[0],refs.bars[3],refs.numbers[0],refs.codes[0],refs.codes[1],refs.companion,refs.close] {
+                        let bounds=node.window_bounds().unwrap();
+                        assert!(bounds.origin.x.0>=0.0 && bounds.origin.x.0+bounds.size.width.0<=width+0.1,"horizontal overflow: {bounds:?} in {width}");
+                        assert!(bounds.origin.y.0>=0.0 && bounds.origin.y.0+bounds.size.height.0<=height+0.1,"vertical overflow: {bounds:?} in {height}");
+                    }
+                    let slice=refs.slice.window_bounds().unwrap().size.height.0;
+                    if width==330.0 && height==520.0 { short_slice=slice; }
+                    if width==330.0 && height==720.0 { assert!((slice-short_slice-200.0).abs()<0.1,"only the gamut should absorb vertical resizing"); }
+                }
                 refs.slice.focus();
                 harness.settle(32);
                 let precise = model.current();
@@ -584,6 +646,8 @@ fn mounted_picker_draws_and_drag_is_one_undo() {
                     timestamp: Timestamp::ORIGIN,
                 };
                 let before_slice = model.current();
+                let projection = okcolor_core::GamutSlice::new(model.h.get_untracked(), model.max_chroma.get_untracked(), model.gamut.get_untracked()).unwrap().projection();
+                let nearest = |x,y| projection.project(x,y,model.alpha.get_untracked(), f64::from(slice.size.width.0/slice.size.height.0)).unwrap().components()[0];
                 for action in [PointerAction::Pressed, PointerAction::Released] {
                     harness.deliver_to_first(slice_event(action, 0.95, 0.05));
                     harness.settle(32);
@@ -600,11 +664,11 @@ fn mounted_picker_draws_and_drag_is_one_undo() {
                 harness.deliver_to_first(slice_event(PointerAction::Moved, 0.95, 0.05));
                 harness.settle(32);
                 assert!(model.dragging.get_untracked());
-                assert!((model.current().components()[0] - 0.95).abs() < 1e-6);
+                assert!((model.current().components()[0] - nearest(0.95,0.05)).abs() < 1e-5);
                 assert!(model.current().in_gamut(model.gamut.get_untracked()));
                 harness.deliver_to_first(slice_event(PointerAction::Moved, 1.4, 0.6));
                 harness.settle(32);
-                assert!((model.current().components()[0] - 0.4).abs() < 1e-6);
+                assert!((model.current().components()[0] - nearest(1.4,0.6)).abs() < 1e-5);
                 assert!(model.current().in_gamut(model.gamut.get_untracked()));
                 harness.deliver_to_first(slice_event(PointerAction::Moved, 0.05, 0.5));
                 harness.settle(32);
@@ -612,7 +676,7 @@ fn mounted_picker_draws_and_drag_is_one_undo() {
                 harness.deliver_to_first(slice_event(PointerAction::Released, 0.95, 0.05));
                 harness.settle(32);
                 assert!(!model.dragging.get_untracked());
-                assert!((model.current().components()[0] - 0.95).abs() < 1e-6);
+                assert!((model.current().components()[0] - nearest(0.95,0.05)).abs() < 1e-5);
                 assert!(model.current().in_gamut(model.gamut.get_untracked()));
                 model.undo();
                 harness.settle(32);
@@ -661,7 +725,7 @@ fn mounted_picker_draws_and_drag_is_one_undo() {
                 );
                 Owner::new().with(|| {
                     let model = PickerModel::restore(reopened.load().unwrap());
-                    assert_eq!(model.current(), expected.current);
+                    assert_eq!(model.current(), [expected.main, expected.sub][usize::from(expected.selected)]);
                     assert_eq!(model.recent.get_untracked(), expected.recent);
                     assert!(!model.can_undo.get_untracked());
                 });

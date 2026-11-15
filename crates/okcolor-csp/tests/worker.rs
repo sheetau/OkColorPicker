@@ -14,6 +14,66 @@ use std::{
 };
 
 const WAIT: Duration = Duration::from_secs(4);
+
+#[test]
+fn color_pushes_are_delivered_before_the_outstanding_heartbeat_reply() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let credentials = pairing(listener.local_addr().unwrap().port());
+    let (observed_tx, observed) = mpsc::channel();
+    let server = thread::spawn(move || {
+        let mut socket = accept(&listener);
+        let auth = receive(&mut socket);
+        reply(&mut socket, &auth);
+        let heartbeat = receive(&mut socket);
+        assert_eq!(heartbeat.command, "TellHeartbeat");
+        for index in 0..4u32 {
+            let push = Frame {
+                kind: Kind::Command,
+                command: "SyncColorCircleUIState".into(),
+                serial: 100 + index,
+                detail: Some(json!({"CurrentColorIndex":0,"ColorSelectionModel":"HLS",
+                    "HLSColorMainH":index * 400000000,"HLSColorMainL":2147483648u32,"HLSColorMainS":4294967295u32,
+                    "HLSColorSubH":0,"HLSColorSubL":4294967295u32,"HLSColorSubS":0,
+                    "IsCurrentColorTransparent":false,"CanExecuteSetterCommand":true,"IsManipulating":true})),
+                data: vec![],
+            };
+            socket.get_mut().write_all(&push.encode().unwrap()).unwrap();
+            let ack = receive(&mut socket);
+            assert_eq!((ack.kind, ack.serial), (Kind::Success, push.serial));
+            // The test releases the next push only after its UI-facing event. The
+            // heartbeat ACK remains withheld throughout, so batching would deadlock.
+            assert_eq!(observed.recv_timeout(WAIT).unwrap(), index);
+        }
+        reply(&mut socket, &heartbeat);
+    });
+    let (tx, rx) = mpsc::channel();
+    let worker = Worker::start(
+        |_| Err(ScanError::NoPairing),
+        move |g, e| {
+            tx.send((g, e)).unwrap();
+        },
+    )
+    .unwrap();
+    worker.control().pair(credentials);
+    state(&rx, 1, State::Connecting);
+    state(&rx, 1, State::Connected);
+    for index in 0..4 {
+        let (generation, event) = rx.recv_timeout(WAIT).unwrap();
+        assert_eq!(generation, 1);
+        let Event::Color {
+            state,
+            after_write: 0,
+        } = event
+        else {
+            panic!("expected immediate color push")
+        };
+        assert!(state.manipulating);
+        assert_eq!(state.colors[1], Some([1.0; 3]));
+        observed_tx.send(index).unwrap();
+    }
+    drop(worker);
+    server.join().unwrap();
+}
 fn pairing(port: u16) -> Pairing {
     let raw = format!("127.0.0.1\t{port}\tsecretpw\tG#1:2026");
     let key = [0x74, 0xb2, 0x92, 0x5b, 0x4a, 0x21, 0xda];
@@ -172,8 +232,18 @@ fn worker_maintains_heartbeat_reconnects_and_releases_idle_socket_on_shutdown() 
         done_tx.send(()).unwrap();
         loop {
             let mut bytes = vec![];
-            if socket.read_until(0, &mut bytes).unwrap() == 0 {
-                break;
+            match socket.read_until(0, &mut bytes) {
+                Ok(0) => break,
+                Err(e)
+                    if matches!(
+                        e.kind(),
+                        std::io::ErrorKind::ConnectionAborted | std::io::ErrorKind::ConnectionReset
+                    ) =>
+                {
+                    break;
+                }
+                Ok(_) => {}
+                Err(e) => panic!("socket remained open: {e}"),
             }
             let frame = Decoder::default().feed(&bytes).unwrap().pop().unwrap();
             assert!(matches!(
@@ -267,8 +337,34 @@ fn color_sync_uses_active_gate_coalesces_writes_and_orders_pushes_before_ack() {
             .get_mut()
             .write_all(&response.encode().unwrap())
             .unwrap();
-        // No command should target the inactive sub-color or brush opacity.
-        assert_eq!(socket.read(&mut [0]).unwrap(), 0);
+        let sub = receive(&mut socket);
+        assert_eq!(sub.command, "SetCurrentColor");
+        assert_eq!(sub.detail.as_ref().unwrap()["ColorIndex"], 1);
+        assert!(
+            sub.detail
+                .as_ref()
+                .unwrap()
+                .get("CurrentToolAlphaPercent")
+                .is_none()
+        );
+        reply(&mut socket, &sub);
+        // Shutdown can cancel the next confirmation read.
+        let mut bytes = [0; 4096];
+        loop {
+            match socket.read(&mut bytes) {
+                Ok(0) => break,
+                Err(e)
+                    if matches!(
+                        e.kind(),
+                        std::io::ErrorKind::ConnectionAborted | std::io::ErrorKind::ConnectionReset
+                    ) =>
+                {
+                    break;
+                }
+                Ok(_) => {}
+                Err(e) => panic!("socket remained open: {e}"),
+            }
+        }
     });
     let (tx, rx) = mpsc::channel();
     let worker = Worker::start(
@@ -320,7 +416,7 @@ fn color_sync_uses_active_gate_coalesces_writes_and_orders_pushes_before_ack() {
     assert!(control.send_color(1, 3, ColorCommand::new([1.0; 3], 1, false).unwrap()));
     assert!(matches!(
         rx.recv_timeout(WAIT).unwrap(),
-        (1, Event::SendRejected { revision: 3 })
+        (1, Event::Sent { revision: 3, .. })
     ));
     drop(worker);
     server.join().unwrap();

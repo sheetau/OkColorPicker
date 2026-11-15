@@ -18,6 +18,7 @@ pub struct PickerRefs {
     pub caption: RwSignal<crate::window_frame::CaptionVisual>,
     pub recents: NodeRef,
     pub swatches: [NodeRef; 2],
+    pub swap: NodeRef,
     pub slice: NodeRef,
     pub bars: [NodeRef; 4],
     pub numbers: [NodeRef; 4],
@@ -35,6 +36,7 @@ impl Default for PickerRefs {
             caption: RwSignal::new(crate::window_frame::CaptionVisual::default()),
             recents: NodeRef::new(),
             swatches: std::array::from_fn(|_| NodeRef::new()),
+            swap: NodeRef::new(),
             slice: NodeRef::new(),
             bars: std::array::from_fn(|_| NodeRef::new()),
             numbers: std::array::from_fn(|_| NodeRef::new()),
@@ -117,12 +119,17 @@ pub fn Picker(model: PickerModel, refs: PickerRefs) -> impl IntoView {
                 row(class="adjustments") {
                     column(class="preview-column") {
                         box(class="swatches") {
-                            control(class="previous swatch",node_ref=refs.swatches[0],tabindex=Focus::Sequential,a11y:label="Previous color",
-                                on:click=move |_|{model.select(model.previous.get_untracked());}) {
-                                ColorSwatch(model=model,color=Memo::new(move |_|model.previous.get()))
+                            if move ||model.selected.get()==0 {
+                                SlotSwatch(model=model,refs=refs,index=1)
+                                SlotSwatch(model=model,refs=refs,index=0)
+                            } else {
+                                SlotSwatch(model=model,refs=refs,index=0)
+                                SlotSwatch(model=model,refs=refs,index=1)
                             }
-                            box(class="current swatch",node_ref=refs.swatches[1]) {
-                                ColorSwatch(model=model,color=Memo::new(move |_|model.color()))
+                            control(class="swap-colors",node_ref=refs.swap,tabindex=Focus::Sequential,a11y:label="Swap main and sub colors",
+                                on:pointer_down=move |_|refs.swap.focus(),
+                                on:click=move |_|model.swap()) {
+                                {zgui::elements::vector().document(include_str!("../assets/swap.svg")).class("swap-icon")}
                             }
                         }
                         row(class="history-buttons") {
@@ -140,7 +147,9 @@ pub fn Picker(model: PickerModel, refs: PickerRefs) -> impl IntoView {
                             control(class="transparent-color",
                                 tabindex=Focus::Sequential,
                                 a11y:label="Transparent",
-                                on:click=move |_|{model.set_channel(3,0.0);}) {"/"}
+                                on:click=move |_|{model.set_channel(3,0.0);}) {
+                                {zgui::elements::vector().document(include_str!("../assets/transparent.svg")).class("transparent-mark")}
+                            }
                             control(class="black-color",
                                 tabindex=Focus::Sequential,
                                 a11y:label="Black",
@@ -259,6 +268,24 @@ fn RecentColors(model: PickerModel, node: NodeRef) -> impl IntoView {
                 control(class="recent-nav older",tabindex=Focus::Sequential,a11y:label="Older recent colors",
                     disabled=move ||position.get().is_at_end_horizontally(),on:click=move |_|shift(1.0)) {box(class="history-arrow redo") {}}
             }
+        }
+    }
+}
+
+// This pinned zgui revision can retain stale hit order after restacking overlapping
+// controls. Remount only this two-swatch branch when selection changes; ordinary
+// color edits still update the existing paint handles without rebuilding the view.
+#[component]
+fn SlotSwatch(model: PickerModel, refs: PickerRefs, index: usize) -> impl IntoView {
+    let slot = index;
+    view! {
+        control(class="swatch",class:main=slot==0,class:sub=slot==1,
+            class:active=move ||usize::from(model.selected.get())==slot,
+            node_ref=refs.swatches[slot],tabindex=Focus::Sequential,
+            a11y:label=if slot==0 {"Main color"} else {"Sub color"},
+            on:pointer_down=move |_|refs.swatches[slot].focus(),
+            on:click=move |_|model.select_slot(slot as u8)) {
+            ColorSwatch(model=model,color=Memo::new(move |_|model.slots[slot].get()))
         }
     }
 }

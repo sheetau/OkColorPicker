@@ -3,7 +3,7 @@
 `okcolor-csp` owns pairing URL parsing, QR decoding, framing, a blocking TCP
 session and its background worker. Native screen capture and the connection
 control live in `okcolor-app`. Credentials remain in memory. After pairing, the
-picker reads CSP's active drawing color and sends local color edits. This
+picker reads CSP's main/sub colors and active slot, and sends local color edits. This
 integration is experimental and relies on a reverse-engineered protocol;
 compatibility can vary between CSP versions.
 
@@ -85,8 +85,11 @@ the connection. The receive queue never relies on one read equaling one frame.
 
 Outgoing serials start at zero per connection and never wrap. A reply must match
 both the pending serial and command. Stale serials cannot satisfy another request.
-Peer commands are acknowledged while waiting for replies and retained in a bounded
-queue of 16 events. Authentication requires a success packet with a recognized
+During authentication and low-level synchronous calls, peer commands are
+acknowledged and retained in a bounded queue of 16 events. The connected worker
+instead holds one outstanding request and returns each acknowledged host push
+to the UI before that request completes. A slow heartbeat or setter ACK cannot
+batch later color notifications behind it. Authentication requires a success packet with a recognized
 success body; a missing/malformed body or explicit rejection is not success.
 
 Each operation has a deadline. A command timeout closes the socket, so a delayed
@@ -106,11 +109,10 @@ variant. It does not send `SetAlpha`, which controls brush opacity.
 The worker's `ColorCommand` instead encodes bounded RGB as normalized unsigned
 32-bit HSV and explicitly targets slot 0 (main) or 1 (sub). It carries the binary
 transparent selector, never continuous alpha or brush opacity. This avoids a
-queued edit silently targeting a different active slot. Commands for an inactive
-slot, a manipulating/disabled host or an already acknowledged local revision are
-rejected before sending.
+queued edit silently targeting a different active slot. Commands explicitly select their target slot. A manipulating/disabled host or
+an already acknowledged local revision is rejected before sending.
 
-Received circle HSV and Sub View RGB are normalized over `u32::MAX`. This corrects
+Received circle HSV/HLS and Sub View RGB are normalized over `u32::MAX`. This corrects
 the older reference's 8-bit Sub View comment, using the captured-wire observations
 in [LumaPaletteCSP's protocol notes](https://github.com/andyubird/LumaPaletteCSP/blob/9e63821f64f07e493f86273d0bfde78e1d4c829f/PROTOCOL.md).
 Only protocol facts are used; the implementation is independent of that project's
@@ -119,16 +121,20 @@ Incomplete state is merged with observations on the same socket; absent channels
 never default to zero. Bad updates leave the cache unchanged and invalidate the
 connection. Reconnection starts with an empty cache. Switching slots invalidates
 the active RGB baseline, and switching models invalidates the channel baselines.
-HLS units are not inferred: the worker requests Sub View RGB when circle HSV is
-unavailable, then rechecks circle metadata before associating RGB with a slot.
+Both HSV and HLS circle payloads decode directly, including both slots and
+partial updates during a gesture. HLS uses normalized H/L/S and converts to RGB
+without another network read. The worker requests Sub View RGB only when the
+circle color is incomplete or unknown, then rechecks circle metadata before
+associating that fallback RGB with a slot.
 If the slot changed during that read, the unconfirmed RGB is discarded and read
 again. Tab-only responses cannot confirm RGB. Color Mix state does not stand in
 for the active drawing color.
 
 The worker polls circle state every 500 ms, reads Sub View as needed, and consumes
 pushes. It drains queued pushes in wire order before applying a later response.
-A single pending color slot coalesces rapid local edits; connection replacement
-or loss clears it. Setter acknowledgement produces `Sent`, and each observation
+Pending commands coalesce independently per main/sub slot and are sent in
+revision order; connection replacement or loss clears both. A swap sends the
+inactive slot first and the selected slot last, retaining the intended selection. Setter acknowledgement produces `Sent`, and each observation
 reports the last acknowledged local write revision. A poll follows a successful
 write even if the remote color is unchanged. This metadata lets the UI reject
 observations predating a newer local edit. Transport errors do not replay writes
@@ -141,7 +147,7 @@ interpreted as color alpha.
 
 ## Picker synchronization
 
-An initial connection adopts the current CSP color. Received RGB is interpreted
+An initial connection adopts the observed CSP main/sub colors and selection. Received RGB is interpreted
 as sRGB; the companion protocol exposes no document ICC profile. A different
 stable remote color creates one Undo/recents commit and keeps the local alpha.
 Neutral colors also retain the local editing hue. An ongoing CSP gesture updates
@@ -152,7 +158,8 @@ the latest color is applied afterward. A committed local edit takes
 precedence over an older deferred observation.
 
 Local L/C/H edits, drag previews, cancellation and Undo/Redo send the selected
-sRGB projection to the active main/sub slot. A change to the output mapping also
+sRGB projection to the selected main/sub slot. Selecting a swatch selects that
+slot in CSP; swapping or undoing a swap synchronizes both slots. A change to the output mapping also
 updates that projection. Alpha-only edits are local. Sending a color selects
 CSP's nontransparent drawing color; the picker alpha is not mapped to either
 the transparent-color selector or brush opacity. The status reports CSP's
@@ -185,8 +192,12 @@ real loopback sockets, interleaved pushes/ACKs, credential rotation/reconnect,
 strict response matching, authentication rejection, partial reads across idle
 timeouts and connection invalidation on request timeout. Color tests cover
 unsigned channel endpoints, delta updates, model/slot changes, malformed state,
-HSV conversion, the active heartbeat gate, coalesced writes, inactive-slot
-rejection and observation order around setter acknowledgements.
+HSV/HLS conversion, the active heartbeat gate, coalesced writes, explicit slot
+selection and observation order around setter acknowledgements. A loopback
+fixture withholds a heartbeat ACK until multiple color pushes have reached the
+UI-facing callback, establishing delivery independent of response completion.
+This does not establish the notification cadence of a particular CSP installation;
+interactive CSP follow-up still requires testing that installation.
 
 Loopback peers establish these client contracts, not compatibility with a CSP
 release. Release validation must also pair through a real CSP QR, inspect current

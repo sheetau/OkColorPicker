@@ -1,5 +1,5 @@
 use crate::model::{PickerModel, stepped_channel};
-use okcolor_core::{Gamut, GamutMapping, GamutSlice, Oklch};
+use okcolor_core::{Gamut, GamutMapping, GamutProjection, GamutSlice, Oklch};
 use zgui::reactive::RenderEffect;
 use zgui::{
     geom::{DevicePx, Point, Rect},
@@ -136,40 +136,35 @@ impl SurfaceKind {
     pub fn marker(self, model: PickerModel) -> [f64; 2] {
         match self {
             Self::Slice => [model.c.get() / model.max_chroma.get(), 1.0 - model.l.get()],
-            Self::Lightness => [model.l.get(), 0.5],
-            Self::Chroma => [model.c.get() / model.max_chroma.get(), 0.5],
-            Self::Hue => [model.h.get() / 360.0, 0.5],
-            Self::Alpha => [model.alpha.get(), 0.5],
+            Self::Lightness => [model.l.get(), 1.0],
+            Self::Chroma => [model.c.get() / model.max_chroma.get(), 1.0],
+            Self::Hue => [model.h.get() / 360.0, 1.0],
+            Self::Alpha => [model.alpha.get(), 1.0],
         }
-    }
-
-    fn drag(self, model: PickerModel, x: f64, y: f64) -> Option<Oklch> {
-        if self != Self::Slice {
-            return self.pick(model, x, y);
-        }
-        let [_, _, h, alpha] = model.current().components();
-        GamutSlice::new(
-            h,
-            model.max_chroma.get_untracked(),
-            model.gamut.get_untracked(),
-        )
-        .ok()?
-        .drag(x, y, alpha)
     }
 }
 
 /// A color sample uses the same GPU preview policy as the editing surfaces.
 #[component]
 pub fn ColorSwatch(model: PickerModel, color: Memo<Oklch>) -> impl IntoView {
+    color_sample(model, color, 5.0)
+}
+
+#[component]
+pub fn ColorMarker(model: PickerModel, color: Memo<Oklch>) -> impl IntoView {
+    color_sample(model, color, 6.0)
+}
+
+fn color_sample(model: PickerModel, color: Memo<Oklch>, kind: f32) -> impl IntoView {
     let (surface, handle) = zgui::custom::custom(ColorSurface::new(ColorParams {
-        kind: 5.0,
+        kind,
         ..Default::default()
     }));
     let effect = RenderEffect::new(move |_| {
         let [l, c, h, alpha] = color.get().components();
         let params = ColorParams {
             channels: [l as f32, c.min(10000.0) as f32, h as f32, alpha as f32],
-            kind: 5.0,
+            kind,
             mapping: if model.mapping.get() == GamutMapping::Clip {
                 1.0
             } else {
@@ -199,6 +194,21 @@ pub fn ColorControl(model: PickerModel, kind: SurfaceKind, node: NodeRef) -> imp
     });
     on_cleanup_local(move || drop(effect));
     let dragging = RwSignal::new(false);
+    let projection = RwSignal::new_local(None::<GamutProjection>);
+    let drag = move |x, y| {
+        if kind != SurfaceKind::Slice {
+            return kind.pick(model, x, y);
+        }
+        let bounds = node.window_bounds()?;
+        projection.with_untracked(|projection| {
+            projection.as_ref()?.project(
+                x,
+                y,
+                model.alpha.get_untracked(),
+                f64::from(bounds.size.width.0 / bounds.size.height.0),
+            )
+        })
+    };
     let scale = use_window().scale();
     let coordinate =
         move |position: zgui::geom::Point<zgui::geom::CssPx, zgui::geom::Css>,
@@ -221,6 +231,17 @@ pub fn ColorControl(model: PickerModel, kind: SurfaceKind, node: NodeRef) -> imp
             && let Some(color) = kind.pick(model, x, y)
             && model.begin()
         {
+            if kind == SurfaceKind::Slice {
+                projection.set(Some(
+                    GamutSlice::new(
+                        model.h.get_untracked(),
+                        model.max_chroma.get_untracked(),
+                        model.gamut.get_untracked(),
+                    )
+                    .expect("validated slice")
+                    .projection(),
+                ));
+            }
             dragging.set(true);
             cx.capture_pointer();
             model.preview(color);
@@ -230,7 +251,7 @@ pub fn ColorControl(model: PickerModel, kind: SurfaceKind, node: NodeRef) -> imp
         if cx.primary
             && dragging.get_untracked()
             && let Some((x, y)) = coordinate(cx.position, node.window_bounds())
-            && let Some(color) = kind.drag(model, x, y)
+            && let Some(color) = drag(x, y)
         {
             model.preview(color);
         }
@@ -238,7 +259,7 @@ pub fn ColorControl(model: PickerModel, kind: SurfaceKind, node: NodeRef) -> imp
     let up = move |cx: &mut EventCx<'_, events::PointerUp>| {
         if cx.primary && cx.button == Some(PointerButton::Primary) && dragging.get_untracked() {
             if let Some((x, y)) = coordinate(cx.position, node.window_bounds())
-                && let Some(color) = kind.drag(model, x, y)
+                && let Some(color) = drag(x, y)
             {
                 model.preview(color);
             }
@@ -314,7 +335,14 @@ pub fn ColorControl(model: PickerModel, kind: SurfaceKind, node: NodeRef) -> imp
             {surface.class("color-surface").into_view()}
             box(class="color-marker",class:outside=move || kind.marker(model)[0]>1.0,
                 style:left=move || Some(format!("{}%",kind.marker(model)[0].clamp(0.0,1.0)*100.0)),
-                style:top=move || Some(format!("{}%",kind.marker(model)[1].clamp(0.0,1.0)*100.0))) {}
+                style:top=move || Some(format!("{}%",kind.marker(model)[1].clamp(0.0,1.0)*100.0))) {
+                if move || kind != SurfaceKind::Slice {
+                        ColorMarker(model=model,color=Memo::new(move |_| {
+                            let [l,c,h,a]=model.color().components();
+                            Oklch::new(l,c,h,if kind==SurfaceKind::Alpha {a} else {1.0}).expect("valid marker color")
+                        }))
+                }
+            }
         }
     }
 }

@@ -43,6 +43,12 @@ pub fn parse_color(text: &str, neutral_hue: f64) -> Result<Oklch, ParseColorErro
     if text.len() > 4096 {
         return Err(ParseColorError("Color input is too long"));
     }
+    // Editor convenience, outside CSS syntax: accept complete RGB/RGBA hex
+    // without '#'. Short bare strings remain errors to avoid ambiguous drafts.
+    let bare = text.trim();
+    if matches!(bare.len(), 6 | 8) && bare.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return parse_hex(bare, neutral_hue);
+    }
     let mut input = ParserInput::new(text);
     let mut parser = Parser::new(&mut input);
     let token = parser

@@ -12,4 +12,4 @@ pub use color::{ColorError, Gamut, GamutMapping, Oklch};
 pub use format::{ColorFormat, FormattedColor, format_color};
 pub use history::{EditError, History};
 pub use parse::{ParseColorError, parse_color};
-pub use slice::GamutSlice;
+pub use slice::{GamutProjection, GamutSlice};

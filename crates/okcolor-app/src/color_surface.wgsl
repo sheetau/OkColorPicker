@@ -157,5 +157,15 @@ fn shade(input: ShaderInput, params: Params) -> vec4<f32> {
             }
         }
     }
+    if params.kind > 5.5 {
+        // A screen-aligned checkerboard inside a diamond, with a white outline.
+        // Drawing the outline in this pass keeps child paint from covering it.
+        let p = abs(input.local - input.size * 0.5);
+        let d = (p.x + p.y - min(input.size.x, input.size.y) * 0.5) * 0.70710678;
+        let stroke = input.size.x / 16.0;
+        let coverage = 1.0 - smoothstep(-0.5, 0.5, d);
+        rgb = mix(rgb, vec3<f32>(1.0), smoothstep(-stroke - 0.5, -stroke + 0.5, d));
+        return vec4<f32>(rgb * coverage, coverage);
+    }
     return vec4<f32>(rgb, 1.0);
 }

@@ -219,6 +219,47 @@ impl Session {
     pub(crate) fn queued_event(&mut self) -> Option<Frame> {
         self.events.pop_front()
     }
+    /// Start one request without holding later host pushes behind its response.
+    pub(crate) fn start_command(
+        &mut self,
+        command: &str,
+        detail: Option<Value>,
+        timeout: Duration,
+    ) -> Result<u32, Error> {
+        if !self.usable || command == "Authenticate" {
+            return Err(Error::InvalidFrame);
+        }
+        let serial = self.serial;
+        self.serial = self.serial.checked_add(1).ok_or(Error::SerialExhausted)?;
+        self.write(
+            &Frame {
+                kind: Kind::Command,
+                command: command.into(),
+                serial,
+                detail,
+                data: vec![],
+            },
+            deadline(timeout)?,
+        )?;
+        Ok(serial)
+    }
+    /// Return replies and acknowledged host pushes in wire order.
+    pub(crate) fn receive(&mut self, timeout: Duration) -> Result<Option<Frame>, Error> {
+        if let Some(frame) = self.events.pop_front() {
+            return Ok(Some(frame));
+        }
+        let deadline = deadline(timeout)?;
+        match self.read_packet(deadline) {
+            Ok(frame) => {
+                if frame.kind == Kind::Command {
+                    self.acknowledge(&frame, deadline)?;
+                }
+                Ok(Some(frame))
+            }
+            Err(Error::Timeout) => Ok(None),
+            Err(error) => Err(error),
+        }
+    }
     fn exchange(
         &mut self,
         command: &str,

@@ -97,7 +97,7 @@ impl FrameProbe for Probe {
         }
         if self.destroyed.get() == 2 {
             assert_eq!(self.recovered.get(), 2);
-            let committed = model.saved_state_untracked().current;
+            let committed = model.saved_state_untracked().main;
             model.cancel();
             assert_eq!(model.current(), committed);
             model.undo();

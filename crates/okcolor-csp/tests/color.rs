@@ -102,7 +102,7 @@ fn invalid_updates_are_atomic_and_missing_channels_never_become_black() {
     );
 }
 #[test]
-fn hls_uses_observed_rgb_fields_instead_of_guessing_hls_units() {
+fn incomplete_circle_uses_observed_rgb_without_carrying_it_across_slots() {
     let mut cache = ColorCache::default();
     cache.apply(&circle(full())).unwrap();
     assert!(
@@ -123,6 +123,41 @@ fn hls_uses_observed_rgb_fields_instead_of_guessing_hls_units() {
             .unwrap()
             .is_none()
     );
+}
+
+#[test]
+fn hls_notifications_update_both_slots_and_partial_samples_without_rgb_polling() {
+    let mut cache = ColorCache::default();
+    let mut state = full();
+    state["ColorSelectionModel"] = json!("HLS");
+    for (key, value) in [
+        ("HLSColorMainH", 0),
+        ("HLSColorMainL", 2147483648u32),
+        ("HLSColorMainS", u32::MAX),
+        ("HLSColorSubH", 0),
+        ("HLSColorSubL", u32::MAX),
+        ("HLSColorSubS", 0),
+    ] {
+        state[key] = json!(value);
+    }
+    let red = cache.apply(&circle(state)).unwrap().unwrap();
+    assert!(red.rgb[0] > 0.999999 && red.rgb[1] < 1e-8);
+    assert_eq!(red.colors[1], Some([1.0; 3]));
+    let cyan = cache
+        .apply(&circle(
+            json!({"HLSColorMainH":2147483648u32,"IsManipulating":true}),
+        ))
+        .unwrap()
+        .unwrap();
+    assert!(cyan.rgb[0] < 1e-8 && cyan.rgb[1] > 0.999999 && cyan.rgb[2] > 0.999999);
+    assert!(cyan.manipulating);
+    assert_eq!(cyan.colors[1], Some([1.0; 3]));
+    let sub = cache
+        .apply(&circle(json!({"CurrentColorIndex":1,"HLSColorSubL":0})))
+        .unwrap()
+        .unwrap();
+    assert_eq!(sub.rgb, [0.0; 3]);
+    assert_eq!(sub.colors[0], cyan.colors[0]);
 }
 #[test]
 fn explicit_slot_hsv_commands_round_trip_bounded_rgb_without_alpha() {
