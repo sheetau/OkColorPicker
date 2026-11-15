@@ -35,7 +35,18 @@ def safe_name(value):
 
 
 def notice_sections(report, root=ROOT):
-    """Keep original texts; resolve only the two explicitly reviewed MIT cases."""
+    """Keep original texts, using hash-pinned snapshots for absent upstream files."""
+    snapshots = {}
+    provenance = root / 'licenses/clarifications/sources.json'
+    if provenance.is_file():
+        config = tomllib.loads((root / 'licenses/about.toml').read_text(encoding='utf-8'))
+        for record in json.loads(provenance.read_text(encoding='utf-8')):
+            identity = (record['name'], record['version'])
+            approved = config.get(record['name'], {}).get('clarify', {}).get('git', [])
+            if identity in snapshots or not any(entry['license'] == 'MIT' and entry['checksum'] == record['sha256'] for entry in approved):
+                raise ValueError('Unreviewed or duplicate license snapshot')
+            text = checked_bytes(provenance.parent / safe_name(record['file']), record['sha256']).decode('utf-8')
+            snapshots[identity] = (text, f'Unchanged upstream notice: {record["url"]}')
     sections = []
     for entry in report['licenses']:
         users = entry['used_by']
@@ -47,7 +58,9 @@ def notice_sections(report, root=ROOT):
         for user in users:
             package = user['crate']
             identity = (package['name'], package['version'])
-            if identity == ('zgui-color', '0.1.0'):
+            if identity in snapshots:
+                text, origin = snapshots[identity]
+            elif identity == ('zgui-color', '0.1.0'):
                 text = checked_bytes(root / 'vendor/zgui-wgsl/LICENSE-MIT', TERMINAL_LICENSE_SHA).decode('utf-8')
                 origin = ('The MIT-covered gamma table is derived from Microsoft Windows Terminal. '
                           'Its original notice is reproduced below; zgui NOTICE identifies the derived file.')
@@ -188,7 +201,7 @@ def assemble(output, cargo_about):
         if not report_root.is_relative_to(output.parent):
             raise ValueError('Report directory escaped output parent')
         report_path = report_root / 'dependencies.json'
-        run(cargo_about, 'generate', '--locked', '--fail', '--manifest-path',
+        run(cargo_about, 'generate', '--locked', '--offline', '--fail', '--manifest-path',
             'crates/okcolor-app/Cargo.toml', '--config', 'licenses/about.toml', '--format', 'json',
             '--output-file', str(report_path))
         report = json.loads(report_path.read_text(encoding='utf-8'))

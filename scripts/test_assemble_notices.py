@@ -2,16 +2,41 @@
 from pathlib import Path
 from hashlib import sha256
 import io
+import json
+import shutil
 import subprocess
 import tarfile
 import tempfile
 import unittest
+from unittest.mock import patch
 import zipfile
 
 import assemble_notices as assembly
 
 
 class NoticesTests(unittest.TestCase):
+    def test_offline_snapshots_keep_original_notices_and_refuse_changed_bytes_or_versions(self):
+        records = json.loads((assembly.ROOT / 'licenses/clarifications/sources.json').read_text(encoding='utf-8'))
+        generic = 'generic MIT fixture'
+        def report(record):
+            return {'licenses': [{'id': 'MIT', 'name': 'MIT', 'source_path': None, 'text': generic,
+                                  'used_by': [{'crate': {'name': record['name'], 'version': record['version']}}]}]}
+        with patch.object(assembly, 'GENERIC_MIT_SHA', sha256(generic.encode()).hexdigest()):
+            for record in records:
+                sections = assembly.notice_sections(report(record))
+                self.assertEqual(sha256(sections[0][2].encode()).hexdigest(), record['sha256'])
+                self.assertIn(record['url'], sections[0][3])
+                self.assertNotIn(str(assembly.ROOT), sections[0][3])
+            with self.assertRaisesRegex(ValueError, 'Unreviewed generic MIT notice'):
+                assembly.notice_sections(report({**records[0], 'version': '999.0.0'}))
+            with tempfile.TemporaryDirectory() as folder:
+                root = Path(folder)
+                shutil.copytree(assembly.ROOT / 'licenses/clarifications', root / 'licenses/clarifications')
+                shutil.copyfile(assembly.ROOT / 'licenses/about.toml', root / 'licenses/about.toml')
+                (root / 'licenses/clarifications' / records[0]['file']).write_text('modified', encoding='utf-8')
+                with self.assertRaisesRegex(ValueError, 'Source hash mismatch'):
+                    assembly.notice_sections(report(records[0]), root)
+
     def test_license_text_and_attribution_are_html_escaped_without_metadata_leaks(self):
         report = {'licenses': [{'id': 'MIT', 'name': 'MIT <test>', 'source_path': 'C:/private/LICENSE',
                                'text': '<script>alert("license")</script>', 'used_by': [{'crate': {

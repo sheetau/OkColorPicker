@@ -1,0 +1,110 @@
+[
+  {
+    "name": "accesskit",
+    "version": "0.24.1",
+    "file": "accesskit-0.24.1-MIT.txt",
+    "url": "https://raw.githubusercontent.com/AccessKit/accesskit/a55d3e1a18bb9ef0e4bccc9083fb13c3e0ad8969/LICENSE-MIT",
+    "commit": "a55d3e1a18bb9ef0e4bccc9083fb13c3e0ad8969",
+    "path": "LICENSE-MIT",
+    "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+  },
+  {
+    "name": "accesskit_consumer",
+    "version": "0.38.0",
+    "file": "accesskit_consumer-0.38.0-MIT.txt",
+    "url": "https://raw.githubusercontent.com/AccessKit/accesskit/c88605b96d04431f9c3c792464a0f2f253480e94/LICENSE-MIT",
+    "commit": "c88605b96d04431f9c3c792464a0f2f253480e94",
+    "path": "LICENSE-MIT",
+    "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+  },
+  {
+    "name": "accesskit_windows",
+    "version": "0.34.0",
+    "file": "accesskit_windows-0.34.0-MIT.txt",
+    "url": "https://raw.githubusercontent.com/AccessKit/accesskit/c88605b96d04431f9c3c792464a0f2f253480e94/LICENSE-MIT",
+    "commit": "c88605b96d04431f9c3c792464a0f2f253480e94",
+    "path": "LICENSE-MIT",
+    "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+  },
+  {
+    "name": "any_spawner",
+    "version": "0.3.0",
+    "file": "any_spawner-0.3.0-MIT.txt",
+    "url": "https://raw.githubusercontent.com/leptos-rs/leptos/9b2e313d20c89603ddc0deb7b1133e60c877faed/LICENSE",
+    "commit": "9b2e313d20c89603ddc0deb7b1133e60c877faed",
+    "path": "LICENSE",
+    "sha256": "76356e713a0d1ea0bde549f4236b01c750100ab31790019843faa5aec449310f"
+  },
+  {
+    "name": "gpu-descriptor-types",
+    "version": "0.2.0",
+    "file": "gpu-descriptor-types-0.2.0-MIT.txt",
+    "url": "https://raw.githubusercontent.com/zakarumych/gpu-descriptor/9f2fb9546591322e7b77ee1e79385e01effd85e4/license/MIT",
+    "commit": "9f2fb9546591322e7b77ee1e79385e01effd85e4",
+    "path": "license/MIT",
+    "sha256": "5226e27d5fbc683db56c52853cdb9d15b69abadb525a60f95c862c2dbd77cdc8"
+  },
+  {
+    "name": "gpu-descriptor",
+    "version": "0.3.2",
+    "file": "gpu-descriptor-0.3.2-MIT.txt",
+    "url": "https://raw.githubusercontent.com/zakarumych/gpu-descriptor/bb28b4e55b742e0ea3e7a0968e7ee6287ba0e06a/license/MIT",
+    "commit": "bb28b4e55b742e0ea3e7a0968e7ee6287ba0e06a",
+    "path": "license/MIT",
+    "sha256": "5226e27d5fbc683db56c52853cdb9d15b69abadb525a60f95c862c2dbd77cdc8"
+  },
+  {
+    "name": "or_poisoned",
+    "version": "0.1.0",
+    "file": "or_poisoned-0.1.0-MIT.txt",
+    "url": "https://raw.githubusercontent.com/leptos-rs/leptos/6865c1f951bfa0bc5b107aa69286a110cd6f45ca/LICENSE",
+    "commit": "6865c1f951bfa0bc5b107aa69286a110cd6f45ca",
+    "path": "LICENSE",
+    "sha256": "76356e713a0d1ea0bde549f4236b01c750100ab31790019843faa5aec449310f"
+  },
+  {
+    "name": "profiling",
+    "version": "1.0.18",
+    "file": "profiling-1.0.18-MIT.txt",
+    "url": "https://raw.githubusercontent.com/aclysma/profiling/8271551172eb6fa4cba47369aedd93790c623df9/LICENSE-MIT",
+    "commit": "8271551172eb6fa4cba47369aedd93790c623df9",
+    "path": "LICENSE-MIT",
+    "sha256": "c8167fdeeed46d3f244d3f85c5bf998ce889343691c32be2c61a8bc4b5c08333"
+  },
+  {
+    "name": "reactive_graph",
+    "version": "0.2.14",
+    "file": "reactive_graph-0.2.14-MIT.txt",
+    "url": "https://raw.githubusercontent.com/leptos-rs/leptos/fbc9ed631ff8c19c5eed02a1d4459e202cff7043/LICENSE",
+    "commit": "fbc9ed631ff8c19c5eed02a1d4459e202cff7043",
+    "path": "LICENSE",
+    "sha256": "76356e713a0d1ea0bde549f4236b01c750100ab31790019843faa5aec449310f"
+  },
+  {
+    "name": "reactive_stores",
+    "version": "0.4.3",
+    "file": "reactive_stores-0.4.3-MIT.txt",
+    "url": "https://raw.githubusercontent.com/leptos-rs/leptos/fbc9ed631ff8c19c5eed02a1d4459e202cff7043/LICENSE",
+    "commit": "fbc9ed631ff8c19c5eed02a1d4459e202cff7043",
+    "path": "LICENSE",
+    "sha256": "76356e713a0d1ea0bde549f4236b01c750100ab31790019843faa5aec449310f"
+  },
+  {
+    "name": "reactive_stores_macro",
+    "version": "0.4.4",
+    "file": "reactive_stores_macro-0.4.4-MIT.txt",
+    "url": "https://raw.githubusercontent.com/leptos-rs/leptos/584c3a2d884b0e4dba9e3f822a9b6982cff072c7/LICENSE",
+    "commit": "584c3a2d884b0e4dba9e3f822a9b6982cff072c7",
+    "path": "LICENSE",
+    "sha256": "76356e713a0d1ea0bde549f4236b01c750100ab31790019843faa5aec449310f"
+  },
+  {
+    "name": "svg_fmt",
+    "version": "0.4.5",
+    "file": "svg_fmt-0.4.5-MIT.txt",
+    "url": "https://raw.githubusercontent.com/nical/rust_debug/93f414cd572b5c2781df93dbdc068ed13443d05a/LICENSE",
+    "commit": "93f414cd572b5c2781df93dbdc068ed13443d05a",
+    "path": "LICENSE",
+    "sha256": "7e98bed7f100747aaae7d82ab94fbe6b76fd6b84b09a3aaa413bff8196d0fbb1"
+  }
+]

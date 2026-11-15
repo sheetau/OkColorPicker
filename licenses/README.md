@@ -46,7 +46,15 @@ python scripts/assemble_notices.py --output output/notices
 
 Use `--cargo-about <path>` if the pinned tool is installed outside PATH. The
 output directory must not exist. Assembly requires a clean Git worktree and
-collects a fresh locked report. It writes a self-contained notice document,
+collects a fresh locked report offline after the application dependencies have
+been fetched or built. Reviewed upstream MIT files missing from published crates
+are retained in `clarifications/`, with exact package versions, source URLs,
+commits and SHA-256 values in `clarifications/sources.json`. Assembly checks both
+the copied bytes and their approval in `about.toml` before replacing generic
+report entries. Changed bytes or unreviewed package versions stop assembly.
+This avoids relying on Git hosting availability during packaging; updating a
+dependency still requires reviewing its original notice and provenance.
+It writes a self-contained notice document,
 `SOURCES.zip`, a package-to-source index, DXC source provenance and a checksum
 manifest. It publishes nothing. The raw report and local Cargo paths are not
 included in the output.
