@@ -20,8 +20,26 @@ native linker. It creates no product source.
 ## Build and run
 
 ```powershell
-cargo run -p okcolor-app --locked
+cargo run -p okcolor-app --release
 ```
+
+Run this from the repository root. Cargo rebuilds changed source and launches
+the development executable directly. Omit `--release` for a debug build; add
+`--locked` when checking that dependency resolution leaves Cargo.lock unchanged.
+
+To keep a local Grotesk font configured across terminal sessions, create the
+ignored `.cargo/config.toml` with your licensed font's absolute path:
+
+```toml
+[env]
+OKCOLOR_GROTESK_FONT = { value = 'C:\Fonts\MartianGrotesk.ttf', force = false }
+```
+
+Cargo passes this setting to the launched application. An existing environment
+variable takes precedence. The font is read at runtime, not embedded in the
+executable. Without this setting the system sans-serif fallback is used.
+The normal application profile persists between runs; `OKCOLOR_STATE_DIR` can
+select a separate profile as described in [Saved state](STATE_FORMAT.md).
 
 The executable uses DX12, DirectComposition, `WS_EX_NOREDIRECTIONBITMAP`,
 premultiplied surface alpha and an opaque CSS background. A statically linked DXC

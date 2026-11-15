@@ -18,6 +18,12 @@ monitor behavior and clean-machine installation remain unverified.
 
 ## Development
 
+From the repository root, build and launch the current source:
+
+```powershell
+cargo run -p okcolor-app --release
+```
+
 See [Development](docs/DEVELOPMENT.md) for the local toolchain and checks.
 
 ## License

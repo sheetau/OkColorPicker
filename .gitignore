@@ -4,6 +4,7 @@
 /.history/
 /.vscode/
 /.idea/
+/.cargo/config.toml
 /output/
 /target/
 /.playwright-cli/
