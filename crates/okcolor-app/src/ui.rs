@@ -333,6 +333,7 @@ fn Titlebar(model: PickerModel, refs: PickerRefs) -> impl IntoView {
     let help = RwSignal::new(false);
     let popup = NodeRef::new();
     let trigger = refs.menu;
+    let level_window = StoredValue::new_local(window.clone());
     dismiss_menu(help, popup, trigger);
     view! {
         row(class="titlebar",on:pointer_down=window.move_drag_handler()) {
@@ -355,6 +356,12 @@ fn Titlebar(model: PickerModel, refs: PickerRefs) -> impl IntoView {
             CaptionControl(index=2,node=refs.close,visual=refs.caption)
             if move ||help.get() {
                 column(class="help-menu",node_ref=popup,on:pointer_down=window.no_drag_handler()) {
+                    control(tabindex=Focus::Sequential,a11y:label="Toggle always on top",
+                        class:selected=move ||model.tools.get().always_on_top,
+                        on:click=move |_|{
+                            model.tools.update(|tools|tools.always_on_top = !tools.always_on_top);
+                            level_window.with_value(|window|window.set_level(model.tools.get_untracked().window_level()));
+                        }) {{move ||if model.tools.get().always_on_top {"✓ Always on top"} else {"Always on top"}}}
                     control(node_ref=refs.gamut_toggles[0],tabindex=Focus::Sequential,
                         a11y:label="Toggle Display P3",class:selected=move ||model.show_p3.get(),
                         on:click=move |_|model.toggle_gamut(Gamut::DisplayP3)) {{move ||if model.show_p3.get() {"✓ Display P3"} else {"Display P3"}}}

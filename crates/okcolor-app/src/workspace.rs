@@ -164,6 +164,8 @@ impl Library {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ToolSettings {
+    #[serde(default)]
+    pub always_on_top: bool,
     pub background: [f64; 4],
     pub target_lc: f64,
     pub harmony: usize,
@@ -171,6 +173,7 @@ pub struct ToolSettings {
 impl Default for ToolSettings {
     fn default() -> Self {
         Self {
+            always_on_top: false,
             background: [1.0, 0.0, 0.0, 1.0],
             target_lc: 60.0,
             harmony: 0,
@@ -178,6 +181,14 @@ impl Default for ToolSettings {
     }
 }
 impl ToolSettings {
+    pub fn window_level(&self) -> zgui::platform::WindowLevel {
+        if self.always_on_top {
+            zgui::platform::WindowLevel::AlwaysOnTop
+        } else {
+            zgui::platform::WindowLevel::Normal
+        }
+    }
+
     pub fn validate(&self) -> Result<(), &'static str> {
         let [l, c, h, a] = self.background;
         if Oklch::new(l, c, h, a).is_err()

@@ -13,6 +13,9 @@ opens a session without persistence and displays a warning.
 
 ## Version 4
 
+The optional boolean `tools.always_on_top` defaults to false. When enabled,
+the next session opens at the same window level.
+
 The UTF-8 JSON object contains:
 
 | Field | Contract |
