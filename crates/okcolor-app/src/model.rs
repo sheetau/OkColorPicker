@@ -444,15 +444,38 @@ impl PickerModel {
         self.publish(true);
     }
 
+    /// Reference for derived palettes when the monitor uses the bounded preview path.
+    pub fn palette_source(self) -> Oklch {
+        Self::preview_source(self.color(), self.display.get().wide_output)
+    }
+
+    pub fn palette_source_untracked(self) -> Oklch {
+        Self::preview_source(self.current(), self.display.get_untracked().wide_output)
+    }
+
+    fn preview_source(color: Oklch, wide_output: bool) -> Oklch {
+        if !wide_output && !color.in_gamut(Gamut::Srgb) {
+            let [_, _, h, a] = color.components();
+            if let Ok(mapped) = color
+                .mapped_rgb(Gamut::Srgb, GamutMapping::LocalMinde)
+                .and_then(|rgb| Oklch::from_rgb(rgb, Gamut::Srgb, a, h))
+            {
+                return mapped;
+            }
+        }
+        color
+    }
+
     pub fn output(self, format: ColorFormat) -> String {
-        format_color(self.color(), format, self.mapping.get())
+        format_color(self.palette_source(), format, self.mapping.get())
             .map(|value| value.text)
             .unwrap_or_default()
     }
 
     /// Commands read a snapshot and must not create display subscriptions.
     pub fn output_untracked(self, format: ColorFormat) -> String {
-        format_color(self.current(), format, self.mapping.get_untracked())
+        let color = self.palette_source_untracked();
+        format_color(color, format, self.mapping.get_untracked())
             .map(|value| value.text)
             .unwrap_or_default()
     }

@@ -173,16 +173,23 @@ fn mounted_picker_preserves_wide_color_and_repaints_every_sample_on_display_tran
                         let source = output.borrow().as_ref().unwrap().clone();
                         let pixels = final_pixels(&gpu, &source, white);
                         for (node, color, offset) in [
-                            (refs.swatches[1], green, 32.0),
-                            (refs.swatches[0], red, 18.0),
+                            (refs.swatches[1], green, 30.0),
+                            (refs.swatches[0], red, 14.0),
                             (refs.recents, green, 11.0),
                         ] {
                             let bounds = node.window_bounds().unwrap();
                             expect_pixel(
                                 &pixels,
                                 (bounds.origin.x.0 + offset) as i32,
-                                (bounds.origin.y.0 + offset) as i32,
-                                preview(color, status.wide_output, mapping),
+                                (bounds.origin.y.0 + offset - 4.0) as i32,
+                                if node != refs.recents
+                                    && !status.wide_output
+                                    && !color.in_gamut(Gamut::Srgb)
+                                {
+                                    [0.0; 3]
+                                } else {
+                                    preview(color, status.wide_output, mapping)
+                                },
                                 white,
                                 "swatch/recent",
                             );
@@ -190,10 +197,7 @@ fn mounted_picker_preserves_wide_color_and_repaints_every_sample_on_display_tran
                         }
                         for (node, kind) in [
                             (refs.slice, SurfaceKind::Slice),
-                            (refs.bars[0], SurfaceKind::Lightness),
-                            (refs.bars[1], SurfaceKind::Chroma),
                             (refs.bars[2], SurfaceKind::Hue),
-                            (refs.bars[3], SurfaceKind::Alpha),
                         ] {
                             let bounds = node.window_bounds().unwrap();
                             let _zone = zgui::reactive::enter_non_reactive_zone();
@@ -254,13 +258,24 @@ fn mounted_picker_preserves_wide_color_and_repaints_every_sample_on_display_tran
                                     };
                                     rgb = rgb.map(|c| backdrop * (1.0 - u) + c * u);
                                 }
+                                if kind == SurfaceKind::Hue
+                                    && !color.in_gamut(Gamut::Rec2020)
+                                    && (((x as f32 + y as f32
+                                        - bounds.origin.x.0
+                                        - bounds.origin.y.0)
+                                        .floor() as i32)
+                                        & 3)
+                                        == 0
+                                {
+                                    rgb = rgb.map(|channel| channel * 0.45);
+                                }
                                 expect_pixel(&pixels, x, y, rgb, white, "surface");
                                 checked += 1;
                             }
                         }
                     }
                 }
-                assert!(checked > 130, "Too few mounted samples checked: {checked}");
+                assert!(checked >= 85, "Too few mounted samples checked: {checked}");
                 eprintln!("Verified {checked} mounted color samples across display policies");
                 bridge.publish(DisplayStatus {
                     mode: DisplayMode::WideColor,

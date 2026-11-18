@@ -16,5 +16,5 @@ pub use slice::{GamutProjection, GamutSlice};
 
 mod contrast;
 mod related;
-pub use contrast::{apca, lightness_for_contrast};
-pub use related::{Harmony, Ramp, harmony, ramp};
+pub use contrast::{apca, apca_in, contrast_sample, lightness_for_contrast};
+pub use related::{Harmony, Ramp, color_name, harmony, ramp, ramp_steps};

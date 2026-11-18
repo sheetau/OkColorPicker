@@ -261,6 +261,13 @@ fn mounted_picker_draws_and_drag_is_one_undo() {
                 let mut harness = Harness::new(handler);
                 harness.settle(64);
                 let (model, refs): (PickerModel, PickerRefs) = state.get().expect("mounted model");
+                if let Ok(path) = std::env::var("OKCOLOR_TEST_RGBA") {
+                    let frames = frames.lock().unwrap();
+                    let image = frames.last().expect("UI frame");
+                    assert_eq!((image.size().width, image.size().height), (330, 560));
+                    assert!(!image.is_bgra());
+                    std::fs::write(path, image.bytes()).expect("write optional preview");
+                }
                 for node in [refs.minimize, refs.maximize, refs.close] {
                     let bounds = node.window_bounds().unwrap();
                     assert!((bounds.size.width.0 - 36.0).abs() < 0.01);
@@ -354,7 +361,7 @@ fn mounted_picker_draws_and_drag_is_one_undo() {
                 model.companion.state.set(okcolor_csp::worker::State::Idle);
                 model.companion.hint.set(String::new());model.companion.can_resolve.set(false);
                 harness.settle(64);
-                let bounds = refs.bars[0].window_bounds().expect("lightness bar");
+                let bounds = refs.bars[2].window_bounds().expect("hue bar");
                 assert!(bounds.size.width.0 > 70.0, "bar bounds {bounds:?}");
                 assert!(
                     bounds.origin.y.0 > 200.0 && bounds.origin.y.0 < 400.0,
@@ -366,13 +373,6 @@ fn mounted_picker_draws_and_drag_is_one_undo() {
                         bounds.origin.y.0 + bounds.size.height.0 <= 560.0,
                         "field clipped: {bounds:?}"
                     );
-                }
-                if let Ok(path) = std::env::var("OKCOLOR_TEST_RGBA") {
-                    let frames = frames.lock().unwrap();
-                    let image = frames.last().expect("UI frame");
-                    assert_eq!((image.size().width, image.size().height), (330, 560));
-                    assert!(!image.is_bgra());
-                    std::fs::write(path, image.bytes()).expect("write optional preview");
                 }
                 let pointer = |action, fraction| SurfaceEvent::Pointer {
                     action,
@@ -397,8 +397,8 @@ fn mounted_picker_draws_and_drag_is_one_undo() {
                 harness.deliver_to_first(pointer(PointerAction::Released, 0.7));
                 harness.settle(32);
                 assert!(
-                    (model.current().components()[0] - 0.7).abs() < 1e-5,
-                    "drag did not reach L=0.7: {:?}",
+                    (model.current().components()[2] / 360.0 - 0.7).abs() < 1e-5,
+                    "drag did not reach H=252: {:?}",
                     model.current()
                 );
                 assert_eq!(model.recent.get_untracked().len(), 1);
@@ -527,33 +527,32 @@ fn mounted_picker_draws_and_drag_is_one_undo() {
                 assert_eq!(model.colors(),pair);
                 model.select_slot(0);
 
-                // Start on the lower, protruding half of the diamond, then drag
-                // outside its bar. This exercises hit testing and pointer capture.
-                model.set_channel(0,0.5);
+                // Start inside the triangular hue thumb and drag along the bar.
+                model.set_channel(2,180.0);
                 harness.settle(32);
-                let bar=refs.bars[0].window_bounds().unwrap();
+                let bar=refs.bars[2].window_bounds().unwrap();
                 for (action,x) in [(PointerAction::Pressed,0.5),(PointerAction::Moved,0.75),(PointerAction::Released,0.75)] {
-                    let at=Point::new(CssPx(bar.origin.x.0+bar.size.width.0*x),CssPx(bar.origin.y.0+bar.size.height.0+4.0));
+                    let at=Point::new(CssPx(bar.origin.x.0+bar.size.width.0*x),CssPx(bar.origin.y.0+bar.size.height.0-2.0));
                     harness.deliver_to_first(SurfaceEvent::Pointer {action,event:PointerEvent::mouse(at).with_button(PointerButton::Primary),modifiers:Modifiers::NONE,timestamp:Timestamp::ORIGIN});
                     harness.settle(32);
                 }
-                assert!((model.current().components()[0]-0.75).abs()<1e-6,"protruding knob did not capture the drag");
+                assert!((model.current().components()[2]/360.0-0.75).abs()<1e-6,"protruding knob did not capture the drag");
                 model.undo();
-                assert_eq!(model.current().components()[0],0.5);
+                assert_eq!(model.current().components()[2],180.0);
 
                 let mut short_slice = 0.0;
                 for (width,height) in [(330.0,520.0),(330.0,720.0),(600.0,720.0),(300.0,520.0),(330.0,560.0)] {
                     harness.deliver_to_first(SurfaceEvent::Resized(Size::new(DevicePx(width),DevicePx(height))));
                     harness.advance(Duration::from_millis(20));
                     harness.settle(64);
-                    for node in [refs.slice,refs.bars[0],refs.bars[3],refs.numbers[0],refs.codes[0],refs.codes[1],refs.companion,refs.close] {
+                    for node in [refs.slice,refs.bars[2],refs.numbers[0],refs.codes[0],refs.codes[1],refs.companion,refs.close] {
                         let bounds=node.window_bounds().unwrap();
                         assert!(bounds.origin.x.0>=0.0 && bounds.origin.x.0+bounds.size.width.0<=width+0.1,"horizontal overflow: {bounds:?} in {width}");
                         assert!(bounds.origin.y.0>=0.0 && bounds.origin.y.0+bounds.size.height.0<=height+0.1,"vertical overflow: {bounds:?} in {height}");
                     }
                     let slice=refs.slice.window_bounds().unwrap().size.height.0;
                     if width==330.0 && height==520.0 { short_slice=slice; }
-                    if width==330.0 && height==720.0 { assert!((slice-short_slice-200.0).abs()<0.1,"only the gamut should absorb vertical resizing"); }
+                    if width==330.0 && height==720.0 { assert!((slice-short_slice).abs()<0.1,"fixed-height slice changed when scrolling space increased"); }
                 }
                 refs.slice.focus();
                 harness.settle(32);
@@ -673,8 +672,8 @@ fn mounted_picker_draws_and_drag_is_one_undo() {
                 });
                 harness.advance(Duration::from_millis(20));
                 harness.settle(64);
-                let scaled = refs.bars[0].window_bounds().unwrap();
-                assert!((scaled.size.width.0 / bounds.size.width.0 - 2.0).abs() < 0.05, "DPI bounds: {bounds:?} -> {scaled:?}");
+                let scaled = refs.bars[2].window_bounds().unwrap();
+                assert!((scaled.size.height.0 - 2.0 * bounds.size.height.0).abs() < 0.1 && (scaled.size.width.0 - 2.0 * bounds.size.width.0).abs() < 0.1, "DPI bounds: {bounds:?} -> {scaled:?}");
                 let at = Point::new(
                     CssPx((scaled.origin.x.0 + scaled.size.width.0 * 0.8) / 2.0),
                     CssPx((scaled.origin.y.0 + scaled.size.height.0 * 0.5) / 2.0),
@@ -688,7 +687,7 @@ fn mounted_picker_draws_and_drag_is_one_undo() {
                     });
                     harness.settle(32);
                 }
-                assert!((model.current().components()[0] - 0.8).abs() < 1e-5);
+                assert!((model.current().components()[2] / 360.0 - 0.8).abs() < 1e-5);
                 refs.numbers[1].focus();
                 harness.settle(32);
                 let number = refs.numbers[1].window_bounds().unwrap();
@@ -784,6 +783,10 @@ fn mounted_picker_draws_and_drag_is_one_undo() {
                 assert_eq!(model.current(),okcolor_core::Oklch::new(0.6,0.08,0.0,1.0).unwrap(),"oldest recent color is reachable");
                 assert_eq!(refs.recents.scroll_position().offset.x.0,0.0,"recalling a color reveals the newest entry");
                 refs.slice.focus();
+                harness.settle(32);
+                // A recalled tile can move another swatch beneath the stationary pointer.
+                // Let that one-shot hover timer expire before measuring idle frames.
+                harness.advance(Duration::from_secs(2));
                 harness.settle(32);
                 assert_eq!(
                     harness.run_for(Duration::from_secs(2), Duration::from_millis(100)),

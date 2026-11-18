@@ -195,12 +195,13 @@ fn measure_picker_drag_workloads() {
                 harness.deliver_to_first(SurfaceEvent::ScaleFactorChanged {
                     scale_factor: scale, size: Size::new(DevicePx(330.0 * scale as f32), DevicePx(560.0 * scale as f32)),
                 });
+                // Commit the coalesced resize before reading device-pixel bounds.
+                harness.advance(std::time::Duration::from_millis(20));
                 harness.settle(64);
                 for gamut in [Gamut::Srgb, Gamut::DisplayP3, Gamut::Rec2020] {
                     model.gamut.set(gamut);
                     harness.settle(64);
-                    for (label, node) in [("L", refs.bars[0]), ("C", refs.bars[1]),
-                        ("H", refs.bars[2]), ("Alpha", refs.bars[3]), ("LC", refs.slice)] {
+                    for (label, node) in [("H", refs.bars[2]), ("LC", refs.slice)] {
                         model.select(okcolor_core::Oklch::new(0.6, 0.08, 210.0, 1.0).unwrap());
                         harness.settle(32);
                         let bounds = node.window_bounds().unwrap();

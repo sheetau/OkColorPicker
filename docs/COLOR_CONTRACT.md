@@ -71,7 +71,10 @@ unknown display capabilities and 8-bit fallback surfaces use the selected sRGB
 `LocalMinde` or `Clip` policy. Working-gamut boundaries remain independent of this
 choice. Display changes do not create history entries or change saved colors.
 
-All editing surfaces and main/sub/recent samples use this same policy.
+The slice, bars and recent samples use this preview policy. An out-of-sRGB slot
+on a bounded preview surface shows a cross and offers mapped and clipped
+samples. The code fields and Harmony use the mapped sample until the user
+selects a fallback. The numeric channels and serialized slots retain the source.
 Sample alpha is composited over a checkerboard. Bounded sRGB text output still
 uses its mapping policy even while the preview uses extended RGB.
 

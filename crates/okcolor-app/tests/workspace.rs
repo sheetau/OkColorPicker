@@ -83,3 +83,20 @@ fn full_library_with_maximum_unicode_names_round_trips() {
     assert!(state.library.create_folder("Overflow").is_err());
     assert_eq!(SavedState::decode(&state.encode().unwrap()).unwrap(), state);
 }
+
+#[test]
+fn existing_v4_profile_loads_with_default_grid_and_rejects_invalid_splits() {
+    let state = SavedState::default();
+    let mut value: serde_json::Value = serde_json::from_slice(&state.encode().unwrap()).unwrap();
+    let tools = value["tools"].as_object_mut().unwrap();
+    for key in ["contrast_grid", "always_on_top", "show_alpha_slider"] {
+        tools.remove(key);
+    }
+    assert_eq!(
+        SavedState::decode(&serde_json::to_vec(&value).unwrap()).unwrap(),
+        state
+    );
+    value["tools"]["contrast_grid"] = serde_json::to_value(state.tools.contrast_grid).unwrap();
+    value["tools"]["contrast_grid"]["split"] = 17.into();
+    assert!(SavedState::decode(&serde_json::to_vec(&value).unwrap()).is_err());
+}

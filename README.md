@@ -7,9 +7,9 @@ CSS color values. The picker preserves the original color while displaying
 sRGB, Display P3 and Rec.2020 boundaries. The preview uses the detected Windows
 display mode and falls back to sRGB when extended color output is unavailable.
 
-Swatches stores named colors and folders. Harmonies generates shades, tints,
-tones and hue harmonies in the working gamut. The APCA tab compares text colors
-and adjusts lightness toward a signed contrast target.
+Every tab includes a library of named colors and folders. Harmony generates
+variations and editable palettes. The APCA tab generates sRGB or Display P3
+colors for editable contrast targets.
 See [color tools](docs/TOOLS.md) for usage.
 
 The application saves committed colors, recent colors, swatches and tool preferences

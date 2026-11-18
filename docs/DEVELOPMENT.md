@@ -71,7 +71,7 @@ The runtime invalidates dependent paint/atlas caches after recovery, retaining t
 mounted view, focus and model. Uploads to a known lost device are refused until
 recovery, leaving pending CPU data available.
 
-The slice, four channel bars, main/sub samples and recent samples all use
+The slice, hue and optional alpha bars, main/sub samples and recent samples all use
 custom GPU paint. They retain extended RGB when Windows reports active WCG or HDR,
 reference white is known, and the actual presentation format is FP16. Otherwise
 they use the selected sRGB mapping or clipping policy. The status names the
@@ -155,9 +155,8 @@ uses native hit testing, with a top resize band on restored windows. The product
 does not paint an extra window border or use Windows-side CSS resize grips.
 The settings menu independently toggles P3 and Rec.2020. sRGB stays visible;
 the largest enabled gamut controls selection. The chroma extent is 0.37, or
-0.47 while Rec.2020 is enabled, on both the slice and channel bar.
-Vertical resizing changes the gamut height; the remaining controls keep their
-content height, with no outer scrollbars.
+0.47 while Rec.2020 is enabled. The body scrolls independently between the
+fixed title and status bars.
 
 The Windows caption bridge exposes the painted controls as `HTMINBUTTON`,
 `HTMAXBUTTON` and `HTCLOSE`. It uses physical bounds from each completed frame
@@ -255,8 +254,8 @@ cargo test -p okcolor-app --test performance --release --locked -- --ignored --n
 ```
 
 Run this measurement alone on a DX12 adapter supporting timestamp queries.
-It dispatches mounted L/C/H/alpha and L-C slice drags across all three working
-gamuts at 100% and 200% scale. Each of the 30 workloads warms up for 20 updates,
+It dispatches mounted hue and L-C slice drags across all three working
+gamuts at 100% and 200% scale. Each of the 12 workloads warms up for 20 updates,
 then measures 120 updates. Every measured event must change the color and produce
 a frame; the UI must stop rendering after release. The benchmark has no numeric
 speed threshold because adapters and system load vary.
@@ -293,8 +292,9 @@ Run the product checks above after Rust changes.
 ## Tool tabs
 
 `cargo test -p okcolor-app --test tool_tabs --locked -- --ignored` exercises
-the mounted Swatches, Harmonies and APCA controls with headless input and GPU
-readback. `workspace` and `persistence` tests cover library edits, validation
+the mounted Picker, Harmony and APCA pages with headless input and GPU
+readback. It covers library reorder and clipboard gestures, palette locks and
+end drops, O/R replacement, editable Lc targets and reference-boundary drags. `workspace` and `persistence` tests cover library edits, validation
 and migration; `okcolor-core` tool tests cover APCA polarity, alpha, inverse
 lightness adjustment and gamut-bounded related colors.
 

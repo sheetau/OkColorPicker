@@ -1,6 +1,6 @@
 use okcolor_core::{
-    Gamut, GamutMapping, Harmony, Oklch, Ramp, apca, harmony, lightness_for_contrast, parse_color,
-    ramp,
+    Gamut, GamutMapping, Harmony, Oklch, Ramp, apca, apca_in, contrast_sample, harmony,
+    lightness_for_contrast, parse_color, ramp,
 };
 const M: GamutMapping = GamutMapping::LocalMinde;
 fn color(s: &str) -> Oklch {
@@ -68,4 +68,43 @@ fn related_colors_fit_each_gamut_and_preserve_hue_and_alpha() {
         ramp(original, Ramp::Tints, Gamut::Srgb)[6].components()[0],
         1.0
     );
+}
+
+#[test]
+fn contrast_grid_respects_direction_gamut_and_chroma_limit() {
+    let source = Oklch::new(0.6, 0.04, 260.0, 0.5).unwrap();
+    for gamut in [Gamut::Srgb, Gamut::DisplayP3] {
+        for reference in [color("#fff"), color("#000")] {
+            for to_text in [true, false] {
+                for max_chroma in [false, true] {
+                    let sample =
+                        contrast_sample(source, reference, 60.0, gamut, to_text, max_chroma)
+                            .unwrap();
+                    let (fg, bg) = if to_text {
+                        (reference, sample)
+                    } else {
+                        (sample, reference)
+                    };
+                    let score = apca_in(fg, bg, M, gamut).unwrap();
+                    assert!((score.abs() - 60.0).abs() < 0.05);
+                    assert!(sample.in_gamut(gamut));
+                    let [_, c, h, a] = sample.components();
+                    assert!(max_chroma || c <= 0.04);
+                    assert_eq!((h, a), (260.0, 1.0));
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn contrast_grid_retains_matching_lightness_and_skips_unreachable_levels() {
+    let source = color("#777");
+    assert_eq!(
+        contrast_sample(source, source, 0.0, Gamut::Srgb, true, false),
+        Some(source)
+    );
+    for target in [3.0, 110.0, f64::NAN] {
+        assert!(contrast_sample(source, source, target, Gamut::Srgb, false, false).is_none());
+    }
 }

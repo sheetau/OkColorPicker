@@ -144,7 +144,12 @@ fn shade(input: ShaderInput, params: Params) -> vec4<f32> {
         rgb = mix(vec3<f32>(backdrop), rgb, alpha);
     } else {
         // A crossing in either axis marks the exact RGB-boundary neighborhood.
-        let step = vec2<f32>(0.65) / max(input.size, vec2<f32>(1.0));
+        if params.kind > 0.5 && !in_gamut(lab, params.gamut) {
+            let pixel = vec2<i32>(floor(input.local / input.scale));
+            let stripe = (pixel.x + pixel.y) & 3;
+            if stripe == 0 { rgb = mix(rgb, vec3<f32>(0.0), 0.55); }
+        }
+        let step = vec2<f32>(0.5) / max(input.size, vec2<f32>(1.0));
         for (var g = 2; g >= 0; g -= 1) {
             if (g == 1 && params.show_p3 < 0.5) || (g == 2 && params.show_rec2020 < 0.5) { continue; }
             let gamut = f32(g);
@@ -167,11 +172,10 @@ fn shade(input: ShaderInput, params: Params) -> vec4<f32> {
         if edge < input.scale { rgb = vec3<f32>(40.0 / 255.0); }
     }
     if params.kind > 5.5 {
-        // A screen-aligned checkerboard inside a diamond, with a white outline.
-        // Drawing the outline in this pass keeps child paint from covering it.
-        let p = abs(input.local - input.size * 0.5);
-        let d = (p.x + p.y - min(input.size.x, input.size.y) * 0.5) * 0.70710678;
-        let stroke = input.size.x / 16.0;
+        // An upward-pointing half diamond sits inside the lower edge of the bar.
+        let p = vec2<f32>(abs(input.local.x - input.size.x * 0.5), input.local.y);
+        let d = max((p.x - p.y) * 0.70710678, p.y - input.size.y);
+        let stroke = input.scale;
         let coverage = 1.0 - smoothstep(-0.5, 0.5, d);
         rgb = mix(rgb, vec3<f32>(1.0), smoothstep(-stroke - 0.5, -stroke + 0.5, d));
         return vec4<f32>(rgb * coverage, coverage);

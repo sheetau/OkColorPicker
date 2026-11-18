@@ -7,15 +7,14 @@ use std::collections::HashSet;
 pub enum Tab {
     #[default]
     Picker,
-    Swatches,
     Harmonies,
     Apca,
 }
 impl Tab {
-    pub const ALL: [Self; 4] = [Self::Picker, Self::Swatches, Self::Harmonies, Self::Apca];
+    pub const ALL: [Self; 3] = [Self::Picker, Self::Harmonies, Self::Apca];
     pub fn next(self, backwards: bool) -> Self {
         let index = Self::ALL.iter().position(|tab| *tab == self).unwrap();
-        Self::ALL[(index + if backwards { 3 } else { 1 }) % 4]
+        Self::ALL[(index + if backwards { 2 } else { 1 }) % 3]
     }
 }
 
@@ -165,7 +164,11 @@ impl Library {
 #[serde(deny_unknown_fields)]
 pub struct ToolSettings {
     #[serde(default)]
+    pub contrast_grid: ContrastGrid,
+    #[serde(default)]
     pub always_on_top: bool,
+    #[serde(default)]
+    pub show_alpha_slider: bool,
     pub background: [f64; 4],
     pub target_lc: f64,
     pub harmony: usize,
@@ -174,6 +177,8 @@ impl Default for ToolSettings {
     fn default() -> Self {
         Self {
             always_on_top: false,
+            show_alpha_slider: false,
+            contrast_grid: ContrastGrid::default(),
             background: [1.0, 0.0, 0.0, 1.0],
             target_lc: 60.0,
             harmony: 0,
@@ -190,6 +195,7 @@ impl ToolSettings {
     }
 
     pub fn validate(&self) -> Result<(), &'static str> {
+        self.contrast_grid.validate()?;
         let [l, c, h, a] = self.background;
         if Oklch::new(l, c, h, a).is_err()
             || a != 1.0
@@ -204,5 +210,43 @@ impl ToolSettings {
     pub fn background(&self) -> Oklch {
         let [l, c, h, a] = self.background;
         Oklch::new(l, c, h, a).expect("validated opaque background")
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ContrastGrid {
+    pub dark_reference: [f64; 4],
+    pub levels: Vec<u8>,
+    pub split: usize,
+    pub to_text: bool,
+    pub p3: bool,
+    pub max_chroma: bool,
+}
+impl Default for ContrastGrid {
+    fn default() -> Self {
+        Self {
+            dark_reference: [0.0, 0.0, 0.0, 1.0],
+            levels: vec![70, 50, 50, 70],
+            split: 2,
+            to_text: true,
+            p3: true,
+            max_chroma: true,
+        }
+    }
+}
+impl ContrastGrid {
+    fn validate(&self) -> Result<(), &'static str> {
+        let [l, c, h, a] = self.dark_reference;
+        if self.levels.is_empty()
+            || self.levels.len() > 16
+            || self.split > self.levels.len()
+            || self.levels.iter().any(|lc| *lc > 110)
+            || a != 1.0
+            || Oklch::new(l, c, h, a).is_err()
+        {
+            return Err("Invalid contrast grid");
+        }
+        Ok(())
     }
 }

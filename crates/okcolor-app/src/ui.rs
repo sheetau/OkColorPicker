@@ -1,10 +1,15 @@
+use crate::tiles::{ColorTileProps, Source, TileGestures};
 use crate::{
     model::{PickerModel, stepped_channel},
-    surface::{ColorControlProps, ColorSwatchProps, SurfaceKind},
+    surface::{ColorControlProps, SurfaceKind},
     window_frame::ResizeEdgesProps,
 };
-use crate::{tools_ui::ToolPageProps, workspace::Tab};
+use crate::{
+    tools_ui::{ContrastProps, HarmoniesProps, SwatchesProps},
+    workspace::Tab,
+};
 use okcolor_core::{ColorFormat, Gamut, GamutMapping, Oklch};
+use zgui::reactive::UnsyncCallback;
 use zgui::{geom::CssPx, prelude::*, reactive::RenderEffect, vocab::ScrollPhase};
 
 /// Stable handles also let application tests exercise the actual mounted controls.
@@ -13,7 +18,10 @@ pub struct PickerRefs {
     pub tool_page: NodeRef,
     pub title: NodeRef,
     pub tabs: [NodeRef; 3],
+    pub library: [NodeRef; 8],
     pub tools: [NodeRef; 8],
+    pub topmost: NodeRef,
+    pub sampling: RwSignal<bool>,
     pub menu: NodeRef,
     pub gamut_toggles: [NodeRef; 2],
     pub companion: NodeRef,
@@ -37,7 +45,10 @@ impl Default for PickerRefs {
             tool_page: NodeRef::new(),
             title: NodeRef::new(),
             tabs: std::array::from_fn(|_| NodeRef::new()),
+            library: std::array::from_fn(|_| NodeRef::new()),
             tools: std::array::from_fn(|_| NodeRef::new()),
+            topmost: NodeRef::new(),
+            sampling: RwSignal::new(false),
             menu: NodeRef::new(),
             gamut_toggles: std::array::from_fn(|_| NodeRef::new()),
             companion: NodeRef::new(),
@@ -60,8 +71,71 @@ impl Default for PickerRefs {
 
 #[component]
 pub fn Picker(model: PickerModel, refs: PickerRefs) -> impl IntoView {
+    provide_context(model);
+    TileGestures::mount(refs.tool_page);
+    let app_root = NodeRef::new();
+    let app_size = app_root.observe_border_size();
+    let scale = use_window().scale();
+    let tips = crate::tooltip::Tooltips::mount();
+    for (node, label) in [
+        (refs.menu, "Settings"),
+        (refs.swap, "Swap colors"),
+        (refs.tabs[0], "Picker · Ctrl+1"),
+        (refs.tabs[1], "Harmony · Ctrl+2"),
+        (refs.tabs[2], "APCA · Ctrl+3"),
+    ] {
+        crate::tooltip::Tooltips::bind(node, move || label.into());
+    }
+    crate::tooltip::Tooltips::bind(refs.companion, move || {
+        let hint = model.companion.hint.get_untracked();
+        if model.companion.active() && !hint.is_empty() {
+            format!("{} · {hint}", model.companion.label())
+        } else {
+            model.companion.label().into()
+        }
+    });
     let clipboard = use_clipboard();
+    let settings = RwSignal::new(false);
     let shortcut = move |cx: &mut EventCx<'_, events::KeyDown>| {
+        if cx.key == Key::Named(NamedKey::Escape) && refs.sampling.get_untracked() {
+            refs.sampling.set(false);
+            cx.prevent_default();
+            return;
+        }
+        if cx.modifiers == (Modifiers::CONTROL | Modifiers::SHIFT)
+            && cx
+                .key
+                .as_str()
+                .is_some_and(|key| key.eq_ignore_ascii_case("c"))
+        {
+            refs.sampling.set(true);
+            cx.prevent_default();
+            cx.stop_propagation();
+            return;
+        }
+        if cx.key == Key::Named(NamedKey::Escape) && settings.get_untracked() {
+            settings.set(false);
+            refs.menu.focus();
+            cx.prevent_default();
+            return;
+        }
+        if cx.modifiers == Modifiers::NONE
+            && !model.editing_text.get_untracked()
+            && !settings.get_untracked()
+        {
+            let field = match cx.key.as_str() {
+                Some("o" | "O") => Some(refs.codes[0]),
+                Some("r" | "R") => Some(refs.codes[1]),
+                _ => None,
+            };
+            if let Some(field) = field {
+                field.focus();
+                field.select_all();
+                cx.prevent_default();
+                cx.stop_propagation();
+                return;
+            }
+        }
         if !cx.modifiers.contains(Modifiers::CONTROL) {
             return;
         }
@@ -75,13 +149,13 @@ pub fn Picker(model: PickerModel, refs: PickerRefs) -> impl IntoView {
         } else {
             match cx.key.as_str() {
                 Some("1") => Some(Tab::Picker),
-                Some("2") => Some(Tab::Swatches),
-                Some("3") => Some(Tab::Harmonies),
-                Some("4") => Some(Tab::Apca),
+                Some("2") => Some(Tab::Harmonies),
+                Some("3") => Some(Tab::Apca),
                 _ => None,
             }
         };
         if let Some(tab) = tab {
+            settings.set(false);
             switch_tab(model, refs, tab);
             cx.prevent_default();
             cx.stop_propagation();
@@ -119,118 +193,45 @@ pub fn Picker(model: PickerModel, refs: PickerRefs) -> impl IntoView {
         cx.stop_propagation();
     };
     view! {
-        column(class="app",on:key_down=shortcut) {
-            Titlebar(model=model,refs=refs)
-            column(class="body") {
-                if move ||model.tab.get()==Tab::Picker {
-                column(class="picker-page") {
-                RecentColors(model=model,node=refs.recents)
-                row(class="options") {
-                    spacer()
-                    control(class="mapping",tabindex=Focus::Sequential,a11y:label="Toggle sRGB fallback mapping",
-                        on:click=move |_|model.mapping.update(|m|*m=if *m==GamutMapping::Clip {GamutMapping::LocalMinde}else{GamutMapping::Clip})) {
-                        {move ||if model.mapping.get()==GamutMapping::Clip {"sRGB Clipped"} else {"sRGB Mapped"}}
+        column(class="app",node_ref=app_root,on:key_down=shortcut) {
+            Titlebar(refs=refs,settings=settings)
+            if move ||settings.get() {
+                Settings(model=model,refs=refs)
+            } else {
+                column(class="scroll-body",node_ref=refs.tool_page) {
+                column(class="page-content",style:width=move ||app_size.get().map(|size|format!("{}px",(size.width.0/scale.get()-40.0).max(0.0)))) {
+                    RecentColors(model=model,node=refs.recents)
+                    if move ||model.tab.get()==Tab::Picker {
+                        GamutPanel(model=model,refs=refs)
                     }
-                }
-                column(class="plot-section") {
-                    ColorControl(model=model,kind=SurfaceKind::Slice,node=refs.slice)
-                    row(class="plot-caption") {
-                        text {"L ↑"}
-                        spacer()
-                        text(class="legend srgb") {"sRGB"}
-                        if move ||model.show_p3.get() {text(class="legend p3") {"P3"}}
-                        if move ||model.show_rec2020.get() {text(class="legend rec2020") {"2020"}}
-                        spacer()
-                        text {{move ||format!("C 0–{} →",model.max_chroma.get())}}
-                    }
-                }
-                row(class="adjustments") {
-                    column(class="preview-column") {
-                        box(class="swatches") {
-                            if move ||model.selected.get()==0 {
-                                SlotSwatch(model=model,refs=refs,index=1)
-                                SlotSwatch(model=model,refs=refs,index=0)
-                            } else {
-                                SlotSwatch(model=model,refs=refs,index=0)
-                                SlotSwatch(model=model,refs=refs,index=1)
-                            }
-                            control(class="swap-colors",node_ref=refs.swap,tabindex=Focus::Sequential,a11y:label="Swap main and sub colors",
-                                on:pointer_down=move |_|refs.swap.focus(),
-                                on:click=move |_|model.swap()) {
-                                {zgui::elements::vector().document(include_str!("../assets/swap.svg")).class("swap-icon")}
-                            }
-                        }
-                        spacer()
-                        row(class="quick-colors") {
-                            control(class="transparent-color",
-                                tabindex=Focus::Sequential,
-                                a11y:label="Transparent",
-                                on:click=move |_|{model.set_channel(3,0.0);}) {
-                                {zgui::elements::vector().document(include_str!("../assets/transparent.svg")).class("transparent-mark")}
-                            }
-                            control(class="black-color",
-                                tabindex=Focus::Sequential,
-                                a11y:label="Black",
-                                on:click=move |_|{model.input("#000");}) {}
-                            control(class="white-color",
-                                tabindex=Focus::Sequential,
-                                a11y:label="White",
-                                on:click=move |_|{model.input("#fff");}) {}
-                        }
-                    }
-                    column(class="channels") {
-                        Channel(model=model,index=0,label="L",kind=SurfaceKind::Lightness,bar=refs.bars[0],number=refs.numbers[0])
-                        Channel(model=model,index=1,label="C",kind=SurfaceKind::Chroma,bar=refs.bars[1],number=refs.numbers[1])
-                        Channel(model=model,index=2,label="H",kind=SurfaceKind::Hue,bar=refs.bars[2],number=refs.numbers[2])
-                        Channel(model=model,index=3,label="A",kind=SurfaceKind::Alpha,bar=refs.bars[3],number=refs.numbers[3])
-                    }
-                }
+                    ColorPanel(model=model,refs=refs)
+                    if move ||model.tab.get()==Tab::Harmonies {Harmonies(model=model,refs=refs)}
+                    if move ||model.tab.get()==Tab::Apca {Contrast(model=model,refs=refs)}
                 column(class="formats") {
                     CodeField(model=model,node=refs.codes[0],primary=true)
                     CodeField(model=model,node=refs.codes[1],primary=false)
                 }
+                    Swatches(model=model,refs=refs)
                 }
-                } else {ToolPage(model=model,refs=refs)}
-                column(class="status") {
-                    row {
-                        text {{move ||model.display.get().label()}}
-                        spacer()
-                        control(class="csp-connect",node_ref=refs.companion,tabindex=Focus::Sequential,
-                            a11y:label=move ||if model.companion.active() {"Disconnect or cancel CSP connection"} else {"Scan the screen for a CSP companion QR"},
-                            on:click=move |_|{
-                                if model.companion.active() {model.companion.disconnect();}
-                                else {model.companion.scan();}
-                            }) {{move ||model.companion.label()}}
-                    }
-                    text(class="status-hint") {{move ||model.companion.hint.get()}}
-                    row(class="status-actions") {
-                        if move ||!model.storage_message.get().is_empty() && model.can_save.get() {
-                            control(class="retry-save",tabindex=Focus::Sequential,
-                                on:click=move |_|model.save_request.update(|request|*request=request.wrapping_add(1))) {"Retry save"}
-                        }
-                        if move ||model.companion.can_resolve.get() {
-                            row(class="csp-resolution") {
-                                control(node_ref=refs.csp_pull,tabindex=Focus::Sequential,on:click=move |_|model.companion.use_csp()) {"Use CSP color"}
-                                control(node_ref=refs.csp_send,tabindex=Focus::Sequential,on:click=move |_|model.companion.send_current()) {"Send this color"}
-                            }
-                        }
-                    }
-                    text(class="warning") {{move || {
-                        let message=model.message.get();
-                        let storage=model.storage_message.get();
-                        if !storage.is_empty() {storage}
-                        else if let okcolor_csp::worker::State::Failed(error)=model.companion.state.get() {error}
-                        else if !message.is_empty() {message}
-                        else if !model.color().in_gamut(model.gamut.get()) {"Outside working gamut — original retained".into()}
-                        else if !model.display.get().wide_output && !model.color().in_gamut(Gamut::Srgb) {
-                            if model.mapping.get()==GamutMapping::Clip {"sRGB Clipped preview — original retained".into()}
-                            else {"sRGB Mapped preview — original retained".into()}
-                        }
-                        else {String::new()}
-                    }}}
                 }
             }
+            Statusbar(model=model,refs=refs,settings=settings)
+            if move ||!tips.text.get().is_empty() {
+                text(class="tooltip",style:left=move ||Some(format!("{}px",tips.position.get().0)),style:top=move ||Some(format!("{}px",tips.position.get().1))) {{move ||tips.text.get()}}
+            }
             ResizeEdges()
+            if move ||refs.sampling.get() {
+                box(class="eyedropper-overlay",a11y:label="Select a color in this window. Escape cancels.",
+                    on:pointer_down=move |cx|{
+                        if cx.button==Some(PointerButton::Primary) {
+                            if let Some(color)=screen_color(model.h.get_untracked()) {model.select(color);}
+                            else {model.message.set("Could not sample the screen pixel".into());}
+                        }
+                        refs.sampling.set(false);
+                        cx.stop_propagation();
+                        cx.prevent_default();
+                    }) {}
+            }
         }
     }
 }
@@ -268,10 +269,10 @@ pub(crate) fn RecentColors(model: PickerModel, node: NodeRef) -> impl IntoView {
             }) {
                 if move ||model.recent.get().is_empty() {text(class="empty-recent") {"Recent colors"}}
                 for entry in move ||model.recent.get(), key=|entry:&Oklch|entry.components().map(f64::to_bits) {
-                    control(class="recent",tabindex=Focus::Sequential,a11y:label="Recall recent color",
-                        on:click=move |_|{model.select(entry);}) {
-                        ColorSwatch(model=model,color=Memo::new(move |_|entry),outline_dark=true)
-                    }
+                    ColorTile(class="recent",node=NodeRef::new(),color=Memo::new(move |_|entry),source=Source::Recent,destination=None,
+                        label=Memo::new(move |_|okcolor_core::format_color(entry,ColorFormat::Hex,model.mapping.get()).expect("finite color").text),
+                        activate=UnsyncCallback::new(move |()|{model.select(entry);}))
+
                 }
             }
             if move ||position.get().content_size.width.0>position.get().scrollport.width.0 {
@@ -289,17 +290,72 @@ pub(crate) fn RecentColors(model: PickerModel, node: NodeRef) -> impl IntoView {
 // color edits still update the existing paint handles without rebuilding the view.
 #[component]
 pub(crate) fn SlotSwatch(model: PickerModel, refs: PickerRefs, index: usize) -> impl IntoView {
-    let slot = index;
+    let color = Memo::new(move |_| model.slots[index].get());
+    let unavailable =
+        Memo::new(move |_| !model.display.get().wide_output && !color.get().in_gamut(Gamut::Srgb));
+    let fallback = move |method| {
+        let original = color.get();
+        let [_, _, h, a] = original.components();
+        original
+            .mapped_rgb(Gamut::Srgb, method)
+            .and_then(|rgb| Oklch::from_rgb(rgb, Gamut::Srgb, a, h))
+            .unwrap_or(original)
+    };
     view! {
-        control(class="swatch",class:main=slot==0,class:sub=slot==1,
-            class:active=move ||usize::from(model.selected.get())==slot,
-            node_ref=refs.swatches[slot],tabindex=Focus::Sequential,
-            a11y:label=if slot==0 {"Main color"} else {"Sub color"},
-            on:pointer_down=move |_|refs.swatches[slot].focus(),
-            on:click=move |_|model.select_slot(slot as u8)) {
-            ColorSwatch(model=model,color=Memo::new(move |_|model.slots[slot].get()),outline_dark=false)
+        box(class="slot-layer",class:main=index==0,class:sub=index==1) {
+            ColorTile(node=refs.swatches[index],class="slot-tile",color=color,source=Source::Sample,destination=None,
+                label=Memo::new(move |_|if index==0 {"Main color".into()}else{"Sub color".into()}),
+                activate=UnsyncCallback::new(move |()|model.select_slot(index as u8)))
+            if move ||unavailable.get() && model.selected.get() as usize==index {
+                column(class="fallback-pair") {
+                    for entry in move ||[(0,GamutMapping::LocalMinde,"Mapped sRGB"),(1,GamutMapping::Clip,"Clipped sRGB")],key=|entry:&(u8,GamutMapping,&str)|entry.0 {
+                        ColorTile(node=NodeRef::new(),class="fallback-tile",source=Source::Sample,destination=None,
+                            color=Memo::new(move |_|fallback(entry.1)),label=Memo::new(move |_|entry.2.to_string()),
+                            activate=UnsyncCallback::new(move |()|{model.select(fallback(entry.1));}))
+                    }
+                }
+            }
         }
     }
+}
+
+#[cfg(target_os = "windows")]
+fn screen_color(hue: f64) -> Option<Oklch> {
+    use std::ptr::null_mut;
+    use windows_sys::Win32::{
+        Foundation::POINT,
+        Graphics::Gdi::{GetDC, GetPixel, ReleaseDC},
+        UI::WindowsAndMessaging::GetCursorPos,
+    };
+    let mut point = POINT::default();
+    // The picker window is per-monitor DPI aware, so these desktop coordinates match the DC.
+    unsafe {
+        if GetCursorPos(&mut point) == 0 {
+            return None;
+        }
+        let dc = GetDC(null_mut());
+        if dc.is_null() {
+            return None;
+        }
+        let pixel = GetPixel(dc, point.x, point.y);
+        ReleaseDC(null_mut(), dc);
+        if pixel == u32::MAX {
+            return None;
+        }
+        let rgb = [pixel & 255, (pixel >> 8) & 255, (pixel >> 16) & 255];
+        Oklch::from_rgb(
+            rgb.map(|channel| f64::from(channel) / 255.0),
+            Gamut::Srgb,
+            1.0,
+            hue,
+        )
+        .ok()
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn screen_color(_: f64) -> Option<Oklch> {
+    None
 }
 
 /// These two small menus share dismissal and focus behavior, without owning application state.
@@ -328,58 +384,191 @@ fn dismiss_menu(open: RwSignal<bool>, popup: NodeRef, trigger: NodeRef) {
 }
 
 #[component]
-fn Titlebar(model: PickerModel, refs: PickerRefs) -> impl IntoView {
+fn GamutPanel(model: PickerModel, refs: PickerRefs) -> impl IntoView {
+    view! {
+                column(class="plot-section") {
+                    ColorControl(model=model,kind=SurfaceKind::Slice,node=refs.slice)
+                    row(class="plot-caption") {
+                        row(class="legend-group",class:right=move ||model.c.get()/model.max_chroma.get()<0.32) {
+                            text(class="legend srgb") {"sRGB"}
+                            if move ||model.show_p3.get() {text(class="legend p3") {"P3"}}
+                            if move ||model.show_rec2020.get() {text(class="legend rec2020") {"Rec.2020"}}
+                        }
+                        text(class="axis-c",style:left=move ||Some(format!("{}%",(model.c.get()/model.max_chroma.get()).clamp(0.01,0.99)*100.0))) {"C"}
+                    }
+                    ColorControl(model=model,kind=SurfaceKind::Hue,node=refs.bars[2])
+                    if move ||model.tools.get().show_alpha_slider {ColorControl(model=model,kind=SurfaceKind::Alpha,node=refs.bars[3])}
+                }
+    }
+}
+
+#[component]
+fn ColorPanel(model: PickerModel, refs: PickerRefs) -> impl IntoView {
+    view! {
+                row(class="adjustments") {
+                    column(class="preview-column") {
+                        box(class="swatches") {
+                            if move ||model.selected.get()==0 {
+                                SlotSwatch(model=model,refs=refs,index=1)
+                                SlotSwatch(model=model,refs=refs,index=0)
+                            } else {
+                                SlotSwatch(model=model,refs=refs,index=0)
+                                SlotSwatch(model=model,refs=refs,index=1)
+                            }
+                            control(class="eyedropper",tabindex=Focus::Sequential,a11y:label="Sample a window color (Ctrl+Shift+C)",
+                                on:click=move |_|refs.sampling.set(true)) {
+                                {zgui::elements::vector().document(include_str!("../assets/eyedropper.svg")).class("eyedropper-icon")}
+                            }
+                            control(class="swap-colors",node_ref=refs.swap,tabindex=Focus::Sequential,a11y:label="Swap main and sub colors",
+                                on:pointer_down=move |_|refs.swap.focus(),
+                                on:click=move |_|model.swap()) {
+                                {zgui::elements::vector().document(include_str!("../assets/swap.svg")).class("swap-icon")}
+                            }
+                        }
+                        spacer()
+                        row(class="quick-colors") {
+                            for index in move ||0..3,key=|index:&usize|*index {
+                                ColorTile(node=NodeRef::new(),class=if index==0{"transparent-color"}else{"preset-color"},source=Source::Sample,destination=None,
+                                    color=Memo::new(move |_|{
+                                        let [l,c,h,_]=model.color().components();
+                                        if index==0 {Oklch::new(l,c,h,0.0)}else{Oklch::new(if index==1{0.0}else{1.0},0.0,h,1.0)}
+                                            .expect("valid preset color")
+                                    }),label=Memo::new(move |_|["Transparent","Black","White"][index].into()),
+                                    activate=UnsyncCallback::new(move |()|{match index {
+                                        0=>{model.set_channel(3,0.0);},
+                                        1=>{model.input("#000");},
+                                        _=>{model.input("#fff");}
+                                    }}))
+                            }
+                        }
+                    }
+                    column(class="channels") {
+                        Channel(model=model,index=0,label="L",number=refs.numbers[0])
+                        Channel(model=model,index=1,label="C",number=refs.numbers[1])
+                        Channel(model=model,index=2,label="H",number=refs.numbers[2])
+                        Channel(model=model,index=3,label="A",number=refs.numbers[3])
+                    }
+                }
+    }
+}
+
+#[component]
+fn Titlebar(refs: PickerRefs, settings: RwSignal<bool>) -> impl IntoView {
     let window = use_window();
-    let help = RwSignal::new(false);
-    let popup = NodeRef::new();
-    let trigger = refs.menu;
-    let level_window = StoredValue::new_local(window.clone());
-    dismiss_menu(help, popup, trigger);
     view! {
         row(class="titlebar",on:pointer_down=window.move_drag_handler()) {
-            control(class="menu-button",
-                node_ref=trigger,
-                tabindex=Focus::Sequential,
-                a11y:label="Picker settings and shortcuts",
-                on:pointer_down=window.no_drag_handler(),
-                on:click=move |_|help.update(|v|*v = !*v)) {"≡"}
-            control(class="title",node_ref=refs.title,tabindex=Focus::Sequential,a11y:label="Picker · Ctrl+1",
-                on:pointer_down=window.no_drag_handler(),on:click=move |_|switch_tab(model,refs,Tab::Picker)) {"OkColorPicker"}
-            for entry in move || [(0,Tab::Swatches,"Swatches · Ctrl+2","S"),(1,Tab::Harmonies,"Harmonies · Ctrl+3","H"),(2,Tab::Apca,"APCA · Ctrl+4","A")],key=|entry:&(usize,Tab,&str,&str)|entry.0 {
-                control(class="tab-button",node_ref=refs.tabs[entry.0],tabindex=Focus::Sequential,a11y:label=entry.2,
-                    class:active=move ||model.tab.get()==entry.1,on:pointer_down=use_window().no_drag_handler(),
-                    on:click=move |_|switch_tab(model,refs,entry.1)) {{entry.3}}
+            control(class="menu-button",node_ref=refs.menu,tabindex=Focus::Sequential,
+                class:open=move ||settings.get(),a11y:label="Settings",on:pointer_down=window.no_drag_handler(),
+                on:click=move |_|settings.update(|open|*open = !*open)) {
+                box(class="menu-line first") {} box(class="menu-line second") {}
             }
+            text(class="title",node_ref=refs.title) {"OkColorPicker"}
             spacer()
             CaptionControl(index=0,node=refs.minimize,visual=refs.caption)
             CaptionControl(index=1,node=refs.maximize,visual=refs.caption)
             CaptionControl(index=2,node=refs.close,visual=refs.caption)
-            if move ||help.get() {
-                column(class="help-menu",node_ref=popup,on:pointer_down=window.no_drag_handler()) {
-                    control(tabindex=Focus::Sequential,a11y:label="Toggle always on top",
-                        class:selected=move ||model.tools.get().always_on_top,
-                        on:click=move |_|{
-                            model.tools.update(|tools|tools.always_on_top = !tools.always_on_top);
-                            level_window.with_value(|window|window.set_level(model.tools.get_untracked().window_level()));
-                        }) {{move ||if model.tools.get().always_on_top {"✓ Always on top"} else {"Always on top"}}}
-                    control(node_ref=refs.gamut_toggles[0],tabindex=Focus::Sequential,
-                        a11y:label="Toggle Display P3",class:selected=move ||model.show_p3.get(),
-                        on:click=move |_|model.toggle_gamut(Gamut::DisplayP3)) {{move ||if model.show_p3.get() {"✓ Display P3"} else {"Display P3"}}}
-                    control(node_ref=refs.gamut_toggles[1],tabindex=Focus::Sequential,
-                        a11y:label="Toggle Rec.2020",class:selected=move ||model.show_rec2020.get(),
-                        on:click=move |_|model.toggle_gamut(Gamut::Rec2020)) {{move ||if model.show_rec2020.get() {"✓ Rec.2020"} else {"Rec.2020"}}}
-                    text {"Ctrl 1–4 · Picker / Swatches / Harmonies / APCA"}
-                    text {"Ctrl Tab / Shift Tab · Next / previous tab"}
-                    text {"Ctrl C / V · Copy / paste color"}
-                    text {"Ctrl Z / Shift Z · Undo / redo"}
-                    text {"Arrow keys · Adjust a focused control"}
-                    text {"Drag / wheel · Adjust a number"}
-                    text {"Shift · ×10   Ctrl · ×0.1"}
-                    text {"Enter · Commit   Escape · Cancel drag"}
-                }
-            }
         }
     }
+}
+
+#[component]
+fn Settings(model: PickerModel, refs: PickerRefs) -> impl IntoView {
+    let level_window = StoredValue::new_local(use_window());
+    view! {
+        column(class="body settings") {
+            SettingToggle(label="Always on top",node=refs.topmost,checked=Memo::new(move |_|model.tools.get().always_on_top),
+                toggle=UnsyncCallback::new(move |()|{
+                    model.tools.update(|tools|tools.always_on_top = !tools.always_on_top);
+                    level_window.with_value(|window|window.set_level(model.tools.get_untracked().window_level()));
+                }))
+            column(class="settings-group") {
+                control(class="setting-row",tabindex=Focus::Sequential,a11y:label="Toggle sRGB fallback mapping",
+                    on:click=move |_|model.mapping.update(|m|*m=if *m==GamutMapping::Clip {GamutMapping::LocalMinde}else{GamutMapping::Clip})) {
+                    text {"sRGB replacement"} spacer()
+                    text {{move ||if model.mapping.get()==GamutMapping::Clip {"Clipped"} else {"Mapped"}}}
+                }
+                SettingToggle(label="Show Rec.2020",node=refs.gamut_toggles[1],checked=Memo::new(move |_|model.show_rec2020.get()),
+                    toggle=UnsyncCallback::new(move |()|model.toggle_gamut(Gamut::Rec2020)))
+                SettingToggle(label="Show P3",node=refs.gamut_toggles[0],checked=Memo::new(move |_|model.show_p3.get()),
+                    toggle=UnsyncCallback::new(move |()|model.toggle_gamut(Gamut::DisplayP3)))
+            }
+            SettingToggle(label="Show alpha slider",node=NodeRef::new(),checked=Memo::new(move |_|model.tools.get().show_alpha_slider),
+                toggle=UnsyncCallback::new(move |()|model.tools.update(|t|t.show_alpha_slider = !t.show_alpha_slider)))
+        }
+    }
+}
+
+#[component]
+fn SettingToggle(
+    label: &'static str,
+    node: NodeRef,
+    checked: Memo<bool>,
+    toggle: UnsyncCallback<()>,
+) -> impl IntoView {
+    view! {control(class="setting-row",node_ref=node,tabindex=Focus::Sequential,a11y:label=label,on:click=move |_|toggle.run(())) {
+        text {{label}} spacer()
+        if move ||checked.get() {{zgui::elements::vector().document(include_str!("../assets/check.svg")).class("check-icon")}}
+    }}
+}
+
+fn status_message(model: PickerModel) -> String {
+    for message in [model.storage_message.get(), model.message.get()] {
+        if !message.is_empty() {
+            return message;
+        }
+    }
+    if let okcolor_csp::worker::State::Failed(error) = model.companion.state.get() {
+        return error;
+    }
+    let hint = model.companion.hint.get();
+    if model.companion.active() && (hint.starts_with("Cannot") || hint.contains("exhausted")) {
+        return hint;
+    }
+    model.display.get().label().into()
+}
+
+#[component]
+fn Statusbar(model: PickerModel, refs: PickerRefs, settings: RwSignal<bool>) -> impl IntoView {
+    let tabs = [
+        (Tab::Picker, "Picker", include_str!("../assets/picker.svg")),
+        (
+            Tab::Harmonies,
+            "Harmony",
+            include_str!("../assets/harmonies.svg"),
+        ),
+        (Tab::Apca, "APCA", include_str!("../assets/apca.svg")),
+    ];
+    view! {row(class="status") {
+        for entry in move ||tabs.into_iter().enumerate(),key=|entry:&(usize,(Tab,&str,&str))|entry.0 {
+            control(class="tab-button",node_ref=refs.tabs[entry.0],tabindex=Focus::Sequential,a11y:label=entry.1.1,
+                class:active=move ||model.tab.get()==entry.1.0 && !settings.get(),
+                on:click=move |_|{settings.set(false);switch_tab(model,refs,entry.1.0);}) {
+                {zgui::elements::vector().document(entry.1.2).class("status-icon")}
+            }
+        }
+        if move ||model.companion.can_resolve.get() {
+            row(class="status-center") {
+                control(node_ref=refs.csp_pull,tabindex=Focus::Sequential,on:click=move |_|model.companion.use_csp()) {"Use CSP color"}
+                control(node_ref=refs.csp_send,tabindex=Focus::Sequential,on:click=move |_|model.companion.send_current()) {"Send this color"}
+            }
+        } else {
+            text(class="status-center") {{move ||status_message(model)}}
+        }
+        if move ||!model.storage_message.get().is_empty() && model.can_save.get() {
+            control(tabindex=Focus::Sequential,on:click=move |_|model.save_request.update(|r|*r=r.wrapping_add(1))) {"Retry"}
+        }
+        control(class="csp-connect",node_ref=refs.companion,tabindex=Focus::Sequential,
+            class:warning=move ||matches!(model.companion.state.get(),okcolor_csp::worker::State::Failed(_)),
+            a11y:label=move ||model.companion.label(),
+            on:click=move |_|{if model.companion.active(){model.companion.disconnect();}else{model.companion.scan();}}) {
+            if move ||model.companion.active() {
+                box(class="disconnect open") {box(class="menu-line first") {} box(class="menu-line second") {}}
+            } else {
+                {zgui::elements::vector().document(include_str!("../assets/link.svg")).class("status-icon")}
+            }
+            text {"CSP"}
+        }
+    }}
 }
 
 #[component]
@@ -407,10 +596,9 @@ fn Channel(
     model: PickerModel,
     index: usize,
     label: &'static str,
-    kind: SurfaceKind,
-    bar: NodeRef,
     number: NodeRef,
 ) -> impl IntoView {
+    let bar = NodeRef::new();
     let focused = RwSignal::new(false);
     let draft = RwSignal::new(String::new());
     let dirty = RwSignal::new(false);
@@ -533,9 +721,8 @@ fn Channel(
         bar.focus();
     };
     view! {
-        row(class="channel") {
+        row(class="channel",node_ref=bar,tabindex=Focus::Programmatic) {
             text(class="channel-label") {{label}}
-            ColorControl(model=model,kind=kind,node=bar)
             field(class="number",node_ref=number,a11y:label=label,
                 on:pointer_down=move |cx| {
                     if !cx.primary || cx.button!=Some(PointerButton::Primary) || composing.get_untracked() { return; }
@@ -706,7 +893,14 @@ fn switch_tab(model: PickerModel, refs: PickerRefs, tab: Tab) {
     if model.dragging.get_untracked() {
         return;
     }
-    refs.title.focus();
+    refs.menu.focus();
+    refs.tool_page.scroll_to(
+        ScrollTarget::Offset(zgui::geom::Point::new(
+            zgui::geom::DevicePx(0.0),
+            zgui::geom::DevicePx(0.0),
+        )),
+        ScrollBehavior::Instant,
+    );
     model.editing_text.set(false);
     model.tab.set(tab);
     model.message.set(String::new());

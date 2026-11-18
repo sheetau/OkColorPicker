@@ -342,6 +342,7 @@ pub fn ColorControl(model: PickerModel, kind: SurfaceKind, node: NodeRef) -> imp
         cx.prevent_default();
         cx.stop_propagation();
     };
+    let extent = node.observe_border_size();
     let label = match kind {
         SurfaceKind::Slice => "Lightness and chroma",
         SurfaceKind::Lightness => "Lightness",
@@ -361,14 +362,19 @@ pub fn ColorControl(model: PickerModel, kind: SurfaceKind, node: NodeRef) -> imp
             on:key_down=keys,
             on:pointer_cancel=move |_| { if dragging.get_untracked() {dragging.set(false);model.cancel();} }) {
             {surface.class("color-surface").into_view()}
-            box(class="color-marker",class:outside=move || kind.marker(model)[0]>1.0,
-                style:left=move || Some(format!("{}%",kind.marker(model)[0].clamp(0.0,1.0)*100.0)),
-                style:top=move || Some(format!("{}%",kind.marker(model)[1].clamp(0.0,1.0)*100.0))) {
-                if move || kind != SurfaceKind::Slice {
-                        ColorMarker(model=model,kind=kind,bar=node,color=Memo::new(move |_| {
-                            let [l,c,h,a]=model.color().components();
-                            Oklch::new(l,c,h,if kind==SurfaceKind::Alpha {a} else {1.0}).expect("valid marker color")
-                        }))
+            if move ||kind==SurfaceKind::Slice {
+                box(class="crosshair horizontal",style:top=move ||Some(format!("{}%",100.0*(1.0-model.l.get())))) {}
+                box(class="crosshair vertical",style:left=move ||Some(format!("{}%",100.0*(model.c.get()/model.max_chroma.get()).min(1.0)))) {}
+                text(class="axis-l",style:top=move ||{
+                    let height = extent.get().map_or(152.0,|s|s.height.0/scale.get());
+                    Some(format!("{}px",((1.0-model.l.get())*f64::from(height)-5.0).clamp(0.0,f64::from((height-10.0).max(0.0)))))
+                }) {"L"}
+            } else {
+                box(class="color-marker",style:left=move ||Some(format!("{}%",kind.marker(model)[0].clamp(0.0,1.0)*100.0))) {
+                    ColorMarker(model=model,kind=kind,bar=node,color=Memo::new(move |_| {
+                        let [l,c,h,a]=model.color().components();
+                        Oklch::new(l,c,h,if kind==SurfaceKind::Alpha {a} else {1.0}).expect("valid marker color")
+                    }))
                 }
             }
         }

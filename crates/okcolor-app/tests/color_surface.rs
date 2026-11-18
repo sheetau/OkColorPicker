@@ -171,6 +171,12 @@ fn gpu_surfaces_match_f64_mapping_and_working_gamut_mask() {
                 } else {
                     source.mapped_rgb(Gamut::Srgb, method).unwrap()
                 };
+                if (1.0..=3.0).contains(&params.kind)
+                    && !source.in_gamut(Gamut::DisplayP3)
+                    && (x + y) % 4 == 0
+                {
+                    expected = expected.map(|channel| channel * 0.45);
+                }
                 if params.kind == 4.0 {
                     let backdrop = if (x / 5 + y / 5) % 2 == 1 { 0.23 } else { 0.13 };
                     expected = expected.map(|channel| backdrop * (1.0 - u) + channel * u);

@@ -48,6 +48,20 @@ fn click(h: &mut Harness<impl zgui::platform::AppHandler>, node: NodeRef) {
         h.settle(32);
     }
 }
+fn tile_pointer(
+    h: &mut Harness<impl zgui::platform::AppHandler>,
+    action: PointerAction,
+    button: PointerButton,
+    p: Point<CssPx, zgui::geom::Css>,
+) {
+    h.deliver_to_first(SurfaceEvent::Pointer {
+        action,
+        event: PointerEvent::mouse(p).with_button(button),
+        modifiers: Modifiers::NONE,
+        timestamp: Timestamp::ORIGIN,
+    });
+    h.settle(32);
+}
 fn key(h: &mut Harness<impl zgui::platform::AppHandler>, event: KeyEvent, modifiers: Modifiers) {
     h.deliver_to_first(SurfaceEvent::Key {
         state: KeyState::Pressed,
@@ -95,104 +109,182 @@ fn mounted_tabs_edit_recall_adjust_and_restore() {
                 h.settle(64);
                 let (model, refs): (PickerModel, PickerRefs) = state.get().unwrap();
                 let original = model.current();
-                click(&mut h, refs.tabs[0]);
-                assert_eq!(model.tab.get_untracked(), Tab::Swatches);
-                click(&mut h, refs.tools[0]);
-                assert_eq!(model.library.get_untracked().swatches.len(), 1);
-                click(&mut h, refs.tools[1]);
-                type_text(&mut h, refs.tools[2], "Accent");
-                click(&mut h, refs.tools[3]);
-                assert_eq!(model.library.get_untracked().swatches[0].name, "Accent");
-                type_text(&mut h, refs.tools[2], "Palette");
-                click(&mut h, refs.tools[4]);
-                assert_eq!(model.library.get_untracked().folders[0].name, "Palette");
-                model.input("#aabbcc");
+                refs.menu.focus();
                 h.settle(32);
-                click(&mut h, refs.tools[7]);
-                assert_eq!(model.current(), original, "tile recalls exact original");
-                click(&mut h, refs.tools[6]);
-                assert!(model.library.get_untracked().swatches[0].folder.is_some());
-                // The active page is unmounted even when its field has focus.
-                refs.tools[2].focus();
-                h.settle(32);
-                key(&mut h, KeyEvent::character("3"), Modifiers::CONTROL);
-                assert_eq!(model.tab.get_untracked(), Tab::Harmonies);
-                assert!(!model.editing_text.get_untracked());
-                let strip = refs.tools[7].window_bounds().unwrap();
-                let point = Point::new(
-                    CssPx(strip.origin.x.0 + strip.size.width.0 * 0.5),
-                    CssPx(strip.origin.y.0 + 16.0),
-                );
-                for action in [PointerAction::Pressed, PointerAction::Released] {
-                    h.deliver_to_first(SurfaceEvent::Pointer {
-                        action,
-                        event: PointerEvent::mouse(point).with_button(PointerButton::Primary),
-                        modifiers: Modifiers::NONE,
-                        timestamp: Timestamp::ORIGIN,
-                    });
-                    h.settle(32);
-                }
-                assert!(
-                    model.current().components()[0] < original.components()[0],
-                    "generated shade applies through UI"
-                );
-                model.undo();
-                h.settle(32);
-                assert_eq!(model.current(), original);
-                for _ in 0..6 {
-                    click(&mut h, refs.tools[0]);
-                }
-                assert_eq!(model.tools.get_untracked().harmony, 1);
-                click(&mut h, refs.tools[1]);
-                assert_eq!(model.library.get_untracked().swatches.len(), 2);
                 key(
                     &mut h,
-                    KeyEvent::named(NamedKey::Tab, PhysicalKey::Unidentified(0)),
-                    Modifiers::CONTROL,
-                );
-                assert_eq!(model.tab.get_untracked(), Tab::Apca);
-                type_text(&mut h, refs.tools[0], "#ffffff80");
-                click(&mut h, refs.tools[1]);
-                assert_eq!(model.tools.get_untracked().background, [1.0, 0.0, 0.0, 1.0]);
-                assert!(model.message.get_untracked().contains("opaque"));
-                type_text(&mut h, refs.tools[0], "#fff");
-                click(&mut h, refs.tools[1]);
-                type_text(&mut h, refs.tools[2], "60");
-                click(&mut h, refs.tools[3]);
-                assert!(
-                    (okcolor_core::apca(
-                        model.current(),
-                        model.tools.get_untracked().background(),
-                        model.mapping.get_untracked()
-                    )
-                    .unwrap()
-                        - 60.0)
-                        .abs()
-                        < 0.01
-                );
-                assert_eq!(
-                    &model.current().components()[1..],
-                    &original.components()[1..]
-                );
-                refs.title.focus();
-                h.settle(32);
-                model.undo();
-                h.settle(32);
-                assert_eq!(model.current(), original);
-                type_text(&mut h, refs.tools[2], "110");
-                click(&mut h, refs.tools[3]);
-                assert_eq!(model.current(), original);
-                assert!(model.message.get_untracked().contains("unreachable"));
-                refs.tools[2].focus();
-                h.settle(32);
-                let saved = model.saved_state_untracked();
-                assert_eq!(SavedState::decode(&saved.encode().unwrap()).unwrap(), saved);
-                key(
-                    &mut h,
-                    KeyEvent::named(NamedKey::Tab, PhysicalKey::Unidentified(0)),
+                    KeyEvent::character("C"),
                     Modifiers::CONTROL | Modifiers::SHIFT,
                 );
+                assert!(refs.sampling.get_untracked());
+                key(
+                    &mut h,
+                    KeyEvent::named(NamedKey::Escape, PhysicalKey::Unidentified(0)),
+                    Modifiers::NONE,
+                );
+                assert!(!refs.sampling.get_untracked());
+                assert_eq!(model.current(), original);
+                click(&mut h, refs.tabs[0]);
+                assert_eq!(model.tab.get_untracked(), Tab::Picker);
+                click(&mut h, refs.tabs[1]);
                 assert_eq!(model.tab.get_untracked(), Tab::Harmonies);
+                let rest = refs.tool_page;
+                rest.scroll_to(
+                    ScrollTarget::By(Point::new(
+                        zgui::geom::DevicePx(0.0),
+                        zgui::geom::DevicePx(10000.0),
+                    )),
+                    ScrollBehavior::Instant,
+                );
+                h.settle(64);
+                let strip = refs.tools[5].window_bounds().unwrap();
+                let palette_start = Point::new(
+                    CssPx(strip.origin.x.0 + 23.0),
+                    CssPx(strip.origin.y.0 + 8.0),
+                );
+                let tail = refs.tools[2].window_bounds().unwrap();
+                let palette_end = Point::new(CssPx(tail.origin.x.0 + 4.0), palette_start.y);
+                let last_color = Point::new(CssPx(tail.origin.x.0 - 22.0), palette_start.y);
+                let primary = PointerButton::Primary;
+                tile_pointer(&mut h, PointerAction::Pressed, primary, palette_start);
+                tile_pointer(&mut h, PointerAction::Released, primary, palette_start);
+                let locked = model.current();
+                assert_ne!(locked, original);
+                click(&mut h, refs.tools[6]);
+                click(&mut h, refs.tools[0]);
+                model.select(original);
+                tile_pointer(&mut h, PointerAction::Pressed, primary, palette_start);
+                tile_pointer(&mut h, PointerAction::Released, primary, palette_start);
+                assert_eq!(
+                    model.current(),
+                    locked,
+                    "generation preserves the locked color"
+                );
+                tile_pointer(&mut h, PointerAction::Pressed, primary, palette_start);
+                tile_pointer(&mut h, PointerAction::Moved, primary, palette_end);
+                tile_pointer(&mut h, PointerAction::Released, primary, palette_end);
+                model.select(original);
+                tile_pointer(&mut h, PointerAction::Pressed, primary, last_color);
+                tile_pointer(&mut h, PointerAction::Released, primary, last_color);
+                assert_eq!(
+                    model.current(),
+                    locked,
+                    "drop on the trailing target appends"
+                );
+                model.select(original);
+                h.settle(32);
+                click(&mut h, refs.library[0]);
+                assert_eq!(model.library.get_untracked().swatches[0].color(), original);
+                let first_id = model.library.get_untracked().swatches[0].id;
+                model.input("#d03264");
+                h.settle(32);
+                click(&mut h, refs.library[0]);
+                let second = model.current();
+                let b = refs.library[7].window_bounds().unwrap();
+                let first = Point::new(CssPx(b.origin.x.0 + 10.0), CssPx(b.origin.y.0 + 10.0));
+                let next = Point::new(CssPx(b.origin.x.0 + 33.0), first.y);
+                // Drag a saved tile before its neighbor, preserving the current color and IDs.
+                tile_pointer(&mut h, PointerAction::Pressed, PointerButton::Primary, next);
+                tile_pointer(&mut h, PointerAction::Moved, PointerButton::Primary, first);
+                tile_pointer(
+                    &mut h,
+                    PointerAction::Released,
+                    PointerButton::Primary,
+                    first,
+                );
+                assert_eq!(model.library.get_untracked().swatches[0].color(), second);
+                assert_eq!(model.library.get_untracked().swatches[1].id, first_id);
+                tile_pointer(
+                    &mut h,
+                    PointerAction::Pressed,
+                    PointerButton::Secondary,
+                    next,
+                );
+                tile_pointer(
+                    &mut h,
+                    PointerAction::Released,
+                    PointerButton::Secondary,
+                    next,
+                );
+                assert_eq!(model.current(), second);
+                refs.menu.focus();
+                key(&mut h, KeyEvent::character("v"), Modifiers::CONTROL);
+                assert_eq!(
+                    model.output_untracked(okcolor_core::ColorFormat::Hex),
+                    "#4e83a3"
+                );
+                tile_pointer(&mut h, PointerAction::Pressed, PointerButton::Middle, first);
+                tile_pointer(
+                    &mut h,
+                    PointerAction::Released,
+                    PointerButton::Middle,
+                    first,
+                );
+                assert_eq!(model.library.get_untracked().swatches.len(), 1);
+                model.select(original);
+                refs.menu.focus();
+                h.settle(32);
+                assert!(!model.editing_text.get_untracked());
+                key(&mut h, KeyEvent::character("r"), Modifiers::NONE);
+                assert!(
+                    model.editing_text.get_untracked(),
+                    "R should focus the output field"
+                );
+                key(&mut h, KeyEvent::character("e0e0"), Modifiers::NONE);
+                assert_eq!(refs.codes[1].text_content(), "e0e0", "shortcut selects all");
+                key(
+                    &mut h,
+                    KeyEvent::named(NamedKey::Enter, PhysicalKey::Unidentified(0)),
+                    Modifiers::NONE,
+                );
+                assert_eq!(
+                    model.output_untracked(okcolor_core::ColorFormat::Hex),
+                    "#00e0e0"
+                );
+                model.select(original);
+                key(&mut h, KeyEvent::character("3"), Modifiers::CONTROL);
+                assert_eq!(model.tab.get_untracked(), Tab::Apca);
+                refs.menu.focus();
+                h.settle(32);
+                key(&mut h, KeyEvent::character("o"), Modifiers::NONE);
+                key(&mut h, KeyEvent::character("red"), Modifiers::NONE);
+                assert_eq!(refs.codes[0].text_content(), "red");
+                key(
+                    &mut h,
+                    KeyEvent::named(NamedKey::Escape, PhysicalKey::Unidentified(0)),
+                    Modifiers::NONE,
+                );
+                assert_eq!(model.current(), original);
+                let config = model.tools.get_untracked().contrast_grid;
+                click(&mut h, refs.tools[0]);
+                assert_ne!(
+                    model.tools.get_untracked().contrast_grid.to_text,
+                    config.to_text
+                );
+                click(&mut h, refs.tools[1]);
+                assert_ne!(model.tools.get_untracked().contrast_grid.p3, config.p3);
+                type_text(&mut h, refs.tools[3], "65");
+                key(
+                    &mut h,
+                    KeyEvent::named(NamedKey::Enter, PhysicalKey::Unidentified(0)),
+                    Modifiers::NONE,
+                );
+                assert_eq!(model.tools.get_untracked().contrast_grid.levels[0], 65);
+                assert_eq!(model.current(), original);
+                let grid = refs.tools[5].window_bounds().unwrap();
+                let divider = Point::new(
+                    CssPx(grid.origin.x.0 + 10.0),
+                    CssPx(grid.origin.y.0 + grid.size.height.0 / 2.0 - 1.0),
+                );
+                let edge = Point::new(divider.x, CssPx(grid.origin.y.0));
+                tile_pointer(&mut h, PointerAction::Pressed, primary, divider);
+                tile_pointer(&mut h, PointerAction::Moved, primary, edge);
+                tile_pointer(&mut h, PointerAction::Released, primary, edge);
+                assert_eq!(model.tools.get_untracked().contrast_grid.split, 0);
+                click(&mut h, refs.tools[6]);
+                assert_eq!(model.tools.get_untracked().contrast_grid.split, 2);
+                let saved = model.saved_state_untracked();
+                assert_eq!(SavedState::decode(&saved.encode().unwrap()).unwrap(), saved);
                 if let Ok(directory) = std::env::var("OKCOLOR_TOOLS_CAPTURE_DIR") {
                     // Synthetic color fixtures make density, clipping and all three pages reviewable.
                     model.library.update(|library| {
@@ -213,6 +305,14 @@ fn mounted_tabs_edit_recall_adjust_and_restore() {
                     });
                     for (index, name) in [(0, "swatches"), (1, "harmonies"), (2, "apca")] {
                         click(&mut h, refs.tabs[index]);
+                        // Clear the tab hover, including its delayed native-style tooltip.
+                        tile_pointer(
+                            &mut h,
+                            PointerAction::Moved,
+                            primary,
+                            Point::new(CssPx(145.0), CssPx(15.0)),
+                        );
+                        h.run_for(Duration::from_secs(1), Duration::from_millis(100));
                         h.settle(64);
                         assert!(refs.tool_page.window_bounds().unwrap().size.height.0 > 100.0);
                         std::fs::write(

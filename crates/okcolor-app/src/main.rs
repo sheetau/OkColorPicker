@@ -69,7 +69,7 @@ fn run() -> Result<(), zgui::Error> {
         .with_application_id("io.github.sheetau.OkColorPicker")
         .with_title("OkColorPicker")
         .with_level(startup.state.tools.window_level())
-        .with_size(330.0, 560.0)
+        .with_size(330.0, 582.0)
         .with_min_size(330.0, 520.0)
         .with_decorations(if cfg!(target_os = "windows") {
             Decorations::Full

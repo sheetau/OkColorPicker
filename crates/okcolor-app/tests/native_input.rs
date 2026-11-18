@@ -48,6 +48,13 @@ fn mouse(hwnd: HWND, message: u32, point: POINT) {
     }
 }
 
+fn click(hwnd: HWND, node: NodeRef) {
+    let point = position(node, 0.5, 0.5);
+    for message in [WM_MOUSEMOVE, WM_LBUTTONDOWN, WM_LBUTTONUP] {
+        mouse(hwnd, message, point);
+    }
+}
+
 struct Probe {
     state: Rc<Cell<Option<(PickerModel, PickerRefs)>>>,
     stage: Cell<u8>,
@@ -181,6 +188,26 @@ impl FrameProbe for Probe {
                 assert_eq!([rect.left, rect.top], self.location.get());
                 assert_eq!(model.current(), self.base.get().unwrap());
                 self.stage.set(8);
+                click(hwnd, refs.menu);
+            }
+            8 if refs.topmost.window_bounds().is_some() => {
+                self.stage.set(9);
+                click(hwnd, refs.topmost);
+            }
+            9 if model.tools.get_untracked().always_on_top => {
+                assert_ne!(
+                    unsafe { GetWindowLongPtrW(hwnd, GWL_EXSTYLE) } & WS_EX_TOPMOST as isize,
+                    0
+                );
+                self.stage.set(10);
+                click(hwnd, refs.topmost);
+            }
+            10 if !model.tools.get_untracked().always_on_top => {
+                assert_eq!(
+                    unsafe { GetWindowLongPtrW(hwnd, GWL_EXSTYLE) } & WS_EX_TOPMOST as isize,
+                    0
+                );
+                self.stage.set(11);
                 // SAFETY: exercise the normal close-request path on this owned window.
                 unsafe {
                     assert_ne!(PostMessageW(hwnd, WM_SYSCOMMAND, SC_CLOSE as usize, 0), 0);
@@ -265,7 +292,7 @@ fn native_pointer_wheel_key_and_resize_reach_the_picker() {
         .unwrap();
     assert_eq!(
         probe.stage.get(),
-        8,
+        11,
         "all native input and resize stages must complete"
     );
     finish.send(()).unwrap();
