@@ -1,5 +1,8 @@
-//! Related colors in OKLCH. Generated samples are reduced into the working gamut.
-use crate::{Gamut, Oklch};
+//! Related colors from the sRGB color wheel or the selected wide OKLCH gamut.
+use crate::{
+    Gamut, GamutMapping, Oklch,
+    color::{hsl_to_rgb, rgb_to_hsl},
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Ramp {
@@ -14,7 +17,64 @@ pub fn ramp(source: Oklch, kind: Ramp, gamut: Gamut) -> [Oklch; 7] {
     ramp_steps(source, kind, gamut)
 }
 
+// The sRGB reference wheel starts from whole-degree HSL and whole percentages.
+fn wheel_hsl(rgb: [f64; 3]) -> [f64; 3] {
+    let [h, s, l] = rgb_to_hsl(rgb);
+    [
+        h.round(),
+        (100.0 * s).round() / 100.0,
+        (100.0 * l).round() / 100.0,
+    ]
+}
+
+fn byte_rgb(rgb: [f64; 3]) -> [f64; 3] {
+    rgb.map(|v| (v * 255.0).round() / 255.0)
+}
+
+fn srgb_ramp<const N: usize>(source: Oklch, kind: Ramp, rgb: [f64; 3]) -> [Oklch; N] {
+    let rgb = byte_rgb(rgb);
+    let [h, s, l] = wheel_hsl(rgb);
+    let [_, _, neutral, alpha] = source.components();
+    let max = rgb.into_iter().fold(0.0, f64::max);
+    let min = rgb.into_iter().fold(1.0, f64::min);
+    let value = (max * 100.0).round() / 100.0;
+    let saturation = if max > 0.0 {
+        ((1.0 - min / max) * 100.0).round() / 100.0
+    } else {
+        0.0
+    };
+    let low = value * (1.0 - saturation);
+    std::array::from_fn(|i| {
+        let t = i as f64 / N.saturating_sub(1).max(1) as f64;
+        if (kind == Ramp::Temperatures && t == 0.5) || (kind != Ramp::Temperatures && i == 0) {
+            return source;
+        }
+        let result = match kind {
+            Ramp::Shades => hsl_to_rgb([h, s, l * (1.0 - t)]),
+            Ramp::Tints => hsl_to_rgb([h, s, l + (1.0 - l) * t]),
+            Ramp::Tones => hsl_to_rgb([h, s * (1.0 - t), l]),
+            Ramp::Temperatures => {
+                let end = if t < 0.5 {
+                    [low, low, value]
+                } else {
+                    [value, low, low]
+                };
+                std::array::from_fn(|k| rgb[k] + (end[k] - rgb[k]) * (t - 0.5).abs())
+            }
+            Ramp::Similar => unreachable!("similar samples use named colors"),
+        };
+        Oklch::from_rgb(byte_rgb(result), Gamut::Srgb, alpha, neutral).expect("bounded sRGB sample")
+    })
+}
+
 pub fn ramp_steps<const N: usize>(source: Oklch, kind: Ramp, gamut: Gamut) -> [Oklch; N] {
+    if gamut == Gamut::Srgb
+        && kind != Ramp::Similar
+        && source.in_gamut(gamut)
+        && let Ok(rgb) = source.mapped_rgb(gamut, GamutMapping::Clip)
+    {
+        return srgb_ramp(source, kind, rgb);
+    }
     let [l, c, h, a] = source.components();
     std::array::from_fn(|i| {
         let t = i as f64 / N.saturating_sub(1).max(1) as f64;
@@ -122,6 +182,32 @@ impl Harmony {
 }
 pub fn harmony(source: Oklch, kind: Harmony, gamut: Gamut) -> Vec<Oklch> {
     let [l, c, h, a] = source.components();
+    if gamut == Gamut::Srgb
+        && source.in_gamut(gamut)
+        && let Ok(rgb) = source.mapped_rgb(gamut, GamutMapping::Clip)
+    {
+        let [angle, s, light] = wheel_hsl(byte_rgb(rgb));
+        let offsets = match kind {
+            Harmony::Analogous => &[-40.0, 0.0, 40.0][..],
+            Harmony::SplitComplementary => &[0.0, 160.0, 200.0][..],
+            _ => kind.offsets(),
+        };
+        return offsets
+            .iter()
+            .map(|offset| {
+                if *offset == 0.0 {
+                    return source;
+                }
+                Oklch::from_rgb(
+                    byte_rgb(hsl_to_rgb([angle + offset, s, light])),
+                    gamut,
+                    a,
+                    h,
+                )
+                .expect("bounded color wheel")
+            })
+            .collect();
+    }
     kind.offsets()
         .iter()
         .map(|offset| {

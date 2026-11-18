@@ -81,25 +81,7 @@ pub fn format_color(
                 }
                 ColorFormat::Rgb => functional("rgb", [r, g, b].map(|v| v * 255.0), &suffix)?,
                 ColorFormat::Hsl => {
-                    let max = r.max(g).max(b);
-                    let min = r.min(g).min(b);
-                    let delta = max - min;
-                    let light = (max + min) / 2.0;
-                    let (hue, saturation) = if delta < 1e-12 {
-                        (0.0, 0.0)
-                    } else {
-                        let hue = if max == r {
-                            (g - b) / delta
-                        } else if max == g {
-                            (b - r) / delta + 2.0
-                        } else {
-                            (r - g) / delta + 4.0
-                        };
-                        (
-                            (hue * 60.0).rem_euclid(360.0),
-                            delta / (1.0 - (2.0 * light - 1.0).abs()),
-                        )
-                    };
+                    let [hue, saturation, light] = crate::color::rgb_to_hsl([r, g, b]);
                     format!(
                         "hsl({} {}% {}%{suffix})",
                         decimal(hue),

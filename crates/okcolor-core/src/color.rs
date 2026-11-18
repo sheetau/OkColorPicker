@@ -291,3 +291,36 @@ impl Gamut {
         encoded.copysign(v)
     }
 }
+
+pub(crate) fn rgb_to_hsl([r, g, b]: [f64; 3]) -> [f64; 3] {
+    let max = r.max(g).max(b);
+    let min = r.min(g).min(b);
+    let delta = max - min;
+    let light = (max + min) / 2.0;
+    let (hue, saturation) = if delta < 1e-12 {
+        (0.0, 0.0)
+    } else {
+        let hue = if max == r {
+            (g - b) / delta
+        } else if max == g {
+            (b - r) / delta + 2.0
+        } else {
+            (r - g) / delta + 4.0
+        };
+        (
+            (hue * 60.0).rem_euclid(360.0),
+            delta / (1.0 - (2.0 * light - 1.0).abs()),
+        )
+    };
+    [hue, saturation, light]
+}
+
+pub(crate) fn hsl_to_rgb([h, s, l]: [f64; 3]) -> [f64; 3] {
+    let h = h.rem_euclid(360.0);
+    let amplitude = s * l.min(1.0 - l);
+    let channel = |offset: f64| {
+        let k = (offset + h / 30.0) % 12.0;
+        l - amplitude * (k - 3.0).min(9.0 - k).clamp(-1.0, 1.0)
+    };
+    [channel(0.0), channel(8.0), channel(4.0)]
+}

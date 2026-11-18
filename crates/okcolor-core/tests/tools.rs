@@ -108,3 +108,51 @@ fn contrast_grid_retains_matching_lightness_and_skips_unreachable_levels() {
         assert!(contrast_sample(source, source, target, Gamut::Srgb, false, false).is_none());
     }
 }
+
+#[test]
+fn srgb_wheel_matches_displayed_reference_swatches() {
+    let hex = |c| {
+        okcolor_core::format_color(c, okcolor_core::ColorFormat::Hex, M)
+            .unwrap()
+            .text
+    };
+    for (source, analogous, shade, tint, tone, ends) in [
+        (
+            "#4e83a3",
+            ["#4ea28a", "#4e83a3", "#524ea2"],
+            "#274151",
+            "#a4c1d3",
+            "#637d8d",
+            ["#4e69a3", "#796979"],
+        ),
+        (
+            "#d03264",
+            ["#d133ce", "#d03264", "#d16a33"],
+            "#6a1832",
+            "#e899b2",
+            "#a95b74",
+            ["#81329b", "#d1324b"],
+        ),
+    ] {
+        let source = color(source);
+        assert_eq!(
+            harmony(source, Harmony::Analogous, Gamut::Srgb)
+                .into_iter()
+                .map(hex)
+                .collect::<Vec<_>>(),
+            analogous
+        );
+        for (kind, expected) in [
+            (Ramp::Shades, shade),
+            (Ramp::Tints, tint),
+            (Ramp::Tones, tone),
+        ] {
+            assert_eq!(
+                hex(okcolor_core::ramp_steps::<15>(source, kind, Gamut::Srgb)[7]),
+                expected
+            );
+        }
+        let temp = okcolor_core::ramp_steps::<15>(source, Ramp::Temperatures, Gamut::Srgb);
+        assert_eq!([hex(temp[0]), hex(temp[14])], ends);
+    }
+}

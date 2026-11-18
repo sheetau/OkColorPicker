@@ -175,13 +175,8 @@ fn parse_function(
             let h = a.hue()?;
             let s = b.scaled(100.0)?.clamp(0.0, 100.0) / 100.0;
             let l = c.scaled(100.0)?.clamp(0.0, 100.0) / 100.0;
-            let amplitude = s * l.min(1.0 - l);
-            let channel = |offset: f64| {
-                let k = (offset + h / 30.0) % 12.0;
-                l - amplitude * (k - 3.0).min(9.0 - k).clamp(-1.0, 1.0)
-            };
             Oklch::from_rgb(
-                [channel(0.0), channel(8.0), channel(4.0)],
+                crate::color::hsl_to_rgb([h, s, l]),
                 Gamut::Srgb,
                 alpha,
                 neutral,

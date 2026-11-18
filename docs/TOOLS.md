@@ -37,15 +37,18 @@ section. Library changes save independently of color undo.
 ## Harmony
 
 Click a group heading to collapse or expand it. Variations cover shades,
-tints, tones and temperature shifts. Similar shows the four closest distinct CSS colors in OKLab.
-Harmony shows complementary, analogous, split complementary, triadic and
-tetradic and square combinations. Click a sample to select it or drag it to the library.
+tints, tones and temperature shifts. Similar shows the four closest distinct
+CSS colors in OKLab. Harmony shows analogous, complementary, split
+complementary, triadic, tetradic and square combinations. Bounded sRGB
+samples use the RGB color wheel. The wide-gamut tools work in OKLCH.
+Click a sample to select it or drag it to the library.
 
-**Generate** or **Space** replaces unlocked palette colors using locked colors as anchors. Each palette color has a lock
-and an insertion control. Hold the insertion control to choose how many intermediate colors to add. Drag to reorder, middle-click to remove and use the
-trailing **+** to append. Hover a palette color to see its HEX value and
-closest CSS color name in OKLab. The generated palette stays in the current
-session.
+**Generate** or **Space** replaces unlocked palette colors using locked colors
+as anchors. Hold the insertion control between two colors to choose the number
+of intermediate samples. sRGB gradients interpolate the encoded RGB channels.
+Drag to reorder, middle-click to remove and use the trailing **+** to append.
+Hover a palette color to see its HEX value and closest CSS color name.
+The generated palette stays in the current session.
 
 ## APCA
 

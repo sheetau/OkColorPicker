@@ -363,23 +363,36 @@ fn insert_palette_colors(
     index: usize,
     requested: usize,
     edge: Oklch,
+    gamut: Gamut,
 ) {
     let count = requested.min(MAX_PALETTE.saturating_sub(colors.len()));
     let index = index.min(colors.len());
     let left = index.checked_sub(1).map_or(edge, |i| colors[i].0);
     let right = colors.get(index).map_or(edge, |entry| entry.0);
-    let [l, c, h, a] = left.components();
-    let [r, k, j, b] = right.components();
-    let delta = (j - h + 180.0).rem_euclid(360.0) - 180.0;
+    let gamut = if left.in_gamut(Gamut::Srgb) && right.in_gamut(Gamut::Srgb) {
+        Gamut::Srgb
+    } else {
+        gamut
+    };
+    let endpoints = [left, right].map(|c| c.mapped_rgb(gamut, GamutMapping::LocalMinde));
+    let [Ok(left_rgb), Ok(right_rgb)] = endpoints else {
+        return;
+    };
+    let [_, _, h, a] = left.components();
+    let b = right.components()[3];
     let ramp = (1..=count).map(|step| {
         let t = step as f64 / (count + 1) as f64;
-        let color = Oklch::new(
-            l + (r - l) * t,
-            c + (k - c) * t,
-            h + delta * t,
-            a + (b - a) * t,
-        )
-        .expect("interpolated palette color");
+        let rgb = std::array::from_fn(|k| {
+            if gamut == Gamut::Srgb {
+                let lo = (left_rgb[k] * 255.0).round();
+                let hi = (right_rgb[k] * 255.0).round();
+                (lo + (hi - lo) * t).round() / 255.0
+            } else {
+                left_rgb[k] + (right_rgb[k] - left_rgb[k]) * t
+            }
+        });
+        let color =
+            Oklch::from_rgb(rgb, gamut, a + (b - a) * t, h).expect("bounded palette gradient");
         (color, false)
     });
     colors.splice(index..index, ramp);
@@ -406,7 +419,7 @@ fn PaletteInsert(model: PickerModel, index: usize, node: NodeRef) -> impl IntoVi
         on:pointer_leave=move |_|{timer.set_value(None);count.set(1);},
         on:pointer_cancel=move |_|{timer.set_value(None);count.set(1);},
         on:click=move |_|{
-            gestures.palette.update(|v|insert_palette_colors(v,index,count.get_untracked(),model.palette_source_untracked()));
+            gestures.palette.update(|v|insert_palette_colors(v,index,count.get_untracked(),model.palette_source_untracked(),model.gamut.get_untracked()));
             count.set(1);
         }) {
         if move ||count.get()==1 {{zgui::elements::vector().document(include_str!("../assets/add.svg")).class("add-icon")}}
@@ -763,4 +776,24 @@ pub(crate) fn Contrast(model: PickerModel, refs: PickerRefs) -> impl IntoView {
             control(class="contrast-insert append-level",tabindex=Focus::Sequential,a11y:label="Append contrast level",on:click=move |_|insert(grid.get_untracked().levels.len())) {{zgui::elements::vector().document(include_str!("../assets/add.svg")).class("add-icon")}}
         }
     }}
+}
+
+#[cfg(test)]
+mod palette_tests {
+    use super::*;
+
+    #[test]
+    fn inserted_palette_colors_match_encoded_rgb_midpoints() {
+        for (left, right, middle) in [
+            ("#000000", "#ffffff", "#808080"),
+            ("#ff0000", "#0000ff", "#800080"),
+        ] {
+            let left = parse_color(left, 0.0).unwrap();
+            let right = parse_color(right, 0.0).unwrap();
+            let mut palette = vec![(left, true), (right, false)];
+            insert_palette_colors(&mut palette, 1, 1, left, Gamut::Srgb);
+            assert_eq!(hex(palette[1].0), middle);
+            assert_eq!((palette[0], palette[2]), ((left, true), (right, false)));
+        }
+    }
 }
