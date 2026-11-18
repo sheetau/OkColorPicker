@@ -830,6 +830,9 @@ fn CodeField(model: PickerModel, node: NodeRef, primary: bool) -> impl IntoView 
     };
     let commit = move || {
         if dirty.get_untracked() && model.input(&draft.get_untracked()) {
+            let formatted = model.output_untracked(selected_format());
+            draft.set(formatted.clone());
+            node.set_value(&formatted);
             dirty.set(false);
         }
     };

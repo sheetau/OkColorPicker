@@ -241,6 +241,11 @@ fn mounted_tabs_edit_recall_adjust_and_restore() {
                     model.output_untracked(okcolor_core::ColorFormat::Hex),
                     "#00e0e0"
                 );
+                assert_eq!(
+                    refs.codes[1].text_content(),
+                    "#00e0e0",
+                    "Enter replaces the focused draft"
+                );
                 model.select(original);
                 key(&mut h, KeyEvent::character("3"), Modifiers::CONTROL);
                 assert_eq!(model.tab.get_untracked(), Tab::Apca);
