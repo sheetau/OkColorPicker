@@ -24,14 +24,16 @@ conversion and binary-search local-MINDE mapping.
 
 | Function | Supported forms |
 | --- | --- |
-| HEX | 3, 4, 6 or 8 digits with `#`; 6 or 8 digits without it |
+| HEX | CSS shorthand or full RGB/RGBA with `#`; 1–8 digits without it |
 | `rgb`, `rgba` | Modern spaces/slash or legacy commas; numbers and percentages |
 | `hsl`, `hsla` | Modern spaces/slash or legacy commas; legacy S/L require percentages |
 | `oklab`, `oklch`, `lab`, `lch` | Modern spaces/slash, numbers and percentages |
 | `color` | `srgb`, `display-p3`, `rec2020`, with extended components |
 
-Bare 6/8-digit HEX is an editor convenience, not CSS syntax. Surrounding
-whitespace is accepted; embedded spaces and bare 3/4-digit shorthand are rejected.
+Bare HEX accepts surrounding whitespace. One or two digits repeat to form
+gray, three expand as RGB shorthand, and four or five are left-padded with
+zeros to six. Seven digits are left-padded to eight for RGBA. Six and eight
+digits are used as entered. Embedded spaces are invalid.
 
 Hue accepts degrees, `deg`, `grad`, `rad` and `turn`. CSS reference components
 are clamped where specified, while `color()` RGB coordinates remain extended.

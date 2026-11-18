@@ -42,11 +42,20 @@ fn bare_rgb_and_rgba_hex_are_complete_editor_inputs() {
             parse_color(input, 237.0)
         );
     }
+    for (input, expected) in [
+        ("e", "#eeeeee"),
+        ("e0", "#e0e0e0"),
+        ("e0e", "#ee00ee"),
+        ("e0e0", "#00e0e0"),
+        ("e0e0e", "#0e0e0e"),
+        ("1234567", "#01234567"),
+    ] {
+        assert_eq!(
+            parse_color(input, 0.0).unwrap(),
+            parse_color(expected, 0.0).unwrap()
+        );
+    }
     for input in [
-        "f00",
-        "1234",
-        "12345",
-        "1234567",
         "123456789",
         "ab cd ef",
         "gg0000",

@@ -43,11 +43,25 @@ pub fn parse_color(text: &str, neutral_hue: f64) -> Result<Oklch, ParseColorErro
     if text.len() > 4096 {
         return Err(ParseColorError("Color input is too long"));
     }
-    // Editor convenience, outside CSS syntax: accept complete RGB/RGBA hex
-    // without '#'. Short bare strings remain errors to avoid ambiguous drafts.
+    // Bare editor input uses Illustrator-style RGB completion. Hash-prefixed
+    // values below retain CSS shorthand alpha semantics.
     let bare = text.trim();
-    if matches!(bare.len(), 6 | 8) && bare.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-        return parse_hex(bare, neutral_hue);
+    if bare.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        let expanded;
+        let hex = match bare.len() {
+            1 | 2 => {
+                expanded = bare.repeat(6 / bare.len());
+                &expanded
+            }
+            3 | 6 | 8 => bare,
+            4 | 5 | 7 => {
+                let width = if bare.len() == 7 { 8 } else { 6 };
+                expanded = format!("{bare:0>width$}");
+                &expanded
+            }
+            _ => return Err(ParseColorError("Enter one to eight hexadecimal digits")),
+        };
+        return parse_hex(hex, neutral_hue);
     }
     let mut input = ParserInput::new(text);
     let mut parser = Parser::new(&mut input);
