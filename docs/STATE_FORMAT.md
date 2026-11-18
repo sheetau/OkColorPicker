@@ -19,7 +19,9 @@ the next session opens at the same window level.
 The optional `tools.show_alpha_slider` defaults to false. The optional
 `tools.contrast_grid` stores 1–16 target magnitudes (integer Lc 0–110),
 the split index, an opaque second reference, contrast direction, gamut and
-chroma policy. Earlier profiles use the initial four-level grid.
+chroma policy. Optional `level_names` holds the numeric CSS suffixes after a level
+is inserted. An absent list uses 100, 200, and so on. Profiles without a grid
+use the initial four levels.
 
 The UTF-8 JSON object contains:
 

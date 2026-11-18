@@ -55,7 +55,47 @@ impl Window {
         // candidate window one character behind the text being composed — and answering it when
         // the surface hands the keyboard back reports no rectangle at all, because the frame that
         // plans one has not run yet. The surface is told only when the answer really changed.
+        self.reveal_editing_caret();
         self.report_caret();
+    }
+
+    /// Keep the insertion point inside a horizontally scrollable single-line field.
+    fn reveal_editing_caret(&mut self) {
+        use zgui_view::ViewHost;
+        let Some(node) = self.router.interaction().focus.focused() else {
+            return;
+        };
+        if !crate::editing::Editors::is_editable(&self.document.borrow(), node) {
+            return;
+        }
+        let id = zgui_view_dom::id::to_view(node);
+        let viewport = self.host.scroll_position(id);
+        if viewport.content_size.width.0 <= viewport.scrollport.width.0 {
+            return;
+        }
+        let Some(bounds) = self.host.window_box(id) else {
+            return;
+        };
+        let Some(caret) = self.caret_rect() else {
+            return;
+        };
+        // A selected range is drawn as a band. Keep its current horizontal position
+        // until the user collapses it and an insertion point is visible again.
+        if self
+            .host
+            .selection(id)
+            .is_some_and(|range| !range.is_empty())
+        {
+            return;
+        }
+        let margin = 2.0 * self.scale;
+        let x = caret.origin.x.0 - bounds.origin.x.0;
+        let delta = x - x.clamp(margin, (viewport.scrollport.width.0 - margin).max(margin));
+        if delta.abs() >= 0.5 {
+            let mut offset = viewport.offset;
+            offset.x.0 += delta;
+            self.place(node, offset, zgui_scroll::Behavior::Instant);
+        }
     }
 
     /// This frame's plan, and the absolute rectangles it will draw.

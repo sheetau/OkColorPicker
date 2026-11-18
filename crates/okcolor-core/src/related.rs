@@ -40,33 +40,45 @@ pub fn ramp_steps<const N: usize>(source: Oklch, kind: Ramp, gamut: Gamut) -> [O
 }
 
 /// Nearest CSS named color by Euclidean distance in OKLab.
-pub fn color_name(color: Oklch) -> &'static str {
+fn named_colors() -> &'static [(&'static str, Oklch, [f64; 3])] {
     use std::sync::LazyLock;
-    static NAMES: LazyLock<Vec<(&str, [f64; 3])>> = LazyLock::new(|| {
-        cssparser::color::all_named_colors()
+    type Named = (&'static str, Oklch, [f64; 3]);
+    static TABLE: LazyLock<Vec<Named>> = LazyLock::new(|| {
+        let mut names: Vec<_> = cssparser::color::all_named_colors().collect();
+        names.sort_by_key(|(name, _)| *name);
+        let mut seen = std::collections::HashSet::new();
+        names
+            .into_iter()
+            .filter(|(_, rgb)| seen.insert(*rgb))
             .map(|(name, (r, g, b))| {
                 let rgb = [r, g, b].map(|v| f64::from(v) / 255.0);
-                (
-                    name,
-                    Oklch::from_rgb(rgb, Gamut::Srgb, 1.0, 0.0)
-                        .expect("CSS named color")
-                        .oklab(),
-                )
+                let c = Oklch::from_rgb(rgb, Gamut::Srgb, 1.0, 0.0).expect("named color");
+                (name, c, c.oklab())
             })
             .collect()
     });
+    &TABLE
+}
+
+fn distance(a: [f64; 3], b: [f64; 3]) -> f64 {
+    a.into_iter().zip(b).map(|(x, y)| (x - y).powi(2)).sum()
+}
+
+pub fn color_name(color: Oklch) -> &'static str {
     let lab = color.oklab();
-    let distance = |other: [f64; 3]| {
-        lab.into_iter()
-            .zip(other)
-            .map(|(a, b)| (a - b).powi(2))
-            .sum::<f64>()
-    };
-    NAMES
+    named_colors()
         .iter()
-        .min_by(|a, b| distance(a.1).total_cmp(&distance(b.1)).then(a.0.cmp(b.0)))
-        .expect("CSS color table")
+        .min_by(|a, b| distance(a.2, lab).total_cmp(&distance(b.2, lab)))
+        .expect("named colors")
         .0
+}
+
+/// Four nearest distinct named samples, in perceptual distance order.
+pub fn similar_named(color: Oklch) -> Vec<Oklch> {
+    let lab = color.oklab();
+    let mut names = named_colors().to_vec();
+    names.sort_by(|a, b| distance(a.2, lab).total_cmp(&distance(b.2, lab)));
+    names.into_iter().take(4).map(|entry| entry.1).collect()
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -76,14 +88,16 @@ pub enum Harmony {
     SplitComplementary,
     Triadic,
     Tetradic,
+    Square,
 }
 impl Harmony {
-    pub const ALL: [Self; 5] = [
-        Self::Complementary,
+    pub const ALL: [Self; 6] = [
         Self::Analogous,
+        Self::Complementary,
         Self::SplitComplementary,
         Self::Triadic,
         Self::Tetradic,
+        Self::Square,
     ];
     pub fn label(self) -> &'static str {
         match self {
@@ -92,6 +106,7 @@ impl Harmony {
             Self::SplitComplementary => "Split complementary",
             Self::Triadic => "Triadic",
             Self::Tetradic => "Tetradic",
+            Self::Square => "Square",
         }
     }
     fn offsets(self) -> &'static [f64] {
@@ -100,7 +115,8 @@ impl Harmony {
             Self::Analogous => &[-30.0, 0.0, 30.0],
             Self::SplitComplementary => &[0.0, 150.0, 210.0],
             Self::Triadic => &[0.0, 120.0, 240.0],
-            Self::Tetradic => &[0.0, 90.0, 180.0, 270.0],
+            Self::Tetradic => &[0.0, 60.0, 180.0, 240.0],
+            Self::Square => &[0.0, 90.0, 180.0, 270.0],
         }
     }
 }

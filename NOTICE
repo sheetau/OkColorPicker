@@ -34,3 +34,7 @@ The APCA 0.0.98G calculation adapts Color.js under the MIT License,
 Copyright 2021 Lea Verou, Chris Lilley.
 Reference revision: 091d5a6cb6f2a236fb65a67d16d6e2856494f2cf.
 See licenses/Colorjs-MIT.txt and docs/CONTRAST.md.
+
+The closed-hand cursor uses Chromium hand_grabbing.cur (hotspot 13,13),
+revision 4c84a0e082c7d97af376c636329ad71ca16acee3, under the BSD-style
+license reproduced in licenses/Chromium-cursor.txt.

@@ -83,7 +83,7 @@ def notice_sections(report, root=ROOT):
 
 def supplemental_sections(root=ROOT):
     paths = [root / 'LICENSE-APACHE', root / 'NOTICE', root / 'licenses/zgui-NOTICE',
-             root / 'licenses/MartianMono-OFL.txt', root / 'licenses/clipremote-MIT.txt', root / 'licenses/Colorjs-MIT.txt']
+             root / 'licenses/MartianMono-OFL.txt', root / 'licenses/clipremote-MIT.txt', root / 'licenses/Colorjs-MIT.txt', root / 'licenses/Chromium-cursor.txt']
     dxc = root / 'licenses/dxc'
     provenance = json.loads((dxc / 'sources.json').read_text(encoding='utf-8'))
     for record in provenance['files']:

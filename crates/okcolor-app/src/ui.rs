@@ -19,6 +19,7 @@ pub struct PickerRefs {
     pub title: NodeRef,
     pub tabs: [NodeRef; 3],
     pub library: [NodeRef; 8],
+    pub folder_menu: NodeRef,
     pub tools: [NodeRef; 8],
     pub topmost: NodeRef,
     pub sampling: RwSignal<bool>,
@@ -33,6 +34,7 @@ pub struct PickerRefs {
     pub caption: RwSignal<crate::window_frame::CaptionVisual>,
     pub recents: NodeRef,
     pub swatches: [NodeRef; 2],
+    pub fallback_samples: [NodeRef; 2],
     pub swap: NodeRef,
     pub slice: NodeRef,
     pub bars: [NodeRef; 4],
@@ -45,6 +47,7 @@ impl Default for PickerRefs {
             tool_page: NodeRef::new(),
             title: NodeRef::new(),
             tabs: std::array::from_fn(|_| NodeRef::new()),
+            folder_menu: NodeRef::new(),
             library: std::array::from_fn(|_| NodeRef::new()),
             tools: std::array::from_fn(|_| NodeRef::new()),
             topmost: NodeRef::new(),
@@ -59,6 +62,7 @@ impl Default for PickerRefs {
             close: NodeRef::new(),
             caption: RwSignal::new(crate::window_frame::CaptionVisual::default()),
             recents: NodeRef::new(),
+            fallback_samples: std::array::from_fn(|_| NodeRef::new()),
             swatches: std::array::from_fn(|_| NodeRef::new()),
             swap: NodeRef::new(),
             slice: NodeRef::new(),
@@ -72,7 +76,7 @@ impl Default for PickerRefs {
 #[component]
 pub fn Picker(model: PickerModel, refs: PickerRefs) -> impl IntoView {
     provide_context(model);
-    TileGestures::mount(refs.tool_page);
+    let gestures = TileGestures::mount(refs.tool_page);
     let app_root = NodeRef::new();
     let app_size = app_root.observe_border_size();
     let scale = use_window().scale();
@@ -192,8 +196,17 @@ pub fn Picker(model: PickerModel, refs: PickerRefs) -> impl IntoView {
         cx.prevent_default();
         cx.stop_propagation();
     };
+    let shortcuts = RenderEffect::new(move |_| {
+        app_root.get()?;
+        Some(app_root.window_root()?.listen(
+            events::KEY_DOWN,
+            ListenerOptions::CAPTURE,
+            shortcut.clone(),
+        ))
+    });
+    on_cleanup_local(move || drop(shortcuts));
     view! {
-        column(class="app",node_ref=app_root,on:key_down=shortcut) {
+        column(class="app",class:dragging=move ||gestures.dragging.get().is_some(),node_ref=app_root) {
             Titlebar(refs=refs,settings=settings)
             if move ||settings.get() {
                 Settings(model=model,refs=refs)
@@ -291,6 +304,19 @@ pub(crate) fn RecentColors(model: PickerModel, node: NodeRef) -> impl IntoView {
 #[component]
 pub(crate) fn SlotSwatch(model: PickerModel, refs: PickerRefs, index: usize) -> impl IntoView {
     let color = Memo::new(move |_| model.slots[index].get());
+    view! {
+        box(class="slot-layer",class:main=index==0,class:sub=index==1) {
+            ColorTile(node=refs.swatches[index],class="slot-tile",color=color,source=Source::Sample,destination=None,
+                label=Memo::new(move |_|if index==0 {"Main color".into()}else{"Sub color".into()}),
+                activate=UnsyncCallback::new(move |()|model.select_slot(index as u8)))
+
+        }
+    }
+}
+
+#[component]
+fn Fallbacks(model: PickerModel, refs: PickerRefs) -> impl IntoView {
+    let color = Memo::new(move |_| model.color());
     let unavailable =
         Memo::new(move |_| !model.display.get().wide_output && !color.get().in_gamut(Gamut::Srgb));
     let fallback = move |method| {
@@ -302,16 +328,14 @@ pub(crate) fn SlotSwatch(model: PickerModel, refs: PickerRefs, index: usize) -> 
             .unwrap_or(original)
     };
     view! {
-        box(class="slot-layer",class:main=index==0,class:sub=index==1) {
-            ColorTile(node=refs.swatches[index],class="slot-tile",color=color,source=Source::Sample,destination=None,
-                label=Memo::new(move |_|if index==0 {"Main color".into()}else{"Sub color".into()}),
-                activate=UnsyncCallback::new(move |()|model.select_slot(index as u8)))
-            if move ||unavailable.get() && model.selected.get() as usize==index {
-                column(class="fallback-pair") {
-                    for entry in move ||[(0,GamutMapping::LocalMinde,"Mapped sRGB"),(1,GamutMapping::Clip,"Clipped sRGB")],key=|entry:&(u8,GamutMapping,&str)|entry.0 {
-                        ColorTile(node=NodeRef::new(),class="fallback-tile",source=Source::Sample,destination=None,
-                            color=Memo::new(move |_|fallback(entry.1)),label=Memo::new(move |_|entry.2.to_string()),
-                            activate=UnsyncCallback::new(move |()|{model.select(fallback(entry.1));}))
+        if move ||unavailable.get() {
+            column(class="fallback-pair",class:sub-fallback=move ||model.selected.get()==1) {
+                for entry in move ||[(GamutMapping::LocalMinde,"Mapped sRGB",include_str!("../assets/monitor.svg")),(GamutMapping::Clip,"Clipped sRGB",include_str!("../assets/cube.svg"))],key=|entry:&(GamutMapping,&str,&str)|entry.1 {
+                    row(class="fallback-row") {
+                        {zgui::elements::vector().document(entry.2).class("fallback-icon")}
+                        ColorTile(node=refs.fallback_samples[usize::from(entry.0==GamutMapping::Clip)],class="fallback-tile",source=Source::Sample,destination=None,
+                            color=Memo::new(move |_|fallback(entry.0)),label=Memo::new(move |_|entry.1.into()),
+                            activate=UnsyncCallback::new(move |()|{model.select(fallback(entry.0));}))
                     }
                 }
             }
@@ -359,7 +383,7 @@ fn screen_color(_: f64) -> Option<Oklch> {
 }
 
 /// These two small menus share dismissal and focus behavior, without owning application state.
-fn dismiss_menu(open: RwSignal<bool>, popup: NodeRef, trigger: NodeRef) {
+pub(crate) fn dismiss_menu(open: RwSignal<bool>, popup: NodeRef, trigger: NodeRef) {
     let effect = RenderEffect::new(move |_| {
         if !open.get() || popup.get().is_none() {
             return None;
@@ -415,6 +439,7 @@ fn ColorPanel(model: PickerModel, refs: PickerRefs) -> impl IntoView {
                                 SlotSwatch(model=model,refs=refs,index=0)
                                 SlotSwatch(model=model,refs=refs,index=1)
                             }
+                            Fallbacks(model=model,refs=refs)
                             control(class="eyedropper",tabindex=Focus::Sequential,a11y:label="Sample a window color (Ctrl+Shift+C)",
                                 on:click=move |_|refs.sampling.set(true)) {
                                 {zgui::elements::vector().document(include_str!("../assets/eyedropper.svg")).class("eyedropper-icon")}
@@ -461,6 +486,7 @@ fn Titlebar(refs: PickerRefs, settings: RwSignal<bool>) -> impl IntoView {
                 class:open=move ||settings.get(),a11y:label="Settings",on:pointer_down=window.no_drag_handler(),
                 on:click=move |_|settings.update(|open|*open = !*open)) {
                 box(class="menu-line first") {} box(class="menu-line second") {}
+                {zgui::elements::vector().document(include_str!("../assets/menu-close.svg")).class("menu-close")}
             }
             text(class="title",node_ref=refs.title) {"OkColorPicker"}
             spacer()
@@ -529,6 +555,8 @@ fn status_message(model: PickerModel) -> String {
 
 #[component]
 fn Statusbar(model: PickerModel, refs: PickerRefs, settings: RwSignal<bool>) -> impl IntoView {
+    let notification = NodeRef::new();
+    crate::tooltip::Tooltips::bind(notification, move || status_message(model));
     let tabs = [
         (Tab::Picker, "Picker", include_str!("../assets/picker.svg")),
         (
@@ -552,7 +580,7 @@ fn Statusbar(model: PickerModel, refs: PickerRefs, settings: RwSignal<bool>) -> 
                 control(node_ref=refs.csp_send,tabindex=Focus::Sequential,on:click=move |_|model.companion.send_current()) {"Send this color"}
             }
         } else {
-            text(class="status-center") {{move ||status_message(model)}}
+            text(class="status-center",node_ref=notification) {{move ||status_message(model)}}
         }
         if move ||!model.storage_message.get().is_empty() && model.can_save.get() {
             control(tabindex=Focus::Sequential,on:click=move |_|model.save_request.update(|r|*r=r.wrapping_add(1))) {"Retry"}
@@ -605,7 +633,27 @@ fn Channel(
     let composing = RwSignal::new(false);
     let wheel_remainder = RwSignal::new((Modifiers::NONE, 0.0_f64));
     let value = [model.l, model.c, model.h, model.alpha][index];
-    let display = move |value: f64| format!("{value:.4}");
+    let display = move |value: f64| {
+        let v = if index == 3 { value * 100.0 } else { value };
+        let rounded = format!("{v:.4}");
+        let text = rounded.trim_end_matches('0').trim_end_matches('.');
+        if index == 3 {
+            format!("{text}%")
+        } else {
+            text.to_owned()
+        }
+    };
+    let parse = move |text: &str| {
+        let text = text.trim();
+        if index == 3 {
+            text.trim_end_matches('%')
+                .trim()
+                .parse::<f64>()
+                .map(|v| v / 100.0)
+        } else {
+            text.parse::<f64>()
+        }
+    };
     let driving = RenderEffect::new(move |_| {
         let value = value.get();
         if !focused.get() || model.dragging.get() {
@@ -620,9 +668,12 @@ fn Channel(
         if !dirty.get_untracked() {
             return;
         }
-        match draft.get_untracked().trim().parse::<f64>() {
+        match parse(&draft.get_untracked()) {
             Ok(value) => {
                 if model.set_channel(index, value) {
+                    let text = display(model.current().components()[index]);
+                    draft.set(text.clone());
+                    number.set_value(&text);
                     dirty.set(false);
                 }
             }
@@ -632,7 +683,7 @@ fn Channel(
     let adjust = move |steps: f64, modifiers: Modifiers, add_recent: bool| {
         let mut channels = model.current().components();
         if dirty.get_untracked() {
-            let Ok(base) = draft.get_untracked().trim().parse::<f64>() else {
+            let Ok(base) = parse(&draft.get_untracked()) else {
                 model.message.set("Enter a finite number".into());
                 return;
             };
@@ -723,12 +774,12 @@ fn Channel(
     view! {
         row(class="channel",node_ref=bar,tabindex=Focus::Programmatic) {
             text(class="channel-label") {{label}}
-            field(class="number",node_ref=number,a11y:label=label,
+            field(class="number",class:editing=move ||focused.get(),node_ref=number,a11y:label=label,
                 on:pointer_down=move |cx| {
-                    if !cx.primary || cx.button!=Some(PointerButton::Primary) || composing.get_untracked() { return; }
+                    if focused.get_untracked() || !cx.primary || cx.button!=Some(PointerButton::Primary) || composing.get_untracked() { return; }
                     let mut channels=model.current().components();
                     if dirty.get_untracked() {
-                        let Ok(base)=draft.get_untracked().trim().parse::<f64>() else { return; };
+                        let Ok(base)=parse(&draft.get_untracked()) else { return; };
                         channels[index]=base;
                         if Oklch::new(channels[0],channels[1],channels[2],channels[3]).is_err() { return; }
                     }
@@ -740,7 +791,7 @@ fn Channel(
                     if cx.button!=Some(PointerButton::Primary) { return; }
                     if let Some((_,_,active))=gesture.get_untracked() {
                         gesture.set(None);cx.release_pointer();
-                        if active { model.commit();bar.focus(); } else { number.focus(); }
+                        if active { model.commit();bar.focus(); } else { number.focus(); number.select_all(); }
                         cx.prevent_default();cx.stop_propagation();
                     }
                 },
@@ -795,6 +846,32 @@ const FORMATS: [(ColorFormat, &str); 11] = [
 ];
 
 #[component]
+pub(crate) fn CopyButton(
+    text: UnsyncCallback<(), String>,
+    compact: bool,
+    label: &'static str,
+) -> impl IntoView {
+    let clipboard = use_clipboard();
+    let copied = RwSignal::new(false);
+    let clock = zgui::view::Timers::current().expect("mounted window");
+    let timer = StoredValue::new_local(None::<zgui::view::TimeoutHandle>);
+    let asset = if compact {
+        include_str!("../assets/copy-small.svg")
+    } else {
+        include_str!("../assets/copy.svg")
+    };
+    view! {control(class="copy",class:compact=compact,tabindex=Focus::Sequential,a11y:label=label,
+        on:click=move |_|{
+            clipboard.set_text(ClipboardKind::Standard,text.run(()));
+            copied.set(true);
+            timer.set_value(Some(clock.set_timeout(std::time::Duration::from_millis(650),move ||copied.set(false))));
+        }) {
+        if move ||!copied.get() {{zgui::elements::vector().document(asset).class("copy-icon")}}
+        box(class="tile-check",class:visible=move ||copied.get()) {{zgui::elements::vector().document(include_str!("../assets/check.svg")).class("check-icon")}}
+    }}
+}
+
+#[component]
 fn CodeField(model: PickerModel, node: NodeRef, primary: bool) -> impl IntoView {
     let focused = RwSignal::new(false);
     let menu = RwSignal::new(false);
@@ -820,7 +897,6 @@ fn CodeField(model: PickerModel, node: NodeRef, primary: bool) -> impl IntoView 
         }
     });
     on_cleanup_local(move || drop(driving));
-    let clipboard = use_clipboard();
     let selected_format = move || {
         if primary {
             ColorFormat::Oklch
@@ -840,8 +916,8 @@ fn CodeField(model: PickerModel, node: NodeRef, primary: bool) -> impl IntoView 
         row(class="code-row") {
             text(class="channel-label") {{if primary {"O"}else{"R"}}}
             row(class="code-box") {
-                field(class="code",node_ref=node,a11y:label=if primary {"OKLCH color"}else{"Converted color"},
-                    on:focus_in=move |_|{focused.set(true);model.editing_text.set(true);},
+                field(class="code",node_ref=node,on:pointer_down=move |cx|{if cx.button==Some(PointerButton::Primary) && !focused.get_untracked(){node.focus();node.select_all();cx.prevent_default();}},a11y:label=if primary {"OKLCH color"}else{"Converted color"},
+                    on:focus_in=move |_|{focused.set(true);model.editing_text.set(true);node.select_all();},
                     on:focus_out=move |_|{focused.set(false);model.editing_text.set(false);},
                     on:input=move |cx|{if let Some(v)=cx.payload().as_value(){draft.set(v.value.to_string());dirty.set(true);}},
                 on:ime_start=move |_|composing.set(true),
@@ -868,12 +944,7 @@ fn CodeField(model: PickerModel, node: NodeRef, primary: bool) -> impl IntoView 
                         on:click=move |_|menu.update(|v|*v = !*v)) {box(class="chevron") {}}
                 }
             }
-            control(class="copy",
-                tabindex=Focus::Sequential,
-                a11y:label="Copy color",
-                on:click=move |_|clipboard.set_text(ClipboardKind::Standard,model.output_untracked(selected_format()))) {
-                box(class="copy-mark") {box(class="copy-back") {}}
-            }
+            CopyButton(text=UnsyncCallback::new(move |()|model.output_untracked(selected_format())),compact=false,label="Copy color")
             if move ||menu.get() {
                 column(class="format-menu",node_ref=popup,on:key_down=move |cx| {
                     let direction=match cx.key {Key::Named(NamedKey::ArrowDown)=>FocusMove::Next,Key::Named(NamedKey::ArrowUp)=>FocusMove::Prev,_=>return};

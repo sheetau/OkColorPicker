@@ -275,6 +275,11 @@ impl<A: AppHandler> ApplicationHandler<UserEvent> for WinitApp<A> {
         a11y::observe(Surface::id(surface.as_ref()), surface.window(), &event);
 
         let destroyed = matches!(event, winit::event::WindowEvent::Destroyed);
+        #[cfg(windows)]
+        if let winit::event::WindowEvent::ScaleFactorChanged { scale_factor, .. } = &event {
+            *surface.grabbing.lock().expect("window cursor") =
+                crate::surface::chrome::grabbing(event_loop, *scale_factor);
+        }
         let relayout = relays_out_title_bar(&event);
         let timestamp = self.shared.clock().timestamp();
         let state = self.windows.entry(window_id).or_default();

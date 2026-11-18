@@ -145,9 +145,9 @@ fn shade(input: ShaderInput, params: Params) -> vec4<f32> {
     } else {
         // A crossing in either axis marks the exact RGB-boundary neighborhood.
         if params.kind > 0.5 && !in_gamut(lab, params.gamut) {
-            let pixel = vec2<i32>(floor(input.local / input.scale));
-            let stripe = (pixel.x + pixel.y) & 3;
-            if stripe == 0 { rgb = mix(rgb, vec3<f32>(0.0), 0.55); }
+            let pixel = vec2<i32>(floor(input.local));
+            let stripe = (pixel.x + pixel.y) & 1;
+            if stripe == 0 { rgb = vec3<f32>(0.0); }
         }
         let step = vec2<f32>(0.5) / max(input.size, vec2<f32>(1.0));
         for (var g = 2; g >= 0; g -= 1) {
@@ -162,8 +162,12 @@ fn shade(input: ShaderInput, params: Params) -> vec4<f32> {
                 boundary = boundary || above != below;
             }
             if boundary {
-                let ink = select(select(vec3<f32>(0.65, 0.71, 0.79), vec3<f32>(0.71, 0.56, 0.82), g == 1), vec3<f32>(0.93), g == 0);
-                rgb = mix(rgb, ink, 0.85);
+                if params.kind > 0.5 {
+                    rgb = vec3<f32>(0.0);
+                } else {
+                    let ink = select(select(vec3<f32>(0.65, 0.71, 0.79), vec3<f32>(0.71, 0.56, 0.82), g == 1), vec3<f32>(0.93), g == 0);
+                    rgb = mix(rgb, ink, 0.85);
+                }
             }
         }
     }

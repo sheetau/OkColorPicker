@@ -445,7 +445,7 @@ impl Window {
     /// A scroll to where the container already is marks nothing. Marking it anyway would damage the
     /// scrollport and redraw it identically, once per call — and a component that keeps a selected
     /// row in view calls this on every keystroke, most of which move nothing.
-    fn place(
+    pub(super) fn place(
         &mut self,
         container: NodeKey,
         to: Point<zgui_geom::DevicePx, zgui_geom::Device>,

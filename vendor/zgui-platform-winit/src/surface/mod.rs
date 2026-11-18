@@ -2,7 +2,7 @@
 
 pub(crate) mod a11y;
 mod attributes;
-mod chrome;
+pub(crate) mod chrome;
 mod handles;
 
 pub(crate) use crate::surface::attributes::window as window_attributes;
@@ -49,6 +49,8 @@ pub struct WinitSurface {
     waker: Arc<ProxyWaker>,
     /// Whether the window was shown at least once.
     shown: AtomicBool,
+    #[cfg(windows)]
+    pub(crate) grabbing: std::sync::Mutex<winit::window::CustomCursor>,
 }
 
 impl WinitSurface {
@@ -58,6 +60,7 @@ impl WinitSurface {
         window: Arc<Window>,
         title_buttons: Option<TitleButtons>,
         waker: Arc<ProxyWaker>,
+        #[cfg(windows)] grabbing: winit::window::CustomCursor,
     ) -> Self {
         Self {
             id,
@@ -65,6 +68,8 @@ impl WinitSurface {
             title_buttons,
             waker,
             shown: AtomicBool::new(false),
+            #[cfg(windows)]
+            grabbing: std::sync::Mutex::new(grabbing),
         }
     }
 
@@ -261,6 +266,13 @@ impl Surface for WinitSurface {
     }
 
     fn set_cursor(&self, cursor: CursorStyle) {
+        #[cfg(windows)]
+        if cursor == CursorStyle::Grabbing {
+            self.window
+                .set_cursor(self.grabbing.lock().expect("window cursor").clone());
+            self.window.set_cursor_visible(true);
+            return;
+        }
         match chrome::cursor(cursor) {
             Some(icon) => {
                 self.window.set_cursor(icon);

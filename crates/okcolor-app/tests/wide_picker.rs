@@ -264,10 +264,10 @@ fn mounted_picker_preserves_wide_color_and_repaints_every_sample_on_display_tran
                                         - bounds.origin.x.0
                                         - bounds.origin.y.0)
                                         .floor() as i32)
-                                        & 3)
+                                        & 1)
                                         == 0
                                 {
-                                    rgb = rgb.map(|channel| channel * 0.45);
+                                    rgb = [0.0; 3];
                                 }
                                 expect_pixel(&pixels, x, y, rgb, white, "surface");
                                 checked += 1;

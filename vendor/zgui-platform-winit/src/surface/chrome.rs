@@ -35,6 +35,28 @@ pub(crate) const fn cursor(style: CursorStyle) -> Option<CursorIcon> {
     })
 }
 
+/// Chromium closed-hand cursor. Win32 maps winit's standard Grabbing to SizeAll.
+#[cfg(windows)]
+pub(crate) fn grabbing(
+    event_loop: &winit::event_loop::ActiveEventLoop,
+    scale: f64,
+) -> winit::window::CustomCursor {
+    let pixels = include_bytes!("hand_grabbing.rgba");
+    let size = (32.0 * scale).round().clamp(16.0, 256.0) as u16;
+    let mut rgba = Vec::with_capacity(usize::from(size).pow(2) * 4);
+    for y in 0..usize::from(size) {
+        for x in 0..usize::from(size) {
+            let offset = 4 * (y * 32 / usize::from(size) * 32 + x * 32 / usize::from(size));
+            rgba.extend_from_slice(&pixels[offset..offset + 4]);
+        }
+    }
+    let hotspot = (13.0 * f32::from(size) / 32.0).round() as u16;
+    event_loop.create_custom_cursor(
+        winit::window::CustomCursor::from_rgba(rgba, size, size, hotspot, hotspot)
+            .expect("valid embedded cursor"),
+    )
+}
+
 /// Which edge or corner a resize was started from.
 pub(crate) const fn resize(edge: ResizeEdge) -> ResizeDirection {
     match edge {

@@ -218,6 +218,8 @@ impl ToolSettings {
 pub struct ContrastGrid {
     pub dark_reference: [f64; 4],
     pub levels: Vec<u8>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub level_names: Vec<u32>,
     pub split: usize,
     pub to_text: bool,
     pub p3: bool,
@@ -228,6 +230,7 @@ impl Default for ContrastGrid {
         Self {
             dark_reference: [0.0, 0.0, 0.0, 1.0],
             levels: vec![70, 50, 50, 70],
+            level_names: Vec::new(),
             split: 2,
             to_text: true,
             p3: true,
@@ -236,9 +239,77 @@ impl Default for ContrastGrid {
     }
 }
 impl ContrastGrid {
+    pub fn level_name(&self, index: usize) -> u32 {
+        self.level_names
+            .get(index)
+            .copied()
+            .unwrap_or((index as u32 + 1) * 100)
+    }
+
+    pub fn insert(&mut self, index: usize) {
+        if self.levels.len() >= 16 {
+            return;
+        }
+        if self.level_names.is_empty() {
+            self.level_names = (0..self.levels.len()).map(|i| self.level_name(i)).collect();
+        }
+        let i = index.min(self.levels.len());
+        let before = i
+            .checked_sub(1)
+            .and_then(|v| self.levels.get(v))
+            .copied()
+            .map(i16::from);
+        let after = self.levels.get(i).copied().map(i16::from);
+        let target = match (before, after) {
+            (Some(a), Some(b)) => (a + b + 1) / 2,
+            (Some(a), None) => {
+                2 * a
+                    - i.checked_sub(2)
+                        .and_then(|v| self.levels.get(v))
+                        .map_or(a - 5, |v| i16::from(*v))
+            }
+            (None, Some(b)) => 2 * b - self.levels.get(1).map_or(b + 5, |v| i16::from(*v)),
+            _ => 60,
+        };
+        let mut name = match (
+            i.checked_sub(1).and_then(|v| self.level_names.get(v)),
+            self.level_names.get(i),
+        ) {
+            (Some(a), Some(b)) => a + (b - a).div_ceil(2),
+            (Some(a), None) => a.saturating_add(100),
+            (None, Some(b)) => b.saturating_sub(100),
+            _ => 100,
+        };
+        if self.level_names.contains(&name) {
+            self.level_names = (1..=self.levels.len() + 1)
+                .map(|n| n as u32 * 100)
+                .collect();
+            name = self.level_names.remove(i);
+        }
+        self.levels.insert(i, target.clamp(0, 110) as u8);
+        self.level_names.insert(i, name);
+        if i < self.split || (i == self.split && self.split == self.levels.len() - 1) {
+            self.split += 1;
+        }
+    }
+
+    pub fn remove(&mut self, index: usize) {
+        if self.levels.len() <= 1 || index >= self.levels.len() {
+            return;
+        }
+        self.levels.remove(index);
+        if !self.level_names.is_empty() {
+            self.level_names.remove(index);
+        }
+        self.split -= usize::from(index < self.split);
+    }
+
     fn validate(&self) -> Result<(), &'static str> {
         let [l, c, h, a] = self.dark_reference;
         if self.levels.is_empty()
+            || (!self.level_names.is_empty()
+                && (self.level_names.len() != self.levels.len()
+                    || self.level_names.windows(2).any(|p| p[0] >= p[1])))
             || self.levels.len() > 16
             || self.split > self.levels.len()
             || self.levels.iter().any(|lc| *lc > 110)

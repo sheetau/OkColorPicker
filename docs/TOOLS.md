@@ -37,12 +37,12 @@ section. Library changes save independently of color undo.
 ## Harmony
 
 Click a group heading to collapse or expand it. Variations cover shades,
-tints, tones and temperature shifts. Similar colors use nearby hues.
+tints, tones and temperature shifts. Similar shows the four closest distinct CSS colors in OKLab.
 Harmony shows complementary, analogous, split complementary, triadic and
-tetradic combinations. Click a sample to select it or drag it to the library.
+tetradic and square combinations. Click a sample to select it or drag it to the library.
 
-**Generate** replaces unlocked palette colors. Each palette color has a lock
-and an insertion control. Drag to reorder, middle-click to remove and use the
+**Generate** or **Space** replaces unlocked palette colors using locked colors as anchors. Each palette color has a lock
+and an insertion control. Hold the insertion control to choose how many intermediate colors to add. Drag to reorder, middle-click to remove and use the
 trailing **+** to append. Hover a palette color to see its HEX value and
 closest CSS color name in OKLab. The generated palette stays in the current
 session.
@@ -55,7 +55,7 @@ generates text for the reference background. Choose sRGB or Display P3.
 **Current C** limits chroma to the selected color's chroma and **Max C**
 uses the available gamut at the generated lightness and hue.
 
-Use **+** to insert levels. Drag the horizontal boundary to change the reference
+Use **+** between two levels to insert their midpoint. Middle-click a row to remove it. Targets accept Lc values from 0 to 110. Drag the horizontal boundary to change the reference
 for adjacent levels. Drag it to an edge to remove that region. Its **+**
 restores the split. Click a candidate to adopt it or use **Copy** to copy
 the available levels as CSS custom properties.

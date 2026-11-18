@@ -56,8 +56,13 @@ impl Tooltips {
                                 2.0,
                                 (width - (text.chars().count() as f32 * 7.0 + 12.0)).max(2.0),
                             );
-                            let y = if b.origin.y.0 / zoom > 25.0 {
-                                b.origin.y.0 / zoom - 22.0
+                            let lines = ((text.chars().count() as f32 * 7.0)
+                                / (width - 16.0).max(1.0))
+                            .ceil()
+                            .max(1.0);
+                            let height = 10.0 + lines * 12.0;
+                            let y = if b.origin.y.0 / zoom > height {
+                                b.origin.y.0 / zoom - height
                             } else {
                                 (b.origin.y.0 + b.size.height.0) / zoom + 3.0
                             };
@@ -97,16 +102,10 @@ impl Tooltips {
 fn hover_delay() -> Duration {
     #[cfg(windows)]
     {
-        use windows_sys::Win32::UI::WindowsAndMessaging::{
-            SPI_GETMOUSEHOVERTIME, SystemParametersInfoW,
-        };
-        let mut milliseconds = 0_u32;
-        if unsafe {
-            SystemParametersInfoW(SPI_GETMOUSEHOVERTIME, 0, (&raw mut milliseconds).cast(), 0)
-        } != 0
-        {
-            return Duration::from_millis(u64::from(milliseconds));
-        }
+        // The initial Win32 tooltip delay uses the double-click time.
+        let ms = unsafe { windows_sys::Win32::UI::Input::KeyboardAndMouse::GetDoubleClickTime() };
+        Duration::from_millis(u64::from(ms.max(500)))
     }
-    Duration::from_millis(400)
+    #[cfg(not(windows))]
+    Duration::from_millis(500)
 }

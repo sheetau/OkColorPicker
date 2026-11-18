@@ -426,7 +426,13 @@ fn mounted_picker_draws_and_drag_is_one_undo() {
 
                 harness.deliver_to_first(scrub(PointerAction::Pressed,0.0));
                 harness.deliver_to_first(scrub(PointerAction::Moved,12.0));harness.settle(32);
-                assert!(model.dragging.get_untracked(),"a focused number must also scrub");
+                assert!(!model.dragging.get_untracked(),"a focused field must allow text selection");
+                harness.deliver_to_first(scrub(PointerAction::Released,12.0));harness.settle(32);
+                assert_eq!(model.current(), before_scrub);
+                refs.menu.focus();harness.settle(32);
+                harness.deliver_to_first(scrub(PointerAction::Pressed,0.0));
+                harness.deliver_to_first(scrub(PointerAction::Moved,12.0));harness.settle(32);
+                assert!(model.dragging.get_untracked());
                 harness.deliver_to_first(SurfaceEvent::Key {state:KeyState::Pressed,event:KeyEvent::named(NamedKey::Escape,PhysicalKey::Unidentified(0)),modifiers:Modifiers::NONE,timestamp:Timestamp::ORIGIN});
                 harness.settle(32);
                 assert!(!model.dragging.get_untracked());assert_eq!(model.current(),before_scrub);

@@ -214,6 +214,8 @@ impl PlatformCx for WinitCx<'_> {
             Arc::clone(&window),
             title_buttons(attributes),
             Arc::clone(&self.shared.waker),
+            #[cfg(windows)]
+            crate::surface::chrome::grabbing(self.event_loop, window.scale_factor()),
         ));
         surface.place_title_buttons();
         #[cfg(target_os = "macos")]

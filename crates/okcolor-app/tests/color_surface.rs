@@ -173,9 +173,9 @@ fn gpu_surfaces_match_f64_mapping_and_working_gamut_mask() {
                 };
                 if (1.0..=3.0).contains(&params.kind)
                     && !source.in_gamut(Gamut::DisplayP3)
-                    && (x + y) % 4 == 0
+                    && (x + y) % 2 == 0
                 {
-                    expected = expected.map(|channel| channel * 0.45);
+                    expected = [0.0; 3];
                 }
                 if params.kind == 4.0 {
                     let backdrop = if (x / 5 + y / 5) % 2 == 1 { 0.23 } else { 0.13 };

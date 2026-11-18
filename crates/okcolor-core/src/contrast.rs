@@ -62,7 +62,7 @@ fn apca_rgb(text: [f64; 3], background: [f64; 3], weights: [f64; 3]) -> f64 {
     }
 }
 
-/// Search both polarities and prefer the reachable color closest to the source lightness.
+/// Harmonizer searches lighter candidates against a dark reference and darker ones against a light reference.
 pub fn contrast_sample(
     source: Oklch,
     reference: Oklch,
@@ -87,37 +87,28 @@ pub fn contrast_sample(
             apca_in(v, reference, GamutMapping::Clip, gamut)
         }
     };
+    let lighter = reference.components()[0] <= 0.6;
+    let signed = if lighter == to_text { target } else { -target };
     let current = at(original)?;
-    if (score(current).ok()?.abs() - target).abs() < 0.05 {
+    if (score(current).ok()? - signed).abs() < 0.05 {
         return Some(current);
     }
-    let mut best = None;
-    for signed in [-target, target] {
-        let (mut lo, mut hi) = (0.0, 1.0);
-        let start = score(at(lo)?).ok()?;
-        let end = score(at(hi)?).ok()?;
-        if signed < start.min(end) || signed > start.max(end) {
-            continue;
-        }
-        for _ in 0..24 {
-            let mid = (lo + hi) * 0.5;
-            if (score(at(mid)?).ok()? < signed) == (end > start) {
-                lo = mid;
-            } else {
-                hi = mid;
-            }
-        }
-        let color = at((lo + hi) * 0.5)?;
-        if (score(color).ok()? - signed).abs() < 0.05
-            && best.is_none_or(|previous: Oklch| {
-                (previous.components()[0] - original).abs()
-                    > (color.components()[0] - original).abs()
-            })
-        {
-            best = Some(color);
+    let (mut lo, mut hi) = (0.0, 1.0);
+    let start = score(at(lo)?).ok()?;
+    let end = score(at(hi)?).ok()?;
+    if signed < start.min(end) || signed > start.max(end) {
+        return None;
+    }
+    for _ in 0..24 {
+        let mid = (lo + hi) * 0.5;
+        if (score(at(mid)?).ok()? < signed) == (end > start) {
+            lo = mid;
+        } else {
+            hi = mid;
         }
     }
-    best
+    let color = at((lo + hi) * 0.5)?;
+    ((score(color).ok()? - signed).abs() < 0.05).then_some(color)
 }
 
 /// Find the closest lightness achieving a signed Lc target. Chroma, hue and

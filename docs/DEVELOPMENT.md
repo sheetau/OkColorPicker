@@ -110,9 +110,9 @@ that cannot distinguish WCG from HDR report an unknown Advanced Color mode.
 
 Drag the slice or channel bars, or focus a bar and use arrow keys. Numeric fields
 also accept Up/Down while focused, plus vertical wheel input when the pointer is
-over a field, without requiring focus. Drag a numeric field horizontally to scrub
+over a field, without requiring focus. Drag an unfocused numeric field horizontally to scrub
 its value (four CSS pixels per step, with a three-pixel activation threshold);
-a plain click enters text editing. One scrub is one undo action, and Escape
+a plain click selects the value for text editing. Dragging in the focused field selects text. Alpha is displayed as a percentage. One scrub is one undo action, and Escape
 cancels it. Steps are
 0.01 for L/alpha, 0.001 for C and 1 degree for H. Shift scales steps by ten;
 Control scales them by one tenth. Wheel input accumulates one step per reported

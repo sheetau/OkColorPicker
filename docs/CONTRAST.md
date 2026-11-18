@@ -18,9 +18,9 @@ The calculator uses the selected RGB gamut and composites foreground alpha
 in encoded RGB before applying the luminance exponent. Display P3 uses the
 coefficients published in [APCA-W3](https://github.com/Myndex/apca-w3/blob/master/src/apca-w3.js).
 The display's HDR mode does not enter the calculation. Candidate generation
-searches both polarities at fixed hue, reducing chroma to fit the selected
-gamut at each lightness. It selects the reachable result closest to the source
-lightness and shows a dash for an unreachable target.
+searches lighter colors for reference OKLCH lightness up to 0.6 and darker
+colors above that threshold. It keeps hue fixed, reduces chroma to fit the
+selected gamut and shows a dash for an unreachable target.
 
 These are experimental APCA Lc values, not WCAG compliance results or a
 typography recommendation. Font size, weight and viewing context still require

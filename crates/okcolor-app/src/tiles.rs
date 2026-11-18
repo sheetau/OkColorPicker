@@ -24,7 +24,6 @@ pub(crate) struct TileGestures {
     zones: StoredValue<Vec<(NodeRef, Destination)>, LocalStorage>,
     pub hovering: RwSignal<Option<Destination>>,
     pub dragging: RwSignal<Option<NodeRef>, LocalStorage>,
-    pub palette_seed: RwSignal<u32>,
     pub palette: RwSignal<Vec<(Oklch, bool)>>,
 }
 
@@ -35,7 +34,6 @@ impl TileGestures {
             zones: StoredValue::new_local(Vec::new()),
             hovering: RwSignal::new(None),
             dragging: RwSignal::new_local(None),
-            palette_seed: RwSignal::new(0),
             palette: RwSignal::new(Vec::new()),
         };
         provide_context(gestures);
@@ -61,14 +59,19 @@ impl TileGestures {
             return None;
         }
         self.zones.with_value(|zones| {
-            zones.iter().rev().find_map(|(node, dest)| {
-                let b = node.window_bounds()?;
-                (x >= b.origin.x.0 - 1.0
-                    && y >= b.origin.y.0
-                    && x < b.origin.x.0 + b.size.width.0 + 1.0
-                    && y < b.origin.y.0 + b.size.height.0)
-                    .then_some(*dest)
-            })
+            zones
+                .iter()
+                .rev()
+                .filter_map(|(node, dest)| {
+                    let b = node.window_bounds()?;
+                    (x >= b.origin.x.0 - 1.0
+                        && y >= b.origin.y.0
+                        && x < b.origin.x.0 + b.size.width.0 + 1.0
+                        && y < b.origin.y.0 + b.size.height.0)
+                        .then_some((b.size.width.0 * b.size.height.0, *dest))
+                })
+                .min_by(|a, b| a.0.total_cmp(&b.0))
+                .map(|(_, dest)| dest)
         })
     }
 
@@ -110,7 +113,7 @@ impl TileGestures {
                     }
                     colors.remove(from)
                 } else {
-                    if colors.len() >= 16 {
+                    if colors.len() >= 10 {
                         return;
                     }
                     (color, false)
@@ -129,6 +132,27 @@ impl TileHeading {
         let heading = Self(RwSignal::new(String::new()));
         provide_context(heading);
         heading
+    }
+}
+
+pub(crate) fn contrast_ink(color: Oklch) -> &'static str {
+    let rgb = color
+        .mapped_rgb(
+            okcolor_core::Gamut::Srgb,
+            okcolor_core::GamutMapping::LocalMinde,
+        )
+        .unwrap_or([0.0; 3]);
+    let linear = rgb.map(|c| {
+        if c <= 0.04045 {
+            c / 12.92
+        } else {
+            ((c + 0.055) / 1.055).powf(2.4)
+        }
+    });
+    if linear[0] * 0.2126 + linear[1] * 0.7152 + linear[2] * 0.0722 > 0.179 {
+        "#000000"
+    } else {
+        "#ffffff"
     }
 }
 
@@ -193,7 +217,7 @@ pub(crate) fn ColorTile(
                     .update(|recent| recent.retain(|entry| *entry != color.get_untracked())),
                 Source::Library(id) => model.library.update(|library| library.remove(id)),
                 Source::Palette(i) => shared.palette.update(|colors| {
-                    if i < colors.len() {
+                    if i < colors.len() && colors.len() > 2 {
                         colors.remove(i);
                     }
                 }),
@@ -260,6 +284,7 @@ pub(crate) fn ColorTile(
         }
     };
     view! {control(class=class,node_ref=node,tabindex=Focus::Sequential,a11y:label=move ||label.get(),
+        class:dark=move ||class=="preset-color" && color.get().components()[0]<0.5,
         class:dragged=move ||shared.dragging.get()==Some(node),
         on:pointer_enter=move |_|{
             if let Some(heading)=heading{heading.0.set(label.get_untracked());}
@@ -270,15 +295,15 @@ pub(crate) fn ColorTile(
         on:pointer_up=release,
         on:pointer_cancel=move |_|cancel(),
         on:click=move |_|{if !suppress_click.get_untracked(){activate.run(());}suppress_click.set(false);}) {
-            ColorSwatch(model=model,color=color,outline_dark=true)
+            ColorSwatch(model=model,color=color,outline_dark=class!="transparent-color" && class!="preset-color" && class!="generated-color")
             if move ||destination.is_some() && shared.hovering.get()==destination {box(class="insertion-line") {}}
             if move ||class=="slot-tile" && !model.display.get().wide_output && !color.get().in_gamut(okcolor_core::Gamut::Srgb) {
-                box(class="unavailable-slot") {box(class="strike up") {} box(class="strike down") {}}
+                {zgui::elements::vector().document(include_str!("../assets/unavailable.svg")).class("unavailable-slot")}
             }
             if move ||class=="transparent-color" {
                 {zgui::elements::vector().document(include_str!("../assets/transparent.svg")).class("transparent-mark")}
             }
-            box(class="tile-check",class:visible=move ||copied.get()) {
+            box(class="tile-check",style:color=move ||Some(contrast_ink(color.get()).to_owned()),class:visible=move ||copied.get()) {
                 {zgui::elements::vector().document(include_str!("../assets/check.svg")).class("check-icon")}
             }
     }}
