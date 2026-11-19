@@ -20,6 +20,14 @@ field to select the corresponding code for replacement. Escape discards an
 uncommitted field edit and releases text focus. The eyedropper
 (**Ctrl+Shift+C**) samples a visible SDR desktop pixel across Windows displays.
 A floating chip previews the sampled pixel and its six-digit HEX value.
+Hold either **Alt** key before moving over a hover-sensitive element to freeze
+the visible desktop. The chip then reads the fixed image at the pointer.
+Releasing both Alt keys drops the snapshot from memory and resumes live sampling.
+Selecting a color or cancelling also discards it. The snapshot is displayed
+at each monitor's physical resolution. On Advanced Color displays the overlay
+uses a 16-bit floating-point scRGB capture and swap chain. The chip continues
+to report the Windows SDR pixel value. Windows capture restrictions apply to
+protected surfaces.
 A left click selects the color and consumes the click. Right-click or Escape cancels sampling.
 
 An unavailable slot shows a gray frame and cross on black. The active slot shows

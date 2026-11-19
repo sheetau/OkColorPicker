@@ -8,7 +8,8 @@ use windows_sys::Win32::{
         ERROR_NOT_SUPPORTED, LUID, POINT, RECT,
     },
     Graphics::Gdi::{
-        GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MONITORINFOEXW, MonitorFromPoint,
+        GetMonitorInfoW, HMONITOR, MONITOR_DEFAULTTONEAREST, MONITORINFO, MONITORINFOEXW,
+        MonitorFromPoint,
     },
     UI::WindowsAndMessaging::GetWindowRect,
 };
@@ -58,8 +59,6 @@ pub fn query(window: &(impl HasWindowHandle + ?Sized)) -> io::Result<DisplayColo
     // The center selects the principal display used by Advanced Color. Do not
     // assume the primary monitor or the GPU used for rendering owns this window.
     let mut rect = RECT::default();
-    let mut monitor = MONITORINFOEXW::default();
-    monitor.monitorInfo.cbSize = std::mem::size_of_val(&monitor) as u32;
     // SAFETY: the borrowed HWND remains live; all output buffers are correctly sized.
     unsafe {
         if GetWindowRect(native.hwnd.get() as _, &mut rect) == 0 {
@@ -69,7 +68,14 @@ pub fn query(window: &(impl HasWindowHandle + ?Sized)) -> io::Result<DisplayColo
             x: ((i64::from(rect.left) + i64::from(rect.right)) / 2) as i32,
             y: ((i64::from(rect.top) + i64::from(rect.bottom)) / 2) as i32,
         };
-        let target = MonitorFromPoint(center, MONITOR_DEFAULTTONEAREST);
+        query_monitor(MonitorFromPoint(center, MONITOR_DEFAULTTONEAREST))
+    }
+}
+
+pub(crate) fn query_monitor(target: HMONITOR) -> io::Result<DisplayColor> {
+    let mut monitor = MONITORINFOEXW::default();
+    monitor.monitorInfo.cbSize = std::mem::size_of_val(&monitor) as u32;
+    unsafe {
         if GetMonitorInfoW(
             target,
             &mut monitor as *mut MONITORINFOEXW as *mut MONITORINFO,

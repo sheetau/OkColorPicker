@@ -32,6 +32,10 @@ mod windows_display_watch;
 mod windows_qr;
 
 mod eyedropper;
+#[cfg(windows)]
+mod frozen_desktop;
+#[cfg(windows)]
+mod frozen_hdr;
 mod swatches;
 mod tiles;
 mod tools_ui;
