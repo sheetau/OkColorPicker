@@ -371,6 +371,22 @@ fn mounted_tabs_edit_recall_adjust_and_restore() {
                 );
                 tile_pointer(&mut h, PointerAction::Pressed, primary, palette_start);
                 let before_reorder=model.palette.get_untracked();
+                let boundary=cell.origin.x.0+cell.size.width.0*2.0;
+                let over_boundary=Point::new(CssPx(boundary+2.0),palette_start.y);
+                for (light,ink) in [(1.0,0u8),(0.0,255u8)] {
+                    let fill=okcolor_core::Oklch::new(light,0.0,0.0,1.0).unwrap();
+                    model.palette.update(|colors| {colors[1].0=fill;colors[2].0=fill;});h.settle(32);
+                    tile_pointer(&mut h,PointerAction::Moved,primary,over_boundary);
+                    let x=boundary.round() as i32;
+                    let y=(strip.origin.y.0+19.0) as i32;
+                    let shown={
+                        let capture=frames.lock().unwrap();
+                        let frame=capture.last().unwrap();
+                        (x-2..=x+1).map(|px|frame.rgba(px,y)[0]).collect::<Vec<_>>()
+                    };
+                    assert!(shown.contains(&ink),"drop line between tiles of lightness {light}: {shown:?}");
+                }
+                model.palette.set(before_reorder.clone());h.settle(32);
                 tile_pointer(&mut h, PointerAction::Moved, primary, palette_end);
                 {
                     let capture=frames.lock().unwrap();
