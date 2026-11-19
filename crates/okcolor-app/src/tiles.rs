@@ -24,6 +24,7 @@ pub(crate) struct TileGestures {
     zones: StoredValue<Vec<(NodeRef, Destination)>, LocalStorage>,
     pub hovering: RwSignal<Option<Destination>>,
     pub dragging: RwSignal<Option<NodeRef>, LocalStorage>,
+    pub generator: StoredValue<okcolor_core::PaletteGenerator>,
     pub palette: RwSignal<Vec<(Oklch, bool)>>,
 }
 
@@ -34,6 +35,7 @@ impl TileGestures {
             zones: StoredValue::new_local(Vec::new()),
             hovering: RwSignal::new(None),
             dragging: RwSignal::new_local(None),
+            generator: StoredValue::new(okcolor_core::PaletteGenerator::default()),
             palette: RwSignal::new(Vec::new()),
         };
         provide_context(gestures);

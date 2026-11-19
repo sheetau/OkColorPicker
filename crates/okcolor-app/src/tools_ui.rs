@@ -334,57 +334,6 @@ fn RelatedGroup(model: PickerModel, refs: PickerRefs, group: usize) -> impl Into
     }}
 }
 
-fn generate_palette(model: PickerModel, seed: u32, old: &[(Oklch, bool)]) -> Vec<(Oklch, bool)> {
-    let mut state = seed;
-    let mut next = || {
-        state = state.wrapping_mul(1664525).wrapping_add(1013904223);
-        f64::from(state) / (f64::from(u32::MAX) + 1.0)
-    };
-    let gamut = model.gamut.get_untracked();
-    let locks: Vec<_> = old
-        .iter()
-        .filter(|(_, locked)| *locked)
-        .map(|(c, _)| *c)
-        .collect();
-    let bases = if locks.is_empty() {
-        vec![
-            Oklch::new(
-                0.42 + 0.38 * next(),
-                0.06 + 0.14 * next(),
-                360.0 * next(),
-                1.0,
-            )
-            .expect("bounded palette base"),
-        ]
-    } else {
-        locks
-    };
-    let scheme = Harmony::ALL[(next() * Harmony::ALL.len() as f64) as usize];
-    let anchors: Vec<_> = bases
-        .iter()
-        .flat_map(|source| harmony(*source, scheme, gamut))
-        .collect();
-    let count = if old.is_empty() { 5 } else { old.len() };
-    (0..count)
-        .map(|i| {
-            if let Some(entry) = old.get(i).filter(|(_, locked)| *locked) {
-                return *entry;
-            }
-            let anchor = anchors[(next() * anchors.len() as f64) as usize];
-            let [l, c, h, a] = anchor.components();
-            let tone = (i as f64 + next()) / count as f64;
-            let color = Oklch::new(
-                (0.3 * l + 0.08 + 0.64 * tone).clamp(0.1, 0.96),
-                c * (0.45 + 0.85 * next()),
-                h + (next() - 0.5) * 18.0,
-                a,
-            )
-            .expect("bounded palette color");
-            (color.reduce_chroma(gamut), false)
-        })
-        .collect()
-}
-
 const MAX_PALETTE: usize = 10;
 
 fn insert_palette_colors(
@@ -540,12 +489,13 @@ fn Palette(model: PickerModel, refs: PickerRefs) -> impl IntoView {
     let regenerate = move || {
         use std::hash::{BuildHasher, RandomState};
         // RandomState supplies independent session entropy without a platform RNG dependency.
-        let entropy = RandomState::new().hash_one(()) as u32;
-        gestures.palette.set(generate_palette(
-            model,
-            entropy,
-            &gestures.palette.get_untracked(),
-        ));
+        let seed = RandomState::new().hash_one(());
+        gestures.generator.update_value(|generator| {
+            let next = gestures
+                .palette
+                .with_untracked(|old| generator.generate(old, model.gamut.get_untracked(), seed));
+            gestures.palette.set(next);
+        });
     };
     if gestures.palette.get_untracked().is_empty() {
         regenerate();

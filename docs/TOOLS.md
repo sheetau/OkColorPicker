@@ -52,7 +52,14 @@ samples use the RGB color wheel. The wide-gamut tools work in OKLCH.
 Click a sample to select it or drag it to the library.
 
 **Generate** or **Space** replaces unlocked palette colors using locked colors
-as anchors. Shift-click a palette tile to toggle its lock. A dot at the lower
+as anchors. Each generation compares 64 OKLCH candidates across eight compositions,
+including tonal, pastel, accent and multihue arrangements. Starting colors are
+sampled from occupied bands in the bundled named-color dictionary. Selection
+accounts for near duplicates, neighboring colors, lightness range, accent strength
+and the last eight generated palettes. Locked colors retain their positions and
+original components, including alpha. New colors fit the selected working gamut.
+
+Shift-click a palette tile to toggle its lock. A dot at the lower
 center marks a locked tile. Click **+** to insert one color. Drag **+** upward
 to choose the number of intermediate colors, one per 12 CSS pixels. Drag back
 down to reduce the count. Returning to **+** cancels the insertion on release.

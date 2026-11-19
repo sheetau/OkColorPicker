@@ -32,6 +32,25 @@ static DICTIONARY: LazyLock<Vec<Entry>> = LazyLock::new(|| {
         .collect()
 });
 
+/// Uniform sampling of occupied lightness, chroma and hue bands avoids favoring
+/// parts of sRGB with many nearly identical dictionary entries.
+pub(crate) fn palette_anchor(band: usize, entry: usize) -> Oklch {
+    static BANDS: LazyLock<Vec<Vec<usize>>> = LazyLock::new(|| {
+        let mut bands = vec![Vec::new(); 5 * 4 * 13];
+        for (index, item) in DICTIONARY.iter().enumerate() {
+            let [l, c, h, _] = item.sample.color.components();
+            let light = ((l * 5.0) as usize).min(4);
+            let chroma = ((c / 0.075) as usize).min(3);
+            let hue = if c < 0.025 { 12 } else { (h / 30.0) as usize };
+            bands[(light * 4 + chroma) * 13 + hue].push(index);
+        }
+        bands.retain(|band| !band.is_empty());
+        bands
+    });
+    let choices = &BANDS[band % BANDS.len()];
+    DICTIONARY[choices[entry % choices.len()]].sample.color
+}
+
 // CIEDE2000 with the standard unit weighting factors.
 fn delta_e(a: [f64; 3], b: [f64; 3]) -> f64 {
     let [l1, a1, b1] = a;

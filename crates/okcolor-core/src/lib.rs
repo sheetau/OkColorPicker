@@ -15,6 +15,8 @@ pub use parse::{ParseColorError, parse_color};
 pub use slice::{GamutProjection, GamutSlice};
 
 mod contrast;
+mod palette;
+pub use palette::PaletteGenerator;
 mod related;
 pub use contrast::{
     apca, apca_in, closest_current_contrast, closest_grid_sample, contrast_sample,
