@@ -61,7 +61,9 @@ mod native {
             Graphics::{Dwm::DwmFlush, Gdi::*},
             UI::{
                 HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI},
-                Input::KeyboardAndMouse::{VK_ESCAPE, VK_LMENU, VK_RMENU},
+                Input::KeyboardAndMouse::{
+                    GetAsyncKeyState, VK_ESCAPE, VK_LMENU, VK_MENU, VK_RMENU,
+                },
                 Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass},
                 WindowsAndMessaging::*,
             },
@@ -75,7 +77,6 @@ mod native {
         chip: HWND,
         state: Rc<State>,
         mouse_hook: HHOOK,
-        keyboard_hook: HHOOK,
     }
     struct State {
         chip: HWND,
@@ -131,7 +132,6 @@ mod native {
                     chip,
                     state,
                     mouse_hook: null_mut(),
-                    keyboard_hook: null_mut(),
                 };
                 if SetWindowSubclass(chip, Some(chip_proc), 1, ptr) == 0
                     || SetWindowSubclass(owner, Some(owner_proc), 1, ptr) == 0
@@ -140,9 +140,7 @@ mod native {
                 }
                 let module = GetWindowLongPtrW(owner, GWLP_HINSTANCE) as _;
                 session.mouse_hook = SetWindowsHookExW(WH_MOUSE_LL, Some(mouse_proc), module, 0);
-                session.keyboard_hook =
-                    SetWindowsHookExW(WH_KEYBOARD_LL, Some(keyboard_proc), module, 0);
-                if session.mouse_hook.is_null() || session.keyboard_hook.is_null() {
+                if session.mouse_hook.is_null() {
                     return None;
                 }
                 PREVIEW.set(chip);
@@ -150,7 +148,10 @@ mod native {
                 if SetTimer(chip, 1, 80, None) == 0 {
                     return None;
                 }
-                session.state.refresh();
+                session.state.sync_alt();
+                if !session.state.finished.get() {
+                    session.state.refresh();
+                }
                 Some(session)
             }
         }
@@ -161,14 +162,11 @@ mod native {
                 self.state.finished.set(true);
                 RemoveWindowSubclass(self.owner, Some(owner_proc), 1);
                 RemoveWindowSubclass(self.chip, Some(chip_proc), 1);
-                if !self.keyboard_hook.is_null() {
-                    UnhookWindowsHookEx(self.keyboard_hook);
-                }
                 self.state.frozen.take();
                 if !self.mouse_hook.is_null() {
                     PREVIEW.set(null_mut());
                     MOVE_PENDING.set(false);
-                    FREEZE_PENDING.set(false);
+                    HOLD_ACTIVE.set(false);
                     UnhookWindowsHookEx(self.mouse_hook);
                 }
                 DestroyWindow(self.chip);
@@ -184,14 +182,15 @@ mod native {
                 finish(value);
             }
         }
-        fn alt(&self, mask: u8, down: bool) {
-            let previous = self.alt_keys.get();
-            let next = if down {
-                previous | mask
-            } else {
-                previous & !mask
-            };
-            self.alt_keys.set(next);
+        fn sync_alt(&self) {
+            self.set_alt(held_alt_keys());
+        }
+
+        fn set_alt(&self, next: u8) {
+            let previous = self.alt_keys.replace(next);
+            if previous == next {
+                return;
+            }
             if previous == 0 && next != 0 {
                 unsafe {
                     ShowWindow(self.chip, SW_HIDE);
@@ -207,9 +206,11 @@ mod native {
                     return;
                 }
                 self.frozen.replace(Some(desktop));
+                HOLD_ACTIVE.set(true);
                 self.refresh();
             } else if next == 0 && previous != 0 {
                 self.frozen.take();
+                HOLD_ACTIVE.set(false);
                 unsafe {
                     DwmFlush();
                 }
@@ -257,8 +258,12 @@ mod native {
                 let y = chip_axis(p.y, px(10), 0, px(32), screen.top, screen.bottom);
                 let mut old = RECT::default();
                 GetWindowRect(self.chip, &mut old);
-                let frozen = self.frozen.borrow();
-                let occluded = frozen.is_none()
+                let fixed_pixel = self
+                    .frozen
+                    .borrow()
+                    .as_ref()
+                    .map(|desktop| desktop.pixel(p));
+                let occluded = fixed_pixel.is_none()
                     && IsWindowVisible(self.chip) != 0
                     && p.x >= old.left
                     && p.x < old.right
@@ -268,9 +273,7 @@ mod native {
                     ShowWindow(self.chip, SW_HIDE);
                     DwmFlush();
                 }
-                let sampled = if let Some(desktop) = frozen.as_ref() {
-                    desktop.pixel(p)
-                } else {
+                let sampled = fixed_pixel.unwrap_or_else(|| {
                     let dc = GetDC(null_mut());
                     if dc.is_null() {
                         None
@@ -279,8 +282,7 @@ mod native {
                         ReleaseDC(null_mut(), dc);
                         (color != CLR_INVALID).then_some(color)
                     }
-                };
-                drop(frozen);
+                });
                 let changed = self.pixel.replace(sampled) != sampled;
                 let resized = self.scale.replace(dpi) != dpi;
                 if occluded
@@ -378,7 +380,7 @@ mod native {
         preferred.clamp(min, (max - size).max(min))
     }
 
-    const ALT_CHANGED: u32 = WM_APP + 6;
+    const SYNC_ALT: u32 = WM_APP + 6;
     const POINTER_MOVED: u32 = WM_APP + 1;
     const PICK_DOWN: u32 = WM_APP + 2;
     const PICK_UP: u32 = WM_APP + 3;
@@ -386,33 +388,15 @@ mod native {
     const CANCEL_UP: u32 = WM_APP + 5;
     thread_local! {
         static PREVIEW: Cell<HWND> = const { Cell::new(null_mut()) };
-        static FREEZE_PENDING: Cell<bool> = const { Cell::new(false) };
+        static HOLD_ACTIVE: Cell<bool> = const { Cell::new(false) };
         static MOVE_PENDING: Cell<bool> = const { Cell::new(false) };
     }
 
-    unsafe extern "system" fn keyboard_proc(code: i32, w: WPARAM, l: LPARAM) -> LRESULT {
-        let hwnd = PREVIEW.get();
-        if code == HC_ACTION as i32 && !hwnd.is_null() {
-            let key = unsafe { (*(l as *const KBDLLHOOKSTRUCT)).vkCode };
-            let mask = if key == u32::from(VK_LMENU) {
-                1
-            } else if key == u32::from(VK_RMENU) {
-                2
-            } else {
-                0
-            };
-            if mask != 0 {
-                let down = matches!(w as u32, WM_KEYDOWN | WM_SYSKEYDOWN);
-                if down {
-                    FREEZE_PENDING.set(true);
-                }
-                if unsafe { PostMessageW(hwnd, ALT_CHANGED, mask, isize::from(down)) } == 0 {
-                    FREEZE_PENDING.set(false);
-                }
-                return 1;
-            }
+    fn held_alt_keys() -> u8 {
+        unsafe {
+            u8::from(GetAsyncKeyState(i32::from(VK_LMENU)) < 0)
+                | (u8::from(GetAsyncKeyState(i32::from(VK_RMENU)) < 0) << 1)
         }
-        unsafe { CallNextHookEx(null_mut(), code, w, l) }
     }
 
     // Windows calls a low-level mouse hook on its installing thread. Only queue
@@ -425,7 +409,14 @@ mod native {
                 WM_LBUTTONUP => Some(PICK_UP),
                 WM_RBUTTONDOWN => Some(CANCEL_DOWN),
                 WM_RBUTTONUP => Some(CANCEL_UP),
-                WM_MOUSEMOVE if FREEZE_PENDING.get() => return 1,
+                // Key and pointer messages can arrive in different queues. Hold the first
+                // move off the underlying window until its frozen cover is visible.
+                WM_MOUSEMOVE if !HOLD_ACTIVE.get() && held_alt_keys() != 0 => {
+                    unsafe {
+                        PostMessageW(hwnd, SYNC_ALT, 0, 0);
+                    }
+                    return 1;
+                }
                 WM_MOUSEMOVE => {
                     if !MOVE_PENDING.replace(true)
                         && unsafe { PostMessageW(hwnd, POINTER_MOVED, 0, 0) } == 0
@@ -466,9 +457,8 @@ mod native {
         // Capture and window teardown can reenter the message loop. Retain the callback state.
         let state = unsafe { retain_state(data) };
         match msg {
-            ALT_CHANGED => {
-                state.alt(w as u8, l != 0);
-                FREEZE_PENDING.set(false);
+            SYNC_ALT => {
+                state.sync_alt();
                 0
             }
             POINTER_MOVED => {
@@ -504,7 +494,14 @@ mod native {
             }
             WM_ERASEBKGND => 1,
             WM_TIMER if w == 1 => {
-                state.refresh();
+                if unsafe { GetAsyncKeyState(i32::from(VK_ESCAPE)) } < 0 {
+                    state.finish(Ok(None));
+                    return 0;
+                }
+                state.sync_alt();
+                if !state.finished.get() {
+                    state.refresh();
+                }
                 0
             }
             WM_NCHITTEST => HTTRANSPARENT as LRESULT,
@@ -526,11 +523,28 @@ mod native {
                 state.sample_message(hwnd, l);
                 0
             }
+            WM_SYSKEYDOWN | WM_KEYDOWN | WM_SYSKEYUP | WM_KEYUP
+                if matches!(w as u16, VK_MENU | VK_LMENU | VK_RMENU) =>
+            {
+                let right = w as u16 == VK_RMENU || (w as u16 == VK_MENU && l & (1 << 24) != 0);
+                let mask = if right { 2 } else { 1 };
+                let held = state.alt_keys.get();
+                let down = matches!(msg, WM_KEYDOWN | WM_SYSKEYDOWN);
+                state.set_alt(if down { held | mask } else { held & !mask });
+                0
+            }
             WM_KEYDOWN if w == VK_ESCAPE as usize => {
                 state.finish(Ok(None));
                 0
             }
-            WM_DISPLAYCHANGE | WM_CANCELMODE | WM_KILLFOCUS => {
+            // The nonactivating covers and screen-capture UI can send WM_CANCELMODE
+            // or transfer focus during Alt. The sampler lives until an explicit exit.
+            WM_SYSCOMMAND if w & 0xfff0 == SC_KEYMENU as usize => 0,
+            WM_DISPLAYCHANGE | WM_SIZE | WM_SHOWWINDOW
+                if msg == WM_DISPLAYCHANGE
+                    || (msg == WM_SIZE && w == SIZE_MINIMIZED as usize)
+                    || (msg == WM_SHOWWINDOW && w == 0) =>
+            {
                 state.finish(Ok(None));
                 unsafe { DefSubclassProc(hwnd, msg, w, l) }
             }
@@ -591,27 +605,13 @@ mod native {
                 rgb
             };
             let key = |vk, down| {
-                let event = KBDLLHOOKSTRUCT {
-                    vkCode: u32::from(vk),
-                    ..Default::default()
-                };
-                let msg = if down { WM_SYSKEYDOWN } else { WM_SYSKEYUP };
-                assert_eq!(
-                    keyboard_proc(HC_ACTION as i32, msg as usize, &raw const event as isize),
-                    1
+                let extended = isize::from(vk == VK_RMENU) << 24;
+                SendMessageW(
+                    owner,
+                    if down { WM_SYSKEYDOWN } else { WM_SYSKEYUP },
+                    VK_MENU as usize,
+                    extended,
                 );
-                let mut pending = MSG::default();
-                assert_ne!(
-                    PeekMessageW(
-                        &mut pending,
-                        session.chip,
-                        ALT_CHANGED,
-                        ALT_CHANGED,
-                        PM_REMOVE
-                    ),
-                    0
-                );
-                DispatchMessageW(&pending);
                 DwmFlush();
             };
             fill(0x42a1ef);
@@ -621,6 +621,12 @@ mod native {
                 "fixture must be visible before freezing"
             );
             key(VK_LMENU, true);
+            SendMessageW(owner, WM_CANCELMODE, 0, 0);
+            SendMessageW(owner, WM_KILLFOCUS, 0, 0);
+            assert!(
+                !session.state.finished.get(),
+                "focus transitions must preserve a frozen session"
+            );
             assert!(session.state.frozen.borrow().is_some());
             assert_eq!(
                 read(),
