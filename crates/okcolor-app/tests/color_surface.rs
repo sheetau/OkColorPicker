@@ -85,7 +85,7 @@ fn marker_checker_has_a_fixed_origin_and_dark_samples_have_inner_borders() {
         let near = image.rgba(17, top + 8)[0];
         let far = image.rgba(20, top + 8)[0];
         assert!(
-            near > 180 && near + 8 < far && far >= 250,
+            near > 214 && near + 8 < far && far >= 250,
             "soft outer shadow for every fill at {top}: {near}/{far}"
         );
         assert_eq!(near, image.rgba(4, top + 8)[0], "zero horizontal offset");

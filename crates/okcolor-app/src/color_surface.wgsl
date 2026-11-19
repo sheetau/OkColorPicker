@@ -242,7 +242,7 @@ fn shade(input: ShaderInput, params: Params) -> vec4<f32> {
         let coverage = 1.0 - smoothstep(-aa, aa, d);
         let outline = smoothstep(-1.0 - aa, -1.0 + aa, d);
         let outside = max(d, 0.0);
-        let shadow = 0.24 * exp(-0.5 * outside * outside);
+        let shadow = 0.16 * exp(-0.5 * outside * outside);
         let alpha = coverage + (1.0 - coverage) * shadow;
         return vec4<f32>(mix(rgb, vec3<f32>(1.0), outline) * coverage, alpha);
     }
