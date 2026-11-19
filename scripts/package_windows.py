@@ -101,6 +101,7 @@ def package(output, cargo_about):
         bundle = verify_notice_bundle(folder, commit)
         (folder / 'OkColorPicker.exe').write_bytes(binary)
         shutil.copyfile(ROOT / 'packaging/START_HERE.txt', folder / 'START_HERE.txt')
+        shutil.copyfile(ROOT / 'packaging/update.ps1', folder / 'update.ps1')
         metadata = {'version': version, 'project_commit': commit, 'candidate': True,
                     'rustc': compiler, 'target': bundle['target'], 'pe': pe,
                     'files': {p.name: sha256(p.read_bytes()).hexdigest() for p in sorted(folder.iterdir())}}

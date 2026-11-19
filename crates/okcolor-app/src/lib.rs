@@ -36,4 +36,5 @@ mod swatches;
 mod tiles;
 mod tools_ui;
 mod tooltip;
+mod updates;
 pub mod workspace;

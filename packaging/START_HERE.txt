@@ -7,7 +7,13 @@ START
    https://aka.ms/vc14/vc_redist.x64.exe
    Microsoft download information:
    https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist
-3. Run OkColorPicker.exe. Keep the notice and source files with this package.
+3. Run OkColorPicker.exe. Keep update.ps1 and all notice and source files with the application.
+
+UPDATES
+
+Use a folder your Windows account can write to. When a newer Windows package
+is ready, choose Install now or Install on next launch. The picker restarts
+after installation. Your color library and settings stay in your user profile.
 
 A DirectX 12-capable GPU and a current graphics driver are required. Development
 testing currently uses Windows 11 x64; other Windows versions are not validated.

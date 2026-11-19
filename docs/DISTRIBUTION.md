@@ -28,6 +28,25 @@ runtime used by the statically linked DXC compiler. The package links the
 in its start instructions; it does not redistribute or install the runtime DLLs.
 Use a runtime at least as recent as the MSVC tools used to build the application.
 
+## Publish an updatable Windows package
+
+Use a stable GitHub release tag matching the Cargo package version (for example
+`v1.2.0`). Upload the ZIP from the packaging command with its original name.
+The updater reads the latest published release of `sheetau/OkColorPicker`,
+selects its Windows x64 ZIP and verifies its size and SHA-256 digest from
+GitHub's release API. Drafts, prereleases and older or equal versions are skipped.
+The manifest inside the ZIP must match the release version, target, commit
+prefix and checksums of all package files.
+
+Extract the package into a writable folder and run `OkColorPicker.exe`.
+Startup checks run in the background. **Install now** closes the picker,
+replaces the packaged files and reopens it. **Install on next launch** saves
+the verified ZIP and retries installation on the next launch, including
+offline. The helper stages files in `.okcolor-update` beside the executable,
+replaces the executable last and rolls back file replacement errors.
+Keep the package together and close other copies using the same installation.
+The Cargo development executable uses its normal build and launch workflow.
+
 ## Validate the extracted candidate
 
 Verify the ZIP against `SHA256SUMS.txt`, extract the entire archive into a fresh

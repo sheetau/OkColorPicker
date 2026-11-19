@@ -1,6 +1,7 @@
 use crate::eyedropper::EyedropperProps;
 use crate::tiles::{ColorTileProps, Source, TileGestures};
 use crate::tooltip::Tooltips;
+use crate::updates::{UpdatePromptProps, Updates};
 use crate::{
     model::{PickerModel, stepped_channel},
     surface::{ColorControlProps, SurfaceKind},
@@ -129,6 +130,14 @@ pub fn Picker(model: PickerModel, refs: PickerRefs) -> impl IntoView {
     }
     let clipboard = use_clipboard();
     let settings = RwSignal::new(false);
+    let updates = Updates::mount(model);
+    let present_update = Memo::new(move |_| {
+        updates.visible.get()
+            && !model.editing_text.get()
+            && !model.dragging.get()
+            && gestures.dragging.get().is_none()
+            && !refs.sampling.get()
+    });
     Tooltips::bind(refs.menu, move || {
         if settings.get_untracked() {
             "Close settings"
@@ -144,6 +153,9 @@ pub fn Picker(model: PickerModel, refs: PickerRefs) -> impl IntoView {
         bridge.with_value(|bridge| bridge.bind_content(refs, model));
     }
     let shortcut = move |cx: &mut EventCx<'_, events::KeyDown>| {
+        if present_update.get_untracked() {
+            return;
+        }
         if cx.key == Key::Named(NamedKey::Escape) && refs.sampling.get_untracked() {
             refs.sampling.set(false);
             cx.prevent_default();
@@ -257,6 +269,7 @@ pub fn Picker(model: PickerModel, refs: PickerRefs) -> impl IntoView {
     on_cleanup_local(move || drop(shortcuts));
     view! {
         column(class="app",class:expanded-chart=move ||maximized.get() && model.tab.get()==Tab::Picker, class:dragging=move ||gestures.dragging.get().is_some(),node_ref=app_root,tabindex=Focus::Programmatic) {
+            if move ||present_update.get() {UpdatePrompt(state=updates,model=model)} else {
             Titlebar(refs=refs,settings=settings)
             if move ||settings.get() {
                 Settings(model=model,refs=refs)
@@ -289,6 +302,7 @@ pub fn Picker(model: PickerModel, refs: PickerRefs) -> impl IntoView {
             ResizeEdges()
             if move ||refs.sampling.get() {
                 Eyedropper(model=model,refs=refs)
+            }
             }
         }
     }
