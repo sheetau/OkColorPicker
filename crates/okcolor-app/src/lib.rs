@@ -1,5 +1,6 @@
 //! Native application components, kept separate from the color calculation core.
 pub mod autosave;
+mod chart;
 pub mod companion;
 mod companion_sync;
 pub mod display;

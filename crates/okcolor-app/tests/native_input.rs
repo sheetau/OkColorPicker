@@ -133,7 +133,7 @@ fn verify_monitor_samples(owner: HWND, patch: HWND, preview: HWND) -> POINT {
                 UpdateWindow(preview);
             }
             let (x, y) = if at_edge {
-                (screen.x - px(5) - px(82), screen.y - px(10) - px(32))
+                (screen.x - px(5) - px(82), screen.y - px(32))
             } else {
                 (screen.x + px(5), screen.y + px(10))
             };
@@ -172,6 +172,24 @@ fn check_preview_pixels(preview: HWND, chip: RECT, factor: f64, expected: u32) {
         unsafe { GetPixel(dc, (30.0 * factor) as i32, (16.0 * factor) as i32) },
         0,
         "gap between swatch and HEX"
+    );
+    let mut ink_bounds = (i32::MAX, i32::MAX, 0, 0);
+    for y in (4.0 * factor) as i32..(28.0 * factor) as i32 {
+        for x in (31.0 * factor) as i32..(80.0 * factor) as i32 {
+            if unsafe { GetPixel(dc, x, y) } as u8 > 80 {
+                ink_bounds = (
+                    ink_bounds.0.min(x),
+                    ink_bounds.1.min(y),
+                    ink_bounds.2.max(x),
+                    ink_bounds.3.max(y),
+                );
+            }
+        }
+    }
+    let span = f64::from(ink_bounds.2 - ink_bounds.0 + 1) / factor;
+    assert!(
+        (35.0..=46.0).contains(&span),
+        "six Martian Mono glyphs at 10px, bounds {ink_bounds:?}, scale {factor}"
     );
     if let Ok(dir) = std::env::var("OKCOLOR_TOOLS_CAPTURE_DIR") {
         let (width, height) = (chip.right - chip.left, chip.bottom - chip.top);
@@ -213,6 +231,7 @@ fn check_preview_pixels(preview: HWND, chip: RECT, factor: f64, expected: u32) {
 }
 
 struct Probe {
+    caption: okcolor_app::windows_caption::CaptionBridge,
     state: Rc<Cell<Option<(PickerModel, PickerRefs)>>>,
     stage: Cell<u8>,
     sample_window: Cell<HWND>,
@@ -226,6 +245,7 @@ struct Probe {
 
 impl FrameProbe for Probe {
     fn frame_ended(&self, window: &Window) {
+        self.caption.frame_ended(window);
         self.frames.set(self.frames.get() + 1);
         assert!(
             self.frames.get() < 120,
@@ -246,8 +266,17 @@ impl FrameProbe for Probe {
             assert_ne!(GetClientRect(hwnd, &mut client), 0);
             assert_ne!(GetWindowRect(hwnd, &mut rect), 0);
         }
+        let scale = unsafe { GetDpiForWindow(hwnd) } as f32 / 96.0;
+        let fitted = refs
+            .settings_content
+            .window_bounds()
+            .or_else(|| refs.page_content.window_bounds())
+            .is_some_and(|body| {
+                (body.origin.y.0 + body.size.height.0 + 32.0 * scale - client.bottom as f32).abs()
+                    <= 1.0
+            });
         match self.stage.get() {
-            0 => {
+            0 if fitted => {
                 self.base.set(Some(model.current()));
                 self.recent.set(model.recent.get_untracked().len());
                 self.extent.set([client.right, client.bottom]);
@@ -321,34 +350,52 @@ impl FrameProbe for Probe {
                 );
                 assert_eq!(model.recent.get_untracked().len(), self.recent.get() + 1);
                 self.base.set(Some(model.current()));
+                self.extent.set([client.right, client.bottom]);
                 self.location.set([rect.left + 20, rect.top + 10]);
                 self.stage.set(7);
                 // SAFETY: move/resize this test window only. No monitor or system settings change.
                 unsafe {
+                    let mut proposed = rect;
+                    proposed.right += 40;
+                    proposed.bottom += 30;
+                    SendMessageW(hwnd, WM_ENTERSIZEMOVE, 0, 0);
+                    SendMessageW(
+                        hwnd,
+                        WM_SIZING,
+                        WMSZ_BOTTOMRIGHT as usize,
+                        &raw mut proposed as LPARAM,
+                    );
                     assert_ne!(
                         SetWindowPos(
                             hwnd,
                             std::ptr::null_mut(),
                             rect.left + 20,
                             rect.top + 10,
-                            rect.right - rect.left + 40,
-                            rect.bottom - rect.top + 30,
+                            proposed.right - proposed.left,
+                            proposed.bottom - proposed.top,
                             SWP_NOZORDER | SWP_NOACTIVATE
                         ),
                         0
                     );
                 }
             }
-            7 if client.right == self.extent.get()[0] + 40
+            7 if fitted
+                && client.right == self.extent.get()[0] + 40
                 && client.bottom == self.extent.get()[1] + 30
                 && self.presented.get() == [client.right, client.bottom] =>
             {
+                unsafe {
+                    SendMessageW(hwnd, WM_EXITSIZEMOVE, 0, 0);
+                }
+                assert!(
+                    (model.tools.get_untracked().plot_height - 152.0 - 30.0 / scale).abs() < 1.0
+                );
                 assert_eq!([rect.left, rect.top], self.location.get());
                 assert_eq!(model.current(), self.base.get().unwrap());
                 self.stage.set(8);
                 click(hwnd, refs.menu);
             }
-            8 if refs.topmost.window_bounds().is_some() => {
+            8 if fitted && refs.topmost.window_bounds().is_some() => {
                 self.stage.set(9);
                 click(hwnd, refs.topmost);
             }
@@ -368,7 +415,13 @@ impl FrameProbe for Probe {
                 self.stage.set(11);
                 click(hwnd, refs.menu);
             }
-            11 if refs.eyedropper.window_bounds().is_some() => {
+            11 if fitted && refs.eyedropper.window_bounds().is_some() => {
+                assert!(
+                    (refs.slice.window_bounds().unwrap().size.height.0 / scale
+                        - model.tools.get_untracked().plot_height)
+                        .abs()
+                        <= 1.0
+                );
                 let external = unsafe {
                     CreateWindowExW(
                         WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
@@ -436,6 +489,28 @@ impl FrameProbe for Probe {
                     "#3ac795"
                 );
                 self.stage.set(16);
+                unsafe {
+                    ShowWindow(hwnd, SW_MAXIMIZE);
+                }
+            }
+            16 if fitted && unsafe { IsZoomed(hwnd) } != 0 => {
+                assert!(
+                    refs.slice.window_bounds().unwrap().size.height.0 / scale
+                        > model.tools.get_untracked().plot_height
+                );
+                self.stage.set(17);
+                unsafe {
+                    ShowWindow(hwnd, SW_RESTORE);
+                }
+            }
+            17 if fitted && unsafe { IsZoomed(hwnd) } == 0 => {
+                assert!(
+                    (refs.slice.window_bounds().unwrap().size.height.0 / scale
+                        - model.tools.get_untracked().plot_height)
+                        .abs()
+                        <= 1.0
+                );
+                self.stage.set(18);
                 // SAFETY: exercise the normal close-request path on this owned window.
                 unsafe {
                     assert_ne!(PostMessageW(hwnd, WM_SYSCOMMAND, SC_CLOSE as usize, 0), 0);
@@ -443,7 +518,7 @@ impl FrameProbe for Probe {
             }
             _ => {}
         }
-        if self.stage.get() < 8 || (11..16).contains(&self.stage.get()) {
+        if self.stage.get() < 18 {
             window.request_frame();
         }
     }
@@ -466,7 +541,9 @@ fn native_pointer_wheel_key_and_resize_reach_the_picker() {
     let state = Rc::new(Cell::new(None));
     let mounted = state.clone();
     let presented = Rc::new(Cell::new([0; 2]));
+    let caption = okcolor_app::windows_caption::CaptionBridge::new(false);
     let probe = Rc::new(Probe {
+        caption: caption.clone(),
         state,
         stage: Cell::new(0),
         sample_window: Cell::new(std::ptr::null_mut()),
@@ -477,7 +554,6 @@ fn native_pointer_wheel_key_and_resize_reach_the_picker() {
         location: Cell::new([0; 2]),
         presented: presented.clone(),
     });
-    let caption = okcolor_app::windows_caption::CaptionBridge::new(false);
     let mut renderer = caption.wrap_renderer(graphics::factory());
     let renderer: zgui::runtime::RendererFactory = Box::new(move |surface, target| {
         Ok(Box::new(ObservePresentation {
@@ -523,7 +599,7 @@ fn native_pointer_wheel_key_and_resize_reach_the_picker() {
         .unwrap();
     assert_eq!(
         probe.stage.get(),
-        16,
+        18,
         "all native input and resize stages must complete"
     );
     finish.send(()).unwrap();

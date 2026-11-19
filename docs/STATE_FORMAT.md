@@ -51,7 +51,10 @@ monotonic `next_id`. Removing a folder moves its colors to the unfiled section.
 The `tools` object stores an opaque `background` color, signed `target_lc`
 from -110 through 110, and a `harmony` index from 0 through 4. Tool selection,
 field drafts and the active tab are transient; startup opens the picker.
-Library edits are independent of the session color Undo history.
+The chart stores its fixed axis, snapping preference and height in CSS pixels
+as `fixed_axis`, `always_snap` and `plot_height`. Older profiles default to Hue,
+Shift-only snapping and 152 pixels. Library edits are independent of the session
+color Undo history.
 
 No clipboard contents, font paths, pairing credentials or undo stack are stored.
 

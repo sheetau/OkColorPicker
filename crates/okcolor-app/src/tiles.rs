@@ -148,6 +148,19 @@ impl TileHeading {
     }
 }
 
+fn relative_luminance(rgb: [f64; 3]) -> f64 {
+    let linear = rgb.map(linear_channel);
+    linear[0] * 0.2126 + linear[1] * 0.7152 + linear[2] * 0.0722
+}
+
+fn linear_channel(c: f64) -> f64 {
+    if c <= 0.04045 {
+        c / 12.92
+    } else {
+        ((c + 0.055) / 1.055).powf(2.4)
+    }
+}
+
 pub(crate) fn contrast_ink(color: Oklch) -> &'static str {
     let rgb = color
         .mapped_rgb(
@@ -155,18 +168,28 @@ pub(crate) fn contrast_ink(color: Oklch) -> &'static str {
             okcolor_core::GamutMapping::LocalMinde,
         )
         .unwrap_or([0.0; 3]);
-    let linear = rgb.map(|c| {
-        if c <= 0.04045 {
-            c / 12.92
-        } else {
-            ((c + 0.055) / 1.055).powf(2.4)
-        }
-    });
-    if linear[0] * 0.2126 + linear[1] * 0.7152 + linear[2] * 0.0722 > 0.179 {
+    if relative_luminance(rgb) > 0.179 {
         "#000000"
     } else {
         "#ffffff"
     }
+}
+
+/// Maximize the weaker of the contrast ratios against the swatch and black.
+fn drag_ink(color: Oklch, mapping: okcolor_core::GamutMapping) -> String {
+    let tile = relative_luminance(
+        color
+            .mapped_rgb(okcolor_core::Gamut::Srgb, mapping)
+            .unwrap_or([0.0; 3]),
+    ) + 0.05;
+    let contrast = |v: u8| {
+        let gray = linear_channel(f64::from(v) / 255.0) + 0.05;
+        (gray / 0.05).min(gray.max(tile) / gray.min(tile))
+    };
+    let gray = (0..=255)
+        .max_by(|a, b| contrast(*a).total_cmp(&contrast(*b)))
+        .unwrap();
+    format!("#{gray:02x}{gray:02x}{gray:02x}")
 }
 
 #[component]
@@ -200,10 +223,7 @@ pub(crate) fn ColorTile(
     });
     let timers = StoredValue::new_local(zgui::view::Timers::current().expect("picker window"));
     let copy_timer = StoredValue::new_local(None::<zgui::view::TimeoutHandle>);
-    let scroll_timer = StoredValue::new_local(None::<zgui::view::IntervalHandle>);
-    let cursor = RwSignal::new((0.0f32, 0.0f32));
     let cancel = move || {
-        scroll_timer.set_value(None);
         origin.set(None);
         if shared.dragging.get_untracked() == Some(node) {
             shared.dragging.set(None);
@@ -253,37 +273,12 @@ pub(crate) fn ColorTile(
             {
                 shared.dragging.set(Some(node));
                 suppress_click.set(true);
-                scroll_timer.set_value(Some(timers.with_value(|timers| {
-                    timers.set_interval(Duration::from_millis(32), move || {
-                        let Some(b) = shared.page.window_bounds() else {
-                            return;
-                        };
-                        let (x, y) = cursor.get_untracked();
-                        let edge = 20.0 * scale.get_untracked();
-                        let step = if y < b.origin.y.0 + edge {
-                            -edge
-                        } else if y > b.origin.y.0 + b.size.height.0 - edge {
-                            edge
-                        } else {
-                            0.0
-                        };
-                        if step != 0.0 {
-                            use zgui::geom::{DevicePx, Point};
-                            shared.page.scroll_to(
-                                ScrollTarget::By(Point::new(DevicePx(0.0), DevicePx(step))),
-                                ScrollBehavior::Instant,
-                            );
-                            shared.hovering.set(shared.hit(x, y));
-                        }
-                    })
-                })));
             }
             if shared.dragging.get_untracked() == Some(node) {
                 let (px, py) = (
                     cx.position.x.0 * scale.get_untracked(),
                     cx.position.y.0 * scale.get_untracked(),
                 );
-                cursor.set((px, py));
                 shared.hovering.set(shared.hit(px, py));
             }
         }
@@ -306,11 +301,7 @@ pub(crate) fn ColorTile(
     view! {control(class=class,node_ref=node,tabindex=Focus::Sequential,a11y:label=move ||label.get(),
         class:dark=move ||class=="preset-color" && color.get().components()[0]<0.5,
         class:dragged=move ||shared.dragging.get()==Some(node),
-        style:outline-color=move ||(shared.dragging.get()==Some(node)).then(||{
-            let l=color.get().components()[0];
-            let neutral=Oklch::new((l+if l<0.5 {1.0}else{0.0})*0.5,0.0,0.0,1.0).expect("bounded lightness");
-            okcolor_core::format_color(neutral,okcolor_core::ColorFormat::Hex,okcolor_core::GamutMapping::Clip).expect("neutral color").text
-        }),
+        style:outline-color=move ||(shared.dragging.get()==Some(node)).then(||drag_ink(color.get(),model.mapping.get())),
         on:pointer_enter=move |_|{
             if let Some(heading)=heading{heading.0.set(label.get_untracked());}
         },

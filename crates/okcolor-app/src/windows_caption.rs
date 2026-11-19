@@ -1,5 +1,5 @@
 //! Win32 owns caption gestures; zgui paints the same Segoe controls as towavue.
-use crate::window_frame::CaptionVisual;
+use crate::{model::PickerModel, ui::PickerRefs, window_frame::CaptionVisual};
 use raw_window_handle::RawWindowHandle;
 use std::{
     cell::{Cell, RefCell},
@@ -30,7 +30,7 @@ use windows_sys::Win32::{
 };
 use zgui::{
     platform::GpuSurface,
-    prelude::{GetUntracked, NodeRef, RwSignal, Set},
+    prelude::{GetUntracked, NodeRef, RwSignal, Set, Update},
     runtime::{AppError, FrameProbe, RendererFactory, Window},
 };
 
@@ -41,6 +41,7 @@ struct BridgeState {
     buttons: Cell<Option<[NodeRef; 3]>>,
     visual: Cell<Option<RwSignal<CaptionVisual>>>,
     native: RefCell<Option<NativeCaption>>,
+    content: Cell<Option<(PickerRefs, PickerModel)>>,
     frames: Cell<u64>,
     trace: bool,
 }
@@ -57,6 +58,7 @@ impl CaptionBridge {
             buttons: Cell::new(None),
             visual: Cell::new(None),
             native: RefCell::new(None),
+            content: Cell::new(None),
             frames: Cell::new(0),
             trace,
         }))
@@ -78,6 +80,10 @@ impl CaptionBridge {
     pub fn bind_controls(&self, buttons: [NodeRef; 3], visual: RwSignal<CaptionVisual>) {
         self.0.buttons.set(Some(buttons));
         self.0.visual.set(Some(visual));
+    }
+
+    pub(crate) fn bind_content(&self, refs: PickerRefs, model: PickerModel) {
+        self.0.content.set(Some((refs, model)));
     }
 
     pub fn wrap_renderer(&self, mut renderer: RendererFactory) -> RendererFactory {
@@ -141,6 +147,9 @@ impl FrameProbe for CaptionBridge {
                 .unwrap_or([None; 3]);
             native.hook.state.visual.set(self.0.visual.get());
             native.hook.update(rects);
+            if let Some((refs, model)) = self.0.content.get() {
+                native.hook.fit_content(refs, model);
+            }
         }
         if self.0.trace {
             let frames = self.0.frames.get() + 1;
@@ -165,6 +174,9 @@ struct State {
     pressed: Cell<Option<usize>>,
     visual: Cell<Option<RwSignal<CaptionVisual>>>,
     alive: Cell<bool>,
+    desired_client: Cell<i32>,
+    resizing: Cell<bool>,
+    plot_resize: Cell<Option<(PickerModel, i32)>>,
 }
 
 struct Hook {
@@ -173,8 +185,43 @@ struct Hook {
 }
 
 const SUBCLASS_ID: usize = 1;
+const FIT_CONTENT: u32 = WM_APP + 0x3a2;
 
 impl Hook {
+    fn fit_content(&self, refs: PickerRefs, model: PickerModel) {
+        let Some(body) = refs
+            .settings_content
+            .window_bounds()
+            .or_else(|| refs.page_content.window_bounds())
+        else {
+            return;
+        };
+        let hwnd = self.hwnd;
+        unsafe {
+            let scale = GetDpiForWindow(hwnd) as f32 / 96.0;
+            let mut client = RECT::default();
+            let mut outer = RECT::default();
+            if GetClientRect(hwnd, &mut client) == 0 || GetWindowRect(hwnd, &mut outer) == 0 {
+                return;
+            }
+            let desired = (body.origin.y.0 + body.size.height.0 + 32.0 * scale).round() as i32;
+            let frame = outer.bottom - outer.top - client.bottom;
+            self.state.plot_resize.set(
+                refs.slice
+                    .window_bounds()
+                    .map(|plot| (model, desired + frame - plot.size.height.0.round() as i32)),
+            );
+            self.state.desired_client.set(desired);
+            if !self.state.resizing.get()
+                && IsZoomed(hwnd) == 0
+                && IsIconic(hwnd) == 0
+                && client.bottom != desired
+            {
+                PostMessageW(hwnd, FIT_CONTENT, 0, 0);
+            }
+        }
+    }
+
     /// The caller retains this HWND and drops the hook on its owning UI thread.
     unsafe fn install(hwnd: HWND) -> io::Result<Self> {
         // SAFETY: caller retains the HWND; reject cross-thread subclassing.
@@ -390,6 +437,63 @@ unsafe extern "system" fn caption_proc(
     // native calls; actions are queued after capture is released.
     unsafe {
         let state = &*(data as *const State);
+        match message {
+            WM_ENTERSIZEMOVE => state.resizing.set(true),
+            WM_EXITSIZEMOVE => {
+                state.resizing.set(false);
+                PostMessageW(hwnd, FIT_CONTENT, 0, 0);
+            }
+            WM_SIZING if state.desired_client.get() > 0 && lparam != 0 => {
+                let rect = &mut *(lparam as *mut RECT);
+                let mut outer = RECT::default();
+                let mut client = RECT::default();
+                GetWindowRect(hwnd, &mut outer);
+                GetClientRect(hwnd, &mut client);
+                let frame = outer.bottom - outer.top - client.bottom;
+                let height = if let Some((model, base)) = state.plot_resize.get() {
+                    let scale = GetDpiForWindow(hwnd) as f32 / 96.0;
+                    let plot = ((rect.bottom - rect.top - base) as f32 / scale).max(22.0);
+                    if model.tools.get_untracked().plot_height != plot {
+                        model.tools.update(|t| t.plot_height = plot);
+                    }
+                    base + (plot * scale).round() as i32
+                } else {
+                    state.desired_client.get() + frame
+                };
+                if matches!(wparam as u32, WMSZ_TOP | WMSZ_TOPLEFT | WMSZ_TOPRIGHT) {
+                    rect.top = rect.bottom - height;
+                } else {
+                    rect.bottom = rect.top + height;
+                }
+                return 1;
+            }
+            FIT_CONTENT => {
+                let desired = state.desired_client.get();
+                if desired > 0
+                    && !state.resizing.get()
+                    && IsZoomed(hwnd) == 0
+                    && IsIconic(hwnd) == 0
+                {
+                    let mut outer = RECT::default();
+                    let mut client = RECT::default();
+                    GetClientRect(hwnd, &mut client);
+                    GetWindowRect(hwnd, &mut outer);
+                    if client.bottom != desired {
+                        SetWindowPos(
+                            hwnd,
+                            std::ptr::null_mut(),
+                            0,
+                            0,
+                            outer.right - outer.left,
+                            outer.bottom - outer.top + desired - client.bottom,
+                            SWP_NOMOVE | SWP_NOACTIVATE | SWP_NOZORDER,
+                        );
+                    }
+                }
+                return 0;
+            }
+            _ => {}
+        }
         if message == WM_NCCALCSIZE && wparam != 0 {
             let params = &mut *(lparam as *mut NCCALCSIZE_PARAMS);
             let top = params.rgrc[0].top;

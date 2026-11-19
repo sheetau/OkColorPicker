@@ -1,5 +1,9 @@
 use crate::model::{PickerModel, stepped_channel};
-use okcolor_core::{Gamut, GamutMapping, GamutProjection, GamutSlice, Oklch};
+use crate::{
+    chart::{Chart, ChartGesture},
+    workspace::FixedAxis,
+};
+use okcolor_core::{Gamut, GamutMapping, Oklch};
 use zgui::reactive::RenderEffect;
 use zgui::{
     geom::{DevicePx, Point, Rect},
@@ -29,7 +33,8 @@ pub struct ColorParams {
     pub show_rec2020: f32,
     pub outline_dark: f32,
     pub checker_offset: [f32; 2],
-    pub padding: [f32; 2],
+    pub fixed_axis: f32,
+    pub padding: f32,
 }
 
 static COLOR_SURFACE: ShaderEffect<ColorParams> = shader! {
@@ -98,6 +103,11 @@ impl SurfaceKind {
                 Gamut::Rec2020 => 2.0,
             },
             kind: self as u8 as f32,
+            fixed_axis: match model.tools.get().fixed_axis {
+                FixedAxis::Hue => 0.0,
+                FixedAxis::Lightness => 1.0,
+                FixedAxis::Chroma => 2.0,
+            },
             outline_dark: if self != Self::Slice
                 && model
                     .color()
@@ -128,13 +138,7 @@ impl SurfaceKind {
     pub fn pick(self, model: PickerModel, x: f64, y: f64) -> Option<Oklch> {
         let [mut l, mut c, mut h, mut a] = model.current().components();
         if self == Self::Slice {
-            return GamutSlice::new(
-                h,
-                model.max_chroma.get_untracked(),
-                model.gamut.get_untracked(),
-            )
-            .ok()?
-            .pick(x, y, a);
+            return Chart::current(model).pick(x, y);
         }
         let x = x.clamp(0.0, 1.0);
         match self {
@@ -192,7 +196,11 @@ impl SurfaceKind {
 
     pub fn marker(self, model: PickerModel) -> [f64; 2] {
         match self {
-            Self::Slice => [model.c.get() / model.max_chroma.get(), 1.0 - model.l.get()],
+            Self::Slice => model
+                .tools
+                .get()
+                .fixed_axis
+                .coordinates(model.color(), model.max_chroma.get()),
             Self::Lightness => [model.l.get(), 1.0],
             Self::Chroma => [model.c.get() / model.max_chroma.get(), 1.0],
             Self::Hue => [model.h.get() / 360.0, 1.0],
@@ -275,25 +283,29 @@ pub fn ColorControl(model: PickerModel, kind: SurfaceKind, node: NodeRef) -> imp
     });
     on_cleanup_local(move || drop(effect));
     let dragging = RwSignal::new(false);
-    let projection = RwSignal::new_local(None::<GamutProjection>);
+    let projection = RwSignal::new_local(None::<ChartGesture>);
     let scale = use_window().scale();
-    let pick = move |x, y| {
-        let width = node.window_bounds()?.size.width.0 / scale.get_untracked();
-        kind.snapped(model, x, y, f64::from(width))
-    };
-    let drag = move |x, y| {
-        if kind != SurfaceKind::Slice {
-            return pick(x, y);
-        }
+    let pick = move |x, y, modifiers: Modifiers, drag: bool| {
         let bounds = node.window_bounds()?;
-        projection.with_untracked(|projection| {
-            projection.as_ref()?.project(
-                x,
-                y,
-                model.alpha.get_untracked(),
-                f64::from(bounds.size.width.0 / bounds.size.height.0),
-            )
-        })
+        let size = [bounds.size.width.0, bounds.size.height.0]
+            .map(|v| f64::from(v / scale.get_untracked()));
+        let snap = modifiers.contains(Modifiers::SHIFT) ^ model.tools.get_untracked().always_snap;
+        if kind == SurfaceKind::Slice {
+            let mut color = None;
+            projection.update(|gesture| {
+                if !drag {
+                    *gesture = Some(ChartGesture::new(Chart::current(model)));
+                }
+                color = gesture
+                    .as_mut()
+                    .and_then(|g| g.select(model, [x, y], size, snap, drag));
+            });
+            color
+        } else if snap {
+            kind.snapped(model, x, y, size[0])
+        } else {
+            kind.pick(model, x, y)
+        }
     };
     let coordinate =
         move |position: zgui::geom::Point<zgui::geom::CssPx, zgui::geom::Css>,
@@ -322,20 +334,9 @@ pub fn ColorControl(model: PickerModel, kind: SurfaceKind, node: NodeRef) -> imp
             return;
         }
         if let Some((x, y)) = coordinate(cx.position, node.window_bounds())
-            && let Some(color) = pick(x, y)
+            && let Some(color) = pick(x, y, cx.modifiers, false)
             && model.begin()
         {
-            if kind == SurfaceKind::Slice {
-                projection.set(Some(
-                    GamutSlice::new(
-                        model.h.get_untracked(),
-                        model.max_chroma.get_untracked(),
-                        model.gamut.get_untracked(),
-                    )
-                    .expect("validated slice")
-                    .projection(),
-                ));
-            }
             dragging.set(true);
             cx.capture_pointer();
             model.preview(color);
@@ -345,7 +346,7 @@ pub fn ColorControl(model: PickerModel, kind: SurfaceKind, node: NodeRef) -> imp
         if cx.primary
             && dragging.get_untracked()
             && let Some((x, y)) = coordinate(cx.position, node.window_bounds())
-            && let Some(color) = drag(x, y)
+            && let Some(color) = pick(x, y, cx.modifiers, true)
         {
             model.preview(color);
         }
@@ -353,7 +354,7 @@ pub fn ColorControl(model: PickerModel, kind: SurfaceKind, node: NodeRef) -> imp
     let up = move |cx: &mut EventCx<'_, events::PointerUp>| {
         if cx.primary && cx.button == Some(PointerButton::Primary) && dragging.get_untracked() {
             if let Some((x, y)) = coordinate(cx.position, node.window_bounds())
-                && let Some(color) = drag(x, y)
+                && let Some(color) = pick(x, y, cx.modifiers, true)
             {
                 model.preview(color);
             }
@@ -381,10 +382,12 @@ pub fn ColorControl(model: PickerModel, kind: SurfaceKind, node: NodeRef) -> imp
             SurfaceKind::Hue => 2,
             SurfaceKind::Alpha => 3,
             SurfaceKind::Slice => {
-                if matches!(cx.key, Key::Named(NamedKey::ArrowUp | NamedKey::ArrowDown)) {
-                    0
-                } else {
-                    1
+                let vertical =
+                    matches!(cx.key, Key::Named(NamedKey::ArrowUp | NamedKey::ArrowDown));
+                match (model.tools.get_untracked().fixed_axis, vertical) {
+                    (FixedAxis::Lightness, true) | (FixedAxis::Hue, false) => 1,
+                    (_, true) => 0,
+                    (_, false) => 2,
                 }
             }
         };
@@ -410,7 +413,7 @@ pub fn ColorControl(model: PickerModel, kind: SurfaceKind, node: NodeRef) -> imp
     };
     let extent = node.observe_border_size();
     let label = match kind {
-        SurfaceKind::Slice => "Lightness and chroma",
+        SurfaceKind::Slice => "Gamut chart",
         SurfaceKind::Lightness => "Lightness",
         SurfaceKind::Chroma => "Chroma",
         SurfaceKind::Hue => "Hue",
@@ -420,6 +423,7 @@ pub fn ColorControl(model: PickerModel, kind: SurfaceKind, node: NodeRef) -> imp
         box(class="color-control",
             node_ref=node,
             class:slice=kind==SurfaceKind::Slice,
+            style:height=move ||(kind==SurfaceKind::Slice).then(||format!("{}px",model.tools.get().plot_height)),
             tabindex=Focus::Sequential,
             a11y:label=label,
             on:pointer_down=down,
@@ -431,8 +435,8 @@ pub fn ColorControl(model: PickerModel, kind: SurfaceKind, node: NodeRef) -> imp
             if move ||kind==SurfaceKind::Slice {
                 text(class="axis-l",style:top=move ||{
                     let height = extent.get().map_or(152.0,|s|s.height.0/scale.get());
-                    Some(format!("{}px",((1.0-model.l.get())*f64::from(height)-5.0).clamp(0.0,f64::from((height-10.0).max(0.0)))))
-                }) {"L"}
+                    Some(format!("{}px",(kind.marker(model)[1]*f64::from(height)-5.0).clamp(0.0,f64::from((height-10.0).max(0.0)))))
+                }) {{move ||if model.tools.get().fixed_axis==FixedAxis::Lightness {"C"} else {"L"}}}
             } else {
                 box(class="color-marker",style:left=move ||Some(format!("{}%",kind.marker(model)[0].clamp(0.0,1.0)*100.0))) {
                     ColorMarker(model=model,kind=kind,bar=node,color=Memo::new(move |_| {

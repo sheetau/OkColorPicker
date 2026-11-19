@@ -30,7 +30,12 @@ fn varied_state() -> SavedState {
         format: ColorFormat::Color(Gamut::DisplayP3),
         max_chroma: 0.47,
         library: Default::default(),
-        tools: Default::default(),
+        tools: okcolor_app::workspace::ToolSettings {
+            fixed_axis: okcolor_app::workspace::FixedAxis::Chroma,
+            always_snap: true,
+            plot_height: 236.5,
+            ..Default::default()
+        },
     }
 }
 
@@ -112,6 +117,18 @@ fn malformed_unknown_and_oversized_profiles_are_preserved_and_disable_writes() {
 }
 
 #[test]
+fn existing_profiles_without_chart_preferences_restore_the_default_picker() {
+    let mut value: serde_json::Value =
+        serde_json::from_slice(&varied_state().encode().unwrap()).unwrap();
+    let tools = value["tools"].as_object_mut().unwrap();
+    for key in ["plot_height", "fixed_axis", "always_snap"] {
+        tools.remove(key);
+    }
+    let state = SavedState::decode(&serde_json::to_vec(&value).unwrap()).unwrap();
+    assert_eq!(state.tools, Default::default());
+}
+
+#[test]
 fn version_one_preserves_both_colors_and_rejects_unexpected_fields() {
     let original = varied_state();
     let mut old: serde_json::Value = serde_json::from_slice(&original.encode().unwrap()).unwrap();
@@ -131,6 +148,7 @@ fn version_one_preserves_both_colors_and_rejects_unexpected_fields() {
         decoded,
         SavedState {
             selected: 0,
+            tools: Default::default(),
             ..original
         }
     );

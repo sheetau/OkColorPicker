@@ -88,14 +88,14 @@ pub(crate) fn Swatches(model: PickerModel, refs: PickerRefs) -> impl IntoView {
         let above = (button.origin.y.0 - page.origin.y.0).max(0.0);
         let above = above / scale.get();
         let below = below / scale.get();
-        let height = (model.library.get().folders.len() + 2) as f32 * 27.0 - 5.0;
+        let height = (model.library.get().folders.len() + 2) as f32 * 22.0;
         let up = below < height && above > below;
         (up, if up { above } else { below })
     });
     view! {
         column(class="swatch-library") {
             box(class="folder-anchor") {
-                control(class="folder-heading",node_ref=Tooltips::button(refs.library[1],"Choose swatch folder"),tabindex=Focus::Sequential,
+                control(class="folder-heading",class:open=move ||menu.get(),node_ref=Tooltips::button(refs.library[1],"Choose swatch folder"),tabindex=Focus::Sequential,
                     a11y:label="Choose swatch folder",on:click=move |_|menu.update(|v|*v = !*v)) {
                     text {{move ||model.library.get().folders.iter().find(|f|Some(f.id)==destination.get()).map(|f|f.name.clone()).unwrap_or_else(||"Swatch Tiles".into())}}
                     spacer() box(class="folder-chevron") {box(class="chevron") {}}
@@ -428,13 +428,18 @@ fn insert_palette_colors(
 }
 
 #[component]
-fn PaletteInsert(model: PickerModel, index: usize, node: NodeRef) -> impl IntoView {
+fn PaletteInsert(
+    model: PickerModel,
+    index: usize,
+    node: NodeRef,
+    hot: RwSignal<Option<usize>>,
+) -> impl IntoView {
     let gestures = TileGestures::current();
     let tail = index == usize::MAX;
     let count = RwSignal::new(1usize);
     let timer = StoredValue::new_local(None::<zgui::view::IntervalHandle>);
     let clock = StoredValue::new_local(zgui::view::Timers::current().expect("picker window"));
-    view! {control(class=if tail {"palette-tail"}else{"palette-insert"},node_ref=Tooltips::button(node,if tail {"Append palette color"}else{"Insert palette colors · hold for more"}),tabindex=Focus::Sequential,
+    view! {control(class=if tail {"palette-tail"}else{"palette-insert"},class:visible=move ||hot.get()==Some(index),style:left=move ||(!tail).then(||if index==0 {"0px".into()} else {format!("{}%",100.0*index as f32/gestures.palette.get().len() as f32)}),class:interior=!tail&&index>0,node_ref=Tooltips::button(node,if tail {"Append palette color"}else{"Insert palette colors · hold for more"}),tabindex=Focus::Sequential,
         a11y:label=if tail {"Append palette color"}else{"Insert palette colors"},
         on:pointer_down=move |cx|{
             if cx.button!=Some(PointerButton::Primary){return;}
@@ -462,6 +467,29 @@ fn Palette(model: PickerModel, refs: PickerRefs) -> impl IntoView {
     let gestures = TileGestures::current();
     let heading = crate::tiles::TileHeading::mount();
 
+    let hot = RwSignal::new(None::<usize>);
+    let scale = use_window().scale();
+    let palette_hover = move |cx: &mut EventCx<'_, events::PointerMove>| {
+        let Some(b) = refs.tools[5].window_bounds() else {
+            return;
+        };
+        let scale = scale.get_untracked();
+        let width = b.size.width.0 / scale;
+        let x = cx.position.x.0 - b.origin.x.0 / scale;
+        let count = gestures.palette.get_untracked().len();
+        let cell = width / count as f32;
+        let index = (x / cell).round() as usize;
+        let next = if x < 21.0 {
+            Some(0)
+        } else if x >= width - 21.0 {
+            Some(usize::MAX)
+        } else if index < count && (x - index as f32 * cell).abs() <= 10.5 {
+            Some(index)
+        } else {
+            None
+        };
+        hot.set(next);
+    };
     let tail = refs.tools[2];
     let end = Destination::Palette(usize::MAX);
     gestures.register(tail, end);
@@ -501,20 +529,22 @@ fn Palette(model: PickerModel, refs: PickerRefs) -> impl IntoView {
             text {"Palettes"} spacer() HoverLabel(heading=heading)
             control(node_ref=Tooltips::button(refs.tools[0],"Generate palette · Space"),tabindex=Focus::Sequential,class="generate-button",a11y:label="Generate palette",on:click=move |_|regenerate()) {{zgui::elements::vector().document(include_str!("../assets/generate.svg")).class("generate-icon")}}
         }
-        row(class="palette-strip",node_ref=refs.tools[5]) {
+        row(class="palette-strip",node_ref=refs.tools[5],on:pointer_move=palette_hover,on:pointer_leave=move |_|hot.set(None)) {
             for i in move ||0..gestures.palette.get().len(),key=|i:&usize|*i {
                 column(class="palette-cell",node_ref=if i==0{refs.tools[6]}else{NodeRef::new()}) {
                     ColorTile(class="palette-color",node=NodeRef::new(),source=Source::Palette(i),destination=Some(Destination::Palette(i)),
                         color=Memo::new(move |_|gestures.palette.get().get(i).map(|v|v.0).unwrap_or(model.current())),
                         label=Memo::new(move |_|gestures.palette.get().get(i).map(|v|swatch_name(v.0)).unwrap_or_default()),
                         activate=UnsyncCallback::new(move |()|{if let Some(v)=gestures.palette.get_untracked().get(i){model.select(v.0);}}))
-                    PaletteInsert(model=model,index=i,node=NodeRef::new())
                     if move ||gestures.palette.get().get(i).is_some_and(|entry|entry.1) {
                         box(class="palette-lock",node_ref=if i==0{refs.palette_dot}else{NodeRef::new()},style:background-color=move ||gestures.palette.get().get(i).map(|v|crate::tiles::contrast_ink(v.0).to_owned())) {}
                     }
                 }
             }
-            PaletteInsert(model=model,index=usize::MAX,node=tail)
+            for i in move ||0..gestures.palette.get().len(),key=|i:&usize|*i {
+                PaletteInsert(model=model,index=i,node=NodeRef::new(),hot=hot)
+            }
+            PaletteInsert(model=model,index=usize::MAX,node=tail,hot=hot)
             if move ||gestures.hovering.get()==Some(end) {box(class="palette-end-line") {}}
         }
     }}
@@ -721,6 +751,23 @@ pub(crate) fn Contrast(model: PickerModel, refs: PickerRefs) -> impl IntoView {
     let region = refs.tools[5];
     let dragging = RwSignal::new(false);
     let scale = use_window().scale();
+    let hot = RwSignal::new(None::<usize>);
+    let contrast_hover = move |cx: &mut EventCx<'_, events::PointerMove>| {
+        let Some(b) = region.window_bounds() else {
+            return;
+        };
+        let scale = scale.get_untracked();
+        let x = cx.position.x.0 - b.origin.x.0 / scale;
+        let y = cx.position.y.0 - b.origin.y.0 / scale - 20.0;
+        let level = (y / 40.0).round();
+        hot.set(
+            ((146.0..186.0).contains(&x)
+                && (y - 40.0 * level).abs() <= 11.0
+                && level >= 0.0
+                && level <= grid.get_untracked().levels.len() as f32)
+                .then_some(level as usize),
+        );
+    };
     let boundary = move |y: f32| {
         if let Some(b) = region.window_bounds() {
             let count = grid.get_untracked().levels.len();
@@ -807,7 +854,7 @@ pub(crate) fn Contrast(model: PickerModel, refs: PickerRefs) -> impl IntoView {
             control(class="tool-action",node_ref=Tooltips::button(refs.tools[2],"Switch chroma limit"),tabindex=Focus::Sequential,on:click=move |_|model.edit_contrast(|t|t.contrast_grid.max_chroma = !t.contrast_grid.max_chroma)) {{move ||if grid.get().max_chroma{"Max C"}else{"Current C"}}}
             CopyButton(text=UnsyncCallback::new(move |()|css()),compact=true,label="Copy generated CSS colors")
         }
-        column(class="contrast-grid",node_ref=region) {
+        column(class="contrast-grid",node_ref=region,on:pointer_move=contrast_hover,on:pointer_leave=move |_|hot.set(None)) {
             box(class="grid-padding",style:background-color=move ||Some(hex(grid_reference(&model.tools.get(),grid.get().split>0)))) {}
             for i in move ||0..grid.get().levels.len(),key=|i:&usize|*i {
                 row(class="contrast-row",style:background-color=move ||Some(hex(grid_reference(&model.tools.get(),i<grid.get().split))),
@@ -853,7 +900,6 @@ pub(crate) fn Contrast(model: PickerModel, refs: PickerRefs) -> impl IntoView {
                             }
                         } else {text {"—"}}
                     }
-                    control(class="contrast-insert",node_ref=Tooltips::button(NodeRef::new(),"Insert contrast level"),tabindex=Focus::Sequential,a11y:label="Insert contrast level",on:click=move |_|insert(i)) {{zgui::elements::vector().document(include_str!("../assets/add.svg")).class("add-icon")}}
                 }
             }
             box(class="grid-padding",style:background-color=move ||Some(hex(grid_reference(&model.tools.get(),grid.get().split==grid.get().levels.len())))) {}
@@ -885,7 +931,11 @@ pub(crate) fn Contrast(model: PickerModel, refs: PickerRefs) -> impl IntoView {
             } else {
                 control(class="restore-reference",class:at-top=move ||grid.get().split>0,node_ref=Tooltips::button(refs.tools[6],"Restore both backgrounds"),style:color=move ||Some(crate::tiles::contrast_ink(grid_reference(&model.tools.get(),grid.get().split>0)).into()),tabindex=Focus::Sequential,a11y:label="Restore both backgrounds",on:click=move |_|model.edit_contrast(|t|{if t.contrast_grid.levels.len()==1{t.contrast_grid.insert(1);}t.contrast_grid.split=t.contrast_grid.levels.len()/2;})) {{zgui::elements::vector().document(include_str!("../assets/add.svg")).class("add-icon")}}
             }
-            control(class="contrast-insert append-level",node_ref=Tooltips::button(NodeRef::new(),"Append contrast level"),tabindex=Focus::Sequential,a11y:label="Append contrast level",on:click=move |_|insert(grid.get_untracked().levels.len())) {{zgui::elements::vector().document(include_str!("../assets/add.svg")).class("add-icon")}}
+            for i in move ||0..=grid.get().levels.len(),key=|i:&usize|*i {
+                control(class="contrast-insert",class:visible=move ||hot.get()==Some(i),style:top=move ||Some(format!("{}px",9+i*40)),
+                    node_ref=Tooltips::button(NodeRef::new(),"Insert contrast level"),tabindex=Focus::Sequential,a11y:label="Insert contrast level",
+                    on:click=move |_|insert(i)) {{zgui::elements::vector().document(include_str!("../assets/add.svg")).class("add-icon")}}
+            }
         }
     }}
 }

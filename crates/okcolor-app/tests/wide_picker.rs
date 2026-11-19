@@ -244,7 +244,7 @@ fn mounted_picker_preserves_wide_color_and_repaints_every_sample_on_display_tran
                                 let mut rgb = if kind == SurfaceKind::Slice
                                     && !color.in_gamut(Gamut::Rec2020)
                                 {
-                                    [44.0 / 255.0, 42.0 / 255.0, 48.0 / 255.0]
+                                    [9.0 / 255.0; 3]
                                 } else {
                                     preview(color, status.wide_output, mapping)
                                 };

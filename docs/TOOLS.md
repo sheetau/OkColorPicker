@@ -3,13 +3,14 @@
 Use the three buttons in the status bar or **Ctrl+1/2/3** to select Picker,
 Harmony or APCA. **Ctrl+Tab** and **Ctrl+Shift+Tab** cycle through them. Every
 page includes recent colors, main/sub slots, L/C/H/alpha fields, editable color
-codes and the swatch library. Scroll the body to reach lower groups at smaller
-window sizes. Drag the title to move the window. The menu opens Settings.
+codes and the swatch library. The window fits the active page. Resize the Picker
+vertically to change the chart height. Returning to Picker restores that height. Drag the title to move the window. The menu opens Settings.
 
 ## Picker
 
-The crosshairs mark lightness and chroma. The hue bar hatches colors outside
-the working gamut. Settings controls the gamut boundaries, alpha slider,
+The chart holds one component constant. Choose L, C or H in Settings to change
+the fixed component and its slider. Hold Shift to snap to a visible gamut boundary
+on the chart or slider. **Always snap to gamut boundaries** reverses the Shift behavior. Settings controls the gamut boundaries, alpha slider,
 sRGB conversion and **Always on top**. Press **O** or **R** outside a text
 field to select the corresponding code for replacement. Escape discards an
 uncommitted field edit and releases text focus. The eyedropper

@@ -11,7 +11,7 @@ struct Params {
     show_rec2020: f32,
     outline_dark: f32,
     checker_offset: vec2<f32>,
-    padding: vec2<f32>,
+    fixed_axis: f32, padding: f32,
 }
 
 fn xyz_from_lab(lab: vec3<f32>) -> vec3<f32> {
@@ -119,7 +119,19 @@ fn preview_rgb(original: vec3<f32>, method: f32) -> vec3<f32> {
 
 fn color_at(uv: vec2<f32>, params: Params) -> vec3<f32> {
     var lch = params.channels.xyz;
-    if params.kind < 0.5 { lch.x = 1.0 - uv.y; lch.y = uv.x * params.max_chroma; }
+    if params.kind < 0.5 {
+        if params.fixed_axis < 0.5 {
+            lch.x = 1.0 - uv.y;
+            lch.y = uv.x * params.max_chroma;
+        } else {
+            lch.z = uv.x * 360.0;
+            if params.fixed_axis < 1.5 {
+                lch.y = (1.0 - uv.y) * params.max_chroma;
+            } else {
+                lch.x = 1.0 - uv.y;
+            }
+        }
+    }
     else if params.kind < 1.5 { lch.x = uv.x; }
     else if params.kind < 2.5 { lch.y = uv.x * params.max_chroma; }
     else if params.kind < 3.5 { lch.z = uv.x * 360.0; }
@@ -130,10 +142,9 @@ fn color_at(uv: vec2<f32>, params: Params) -> vec3<f32> {
 fn shade(input: ShaderInput, params: Params) -> vec4<f32> {
     let uv = clamp(input.local / max(input.size, vec2<f32>(1.0)), vec2<f32>(0.0), vec2<f32>(1.0));
     let lab = color_at(uv, params);
-    // The reference chart canvas is transparent outside the selected gamut.
-    // Its dark card and the two CSS difference strokes share this surface color.
+    // The difference strokes retain the reference chart ink.
     let paper = vec3<f32>(44.0,42.0,48.0) / 255.0;
-    var rgb = paper;
+    var rgb = vec3<f32>(9.0 / 255.0);
     if params.kind >= 0.5 || in_gamut(lab, params.gamut) {
         if params.wide > 0.5 { rgb = extended(lab); }
         else { rgb = preview_rgb(lab, params.mapping); }
@@ -170,14 +181,21 @@ fn shade(input: ShaderInput, params: Params) -> vec4<f32> {
                 if params.kind > 0.5 {
                     rgb = vec3<f32>(0.0);
                 } else {
-                    let ink = select(select(vec3<f32>(0.65, 0.71, 0.79), vec3<f32>(0.71, 0.56, 0.82), g == 1), vec3<f32>(0.93), g == 0);
-                    rgb = mix(rgb, ink, 0.85);
+                    // Reference dark-theme gamut separators, expressed in OKLCH.
+                    let inner = g == 0 && params.show_p3 > 0.5;
+                    let lch = select(vec3<f32>(0.198, 0.006, 301.0), vec3<f32>(0.235, 0.01, 304.0), inner);
+                    let angle = radians(lch.z);
+                    rgb = clipped(vec3<f32>(lch.x, lch.y * cos(angle), lch.y * sin(angle)));
                 }
             }
         }
     }
     if params.kind < 0.5 {
-        let marker = vec2<f32>(params.channels.y / params.max_chroma, 1.0 - params.channels.x);
+        var marker = vec2<f32>(params.channels.y / params.max_chroma, 1.0 - params.channels.x);
+        if params.fixed_axis > 0.5 {
+            marker.x = params.channels.z / 360.0;
+            if params.fixed_axis < 1.5 { marker.y = 1.0 - params.channels.y / params.max_chroma; }
+        }
         let stroke=max(1.0,round(input.scale));
         let start=clamp(floor(marker * input.size + 0.5),vec2<f32>(0.0),input.size-vec2<f32>(stroke));
         let line=input.local-start;

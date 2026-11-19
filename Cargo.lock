@@ -2518,6 +2518,7 @@ dependencies = [
 name = "okcolor-app"
 version = "0.1.0"
 dependencies = [
+ "ab_glyph",
  "futures",
  "half",
  "okcolor-core",

@@ -83,6 +83,14 @@ fn marker_checker_has_a_fixed_origin_and_dark_samples_have_inner_borders() {
 fn color(params: ColorParams, x: f64, y: f64) -> Oklch {
     let [mut l, mut c, mut h, _] = params.channels.map(f64::from);
     match params.kind as u8 {
+        0 if params.fixed_axis == 1.0 => {
+            h = 360.0 * x;
+            c = (1.0 - y) * f64::from(params.max_chroma);
+        }
+        0 if params.fixed_axis == 2.0 => {
+            h = 360.0 * x;
+            l = 1.0 - y;
+        }
         0 => {
             l = 1.0 - y;
             c = x * f64::from(params.max_chroma);
@@ -98,7 +106,7 @@ fn color(params: ColorParams, x: f64, y: f64) -> Oklch {
 #[test]
 #[ignore = "requires a graphics device; run with --ignored"]
 fn gpu_surfaces_match_f64_mapping_and_working_gamut_mask() {
-    let cases: Vec<_> = [30.0, 145.0, 270.0]
+    let mut cases: Vec<_> = [30.0, 145.0, 270.0]
         .into_iter()
         .flat_map(|h| {
             [0.0, 1.0].into_iter().flat_map(move |mapping| {
@@ -113,6 +121,12 @@ fn gpu_surfaces_match_f64_mapping_and_working_gamut_mask() {
             })
         })
         .collect();
+    for fixed_axis in [1.0, 2.0] {
+        cases.push(ColorParams {
+            fixed_axis,
+            ..cases[0]
+        });
+    }
     let frames = Arc::new(Mutex::new(Vec::new()));
     let capture = frames.clone();
     let count = cases.len();
@@ -171,7 +185,7 @@ fn gpu_surfaces_match_f64_mapping_and_working_gamut_mask() {
                     GamutMapping::Clip
                 };
                 let mut expected = if params.kind == 0.0 && !source.in_gamut(Gamut::DisplayP3) {
-                    [44.0 / 255.0, 42.0 / 255.0, 48.0 / 255.0]
+                    [9.0 / 255.0; 3]
                 } else {
                     source.mapped_rgb(Gamut::Srgb, method).unwrap()
                 };
@@ -181,10 +195,20 @@ fn gpu_surfaces_match_f64_mapping_and_working_gamut_mask() {
                     expected = expected.map(|v| v * distance.min(1.0));
                 }
                 if params.kind == 0.0 {
-                    let col = (f64::from(params.channels[1] / params.max_chroma) * f64::from(WIDTH))
-                        .round() as i32;
-                    let row =
-                        ((1.0 - f64::from(params.channels[0])) * f64::from(HEIGHT)).round() as i32;
+                    let col = (f64::from(if params.fixed_axis == 0.0 {
+                        params.channels[1] / params.max_chroma
+                    } else {
+                        params.channels[2] / 360.0
+                    }) * f64::from(WIDTH))
+                    .round() as i32;
+                    let row = ((1.0
+                        - f64::from(if params.fixed_axis == 1.0 {
+                            params.channels[1] / params.max_chroma
+                        } else {
+                            params.channels[0]
+                        }))
+                        * f64::from(HEIGHT))
+                    .round() as i32;
                     let paper = [44.0 / 255.0, 42.0 / 255.0, 48.0 / 255.0];
                     for on_axis in [y == row, x == col] {
                         if on_axis {

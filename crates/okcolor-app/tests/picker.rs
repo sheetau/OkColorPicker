@@ -447,6 +447,12 @@ fn mounted_picker_draws_and_drag_is_one_undo() {
 
                 // Both gamut flags remain independent, even when the larger gamut dominates.
                 refs.slice.focus();harness.settle(32);
+                let key = |event, modifiers| SurfaceEvent::Key {
+                    state: KeyState::Pressed,
+                    event,
+                    modifiers,
+                    timestamp: Timestamp::ORIGIN,
+                };
                 let click = |harness: &mut Harness<_>,node: NodeRef| {
                     let b=node.window_bounds().unwrap();
                     for action in [PointerAction::Pressed,PointerAction::Released] {
@@ -457,6 +463,23 @@ fn mounted_picker_draws_and_drag_is_one_undo() {
                 let original_color=model.current();
                 click(&mut harness,refs.menu);
                 assert!(refs.gamut_toggles[0].window_bounds().is_some(),"Settings did not open after cancelling a captured scrub");
+                click(&mut harness,refs.axis_trigger);
+                harness.deliver_to_first(key(KeyEvent::named(NamedKey::Escape,PhysicalKey::Unidentified(0)),Modifiers::NONE));
+                harness.settle(32);
+                assert!(refs.axis_options[0].window_bounds().is_none() && refs.axis_trigger.window_bounds().is_some(),"Escape closes the chart menu first");
+                for (index,axis) in [okcolor_app::workspace::FixedAxis::Lightness,okcolor_app::workspace::FixedAxis::Chroma,okcolor_app::workspace::FixedAxis::Hue].into_iter().enumerate() {
+                    click(&mut harness,refs.axis_trigger);
+                    click(&mut harness,refs.axis_options[index]);
+                    assert_eq!(model.tools.get_untracked().fixed_axis,axis);
+                    click(&mut harness,refs.menu);
+                    assert!(refs.bars[index].window_bounds().is_some());
+                    assert_eq!(refs.slice.text_content(),if index==0 {"C"} else {"L"});
+                    click(&mut harness,refs.menu);
+                }
+                assert!(!model.tools.get_untracked().always_snap);
+                click(&mut harness,refs.always_snap);
+                assert!(model.tools.get_untracked().always_snap);
+                click(&mut harness,refs.always_snap);
                 click(&mut harness,refs.gamut_toggles[0]);
                 assert!(model.show_p3.get_untracked());
                 assert_eq!(model.gamut.get_untracked(),okcolor_core::Gamut::DisplayP3);
@@ -484,12 +507,6 @@ fn mounted_picker_draws_and_drag_is_one_undo() {
                 // Focus and type through the platform path, not through the model setter.
                 refs.numbers[0].focus();
                 harness.settle(32);
-                let key = |event, modifiers| SurfaceEvent::Key {
-                    state: KeyState::Pressed,
-                    event,
-                    modifiers,
-                    timestamp: Timestamp::ORIGIN,
-                };
                 harness.deliver_to_first(key(KeyEvent::character("a"), Modifiers::CONTROL));
                 harness.settle(32);
                 for c in "0.625".chars() {
@@ -564,11 +581,15 @@ fn mounted_picker_draws_and_drag_is_one_undo() {
                     harness.deliver_to_first(SurfaceEvent::Pointer {action,event:PointerEvent::mouse(point).with_button(PointerButton::Primary),modifiers:Modifiers::NONE,timestamp:Timestamp::ORIGIN});
                     harness.settle(32);
                 }
+                assert!((model.current().components()[2]-f64::from(edge)).abs()>0.5,"ordinary clicks follow the pointer");
+                for action in [PointerAction::Pressed,PointerAction::Released] {
+                    harness.deliver_to_first(SurfaceEvent::Pointer {action,event:PointerEvent::mouse(point).with_button(PointerButton::Primary),modifiers:Modifiers::SHIFT,timestamp:Timestamp::ORIGIN});
+                    harness.settle(32);
+                }
                 let snapped=model.current().components()[2];
                 assert!((f64::from(edge-1)..=f64::from(edge)).contains(&snapped));
                 assert_ne!(at_hue(snapped-0.01).in_gamut(okcolor_core::Gamut::Srgb),at_hue(snapped+0.01).in_gamut(okcolor_core::Gamut::Srgb));
                 model.select(before_snap);harness.settle(32);
-                let mut short_slice = 0.0;
                 for (width,height) in [(330.0,520.0),(330.0,720.0),(600.0,720.0),(300.0,520.0),(330.0,560.0)] {
                     harness.deliver_to_first(SurfaceEvent::Resized(Size::new(DevicePx(width),DevicePx(height))));
                     harness.advance(Duration::from_millis(20));
@@ -579,8 +600,7 @@ fn mounted_picker_draws_and_drag_is_one_undo() {
                         assert!(bounds.origin.y.0>=0.0 && bounds.origin.y.0+bounds.size.height.0<=height+0.1,"vertical overflow: {bounds:?} in {height}");
                     }
                     let slice=refs.slice.window_bounds().unwrap().size.height.0;
-                    if width==330.0 && height==520.0 { short_slice=slice; }
-                    if width==330.0 && height==720.0 { assert!((slice-short_slice).abs()<0.1,"fixed-height slice changed when scrolling space increased"); }
+                    assert!((slice-model.tools.get_untracked().plot_height).abs()<0.1,"layout must honor the saved chart height");
                 }
                 refs.slice.focus();
                 harness.settle(32);
@@ -808,6 +828,16 @@ fn mounted_picker_draws_and_drag_is_one_undo() {
                 harness.settle(32);
                 assert!(refs.recents.scroll_position().offset.x.0>0.0);
                 assert!(refs.recents.scroll_position().is_at_end_horizontally());
+                {
+                    let rendered=frames.lock().unwrap();
+                    let frame=rendered.last().unwrap();
+                    let top=recent.origin.y.0.round() as i32;
+                    for y in top..top+recent.size.height.0 as i32 {
+                        for x in frame.size().width-32..frame.size().width {
+                            assert!(frame.rgba(x,y)[0]<16,"right gutter retained ink at {x}, {y}");
+                        }
+                    }
+                }
                 let delete=Point::new(CssPx(last.x.0-46.0),last.y);
                 let old_len=model.recent.get_untracked().len();
                 for action in [PointerAction::Pressed,PointerAction::Released] {

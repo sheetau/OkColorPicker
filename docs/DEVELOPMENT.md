@@ -155,8 +155,8 @@ uses native hit testing, with a top resize band on restored windows. The product
 does not paint an extra window border or use Windows-side CSS resize grips.
 The settings menu independently toggles P3 and Rec.2020. sRGB stays visible;
 the largest enabled gamut controls selection. The chroma extent is 0.37, or
-0.47 while Rec.2020 is enabled. The body scrolls independently between the
-fixed title and status bars.
+0.47 while Rec.2020 is enabled. The restored window fits the active page. A vertical
+Picker resize changes the chart height, which is stored in logical pixels.
 
 The Windows caption bridge exposes the painted controls as `HTMINBUTTON`,
 `HTMAXBUTTON` and `HTCLOSE`. It uses physical bounds from each completed frame

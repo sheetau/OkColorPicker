@@ -2,7 +2,7 @@
 
 An OKLCH color picker for Windows, built in Rust with zgui.
 
-Explore a fixed-hue lightness/chroma slice, adjust L/C/H/alpha, and edit or copy
+Explore OKLCH slices at a fixed lightness, chroma or hue, adjust L/C/H/alpha, and edit or copy
 CSS color values. The picker preserves the original color while displaying
 sRGB, Display P3 and Rec.2020 boundaries. The preview uses the detected Windows
 display mode and falls back to sRGB when extended color output is unavailable.

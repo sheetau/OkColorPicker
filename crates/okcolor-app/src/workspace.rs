@@ -160,6 +160,29 @@ impl Library {
     }
 }
 
+/// The component held constant across the two-dimensional chart.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum FixedAxis {
+    #[default]
+    Hue,
+    Lightness,
+    Chroma,
+}
+
+impl FixedAxis {
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            Self::Lightness => "L",
+            Self::Chroma => "C",
+            Self::Hue => "H",
+        }
+    }
+}
+
+pub(crate) fn default_plot_height() -> f32 {
+    152.0
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ToolSettings {
@@ -169,6 +192,12 @@ pub struct ToolSettings {
     pub always_on_top: bool,
     #[serde(default)]
     pub show_alpha_slider: bool,
+    #[serde(default)]
+    pub always_snap: bool,
+    #[serde(default)]
+    pub fixed_axis: FixedAxis,
+    #[serde(default = "default_plot_height")]
+    pub plot_height: f32,
     pub background: [f64; 4],
     pub target_lc: f64,
     pub harmony: usize,
@@ -178,6 +207,9 @@ impl Default for ToolSettings {
         Self {
             always_on_top: false,
             show_alpha_slider: false,
+            always_snap: false,
+            fixed_axis: FixedAxis::default(),
+            plot_height: default_plot_height(),
             contrast_grid: ContrastGrid::default(),
             background: [1.0, 0.0, 0.0, 1.0],
             target_lc: 60.0,
@@ -201,6 +233,8 @@ impl ToolSettings {
             || a != 1.0
             || !self.target_lc.is_finite()
             || !(-110.0..=110.0).contains(&self.target_lc)
+            || !self.plot_height.is_finite()
+            || self.plot_height < 22.0
             || self.harmony >= 5
         {
             return Err("Invalid tool settings");

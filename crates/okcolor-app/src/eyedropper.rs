@@ -46,6 +46,7 @@ pub(crate) fn Eyedropper(model: PickerModel, refs: PickerRefs) -> impl IntoView 
 
 #[cfg(windows)]
 mod native {
+    use ab_glyph::{Font, FontRef, ScaleFont, point};
     use std::{cell::Cell, ptr::null_mut, rc::Rc};
     use windows_sys::{
         Win32::{
@@ -72,8 +73,7 @@ mod native {
         chip: HWND,
         pixel: Cell<Option<u32>>,
         scale: Cell<u32>,
-        font: Cell<HFONT>,
-        font_resource: *mut std::ffi::c_void,
+        font: FontRef<'static>,
         pressed: Cell<Option<u32>>,
         finished: Cell<bool>,
         finish: Rc<Finish>,
@@ -106,20 +106,12 @@ mod native {
                 if chip.is_null() {
                     return None;
                 }
-                let bytes = include_bytes!("../assets/MartianMono.ttf");
-                let mut count = 0;
-                let font_resource = AddFontMemResourceEx(
-                    bytes.as_ptr().cast(),
-                    bytes.len() as u32,
-                    null_mut(),
-                    &raw mut count,
-                );
                 let state = Box::new(State {
                     chip,
                     pixel: Cell::new(None),
                     scale: Cell::new(0),
-                    font: Cell::new(null_mut()),
-                    font_resource,
+                    font: FontRef::try_from_slice(include_bytes!("../assets/MartianMono.ttf"))
+                        .expect("embedded Martian Mono"),
                     pressed: Cell::new(None),
                     finished: Cell::new(false),
                     finish: Rc::new(finish),
@@ -162,12 +154,6 @@ mod native {
                     UnhookWindowsHookEx(self.mouse_hook);
                 }
                 DestroyWindow(self.chip);
-                if !self.state.font.get().is_null() {
-                    DeleteObject(self.state.font.get());
-                }
-                if !self.state.font_resource.is_null() {
-                    RemoveFontMemResourceEx(self.state.font_resource);
-                }
             }
         }
     }
@@ -217,8 +203,8 @@ mod native {
                 }
                 let px = |n| scaled(n, dpi);
                 let screen = info.rcMonitor;
-                let x = chip_axis(p.x, px(5), px(82), screen.left, screen.right);
-                let y = chip_axis(p.y, px(10), px(32), screen.top, screen.bottom);
+                let x = chip_axis(p.x, px(5), px(5), px(82), screen.left, screen.right);
+                let y = chip_axis(p.y, px(10), 0, px(32), screen.top, screen.bottom);
                 let mut old = RECT::default();
                 GetWindowRect(self.chip, &mut old);
                 let occluded = IsWindowVisible(self.chip) != 0
@@ -240,28 +226,6 @@ mod native {
                 };
                 let changed = self.pixel.replace(sampled) != sampled;
                 let resized = self.scale.replace(dpi) != dpi;
-                if resized {
-                    let font = CreateFontW(
-                        -px(10),
-                        0,
-                        0,
-                        0,
-                        FW_NORMAL as i32,
-                        0,
-                        0,
-                        0,
-                        DEFAULT_CHARSET as u32,
-                        0,
-                        0,
-                        CLEARTYPE_QUALITY as u32,
-                        0,
-                        w!("Martian Mono"),
-                    );
-                    let old = self.font.replace(font);
-                    if !old.is_null() {
-                        DeleteObject(old);
-                    }
-                }
                 if occluded
                     || old.left != x
                     || old.top != y
@@ -308,18 +272,30 @@ mod native {
                         (color >> 8) as u8,
                         (color >> 16) as u8
                     );
-                    let utf16: Vec<_> = text.encode_utf16().collect();
-                    let font = SelectObject(dc, self.font.get());
-                    SetTextColor(dc, 0xe0e0e0);
-                    SetBkMode(dc, TRANSPARENT as i32);
-                    DrawTextW(
-                        dc,
-                        utf16.as_ptr(),
-                        6,
-                        &mut rect(32, 1, 81, 31),
-                        DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX,
+                    let em = 10.0 * self.scale.get() as f32 / 96.0;
+                    let font = self.font.as_scaled(
+                        em * self.font.height_unscaled()
+                            / self.font.units_per_em().expect("OpenType em"),
                     );
-                    SelectObject(dc, font);
+                    let baseline = px(16) as f32 + (font.ascent() + font.descent()) * 0.5;
+                    let mut x = px(32) as f32;
+                    for ch in text.chars() {
+                        let id = font.glyph_id(ch);
+                        let glyph = id.with_scale_and_position(font.scale(), point(x, baseline));
+                        if let Some(outline) = self.font.outline_glyph(glyph) {
+                            let bounds = outline.px_bounds();
+                            outline.draw(|dx, dy, coverage| {
+                                let gray = (224.0 * coverage).round() as u32;
+                                SetPixelV(
+                                    dc,
+                                    bounds.min.x as i32 + dx as i32,
+                                    bounds.min.y as i32 + dy as i32,
+                                    gray * 0x010101,
+                                );
+                            });
+                        }
+                        x += font.h_advance(id);
+                    }
                 }
                 EndPaint(self.chip, &ps);
             }
@@ -329,11 +305,18 @@ mod native {
     fn scaled(n: i32, dpi: u32) -> i32 {
         (n * dpi as i32 + 48) / 96
     }
-    fn chip_axis(pointer: i32, offset: i32, size: i32, min: i32, max: i32) -> i32 {
+    fn chip_axis(
+        pointer: i32,
+        offset: i32,
+        reverse_offset: i32,
+        size: i32,
+        min: i32,
+        max: i32,
+    ) -> i32 {
         let preferred = if pointer + offset + size <= max {
             pointer + offset
         } else {
-            pointer - offset - size
+            pointer - reverse_offset - size
         };
         preferred.clamp(min, (max - size).max(min))
     }

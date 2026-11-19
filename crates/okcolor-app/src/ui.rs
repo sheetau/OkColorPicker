@@ -21,6 +21,8 @@ pub(crate) struct InputExit(pub NodeRef);
 #[derive(Clone, Copy)]
 pub struct PickerRefs {
     pub tool_page: NodeRef,
+    pub page_content: NodeRef,
+    pub settings_content: NodeRef,
     pub eyedropper: NodeRef,
     pub tooltip: NodeRef,
     pub palette_dot: NodeRef,
@@ -35,6 +37,9 @@ pub struct PickerRefs {
     pub sampling: RwSignal<bool>,
     pub menu: NodeRef,
     pub gamut_toggles: [NodeRef; 2],
+    pub axis_trigger: NodeRef,
+    pub axis_options: [NodeRef; 3],
+    pub always_snap: NodeRef,
     pub companion: NodeRef,
     pub csp_pull: NodeRef,
     pub csp_send: NodeRef,
@@ -55,6 +60,8 @@ impl Default for PickerRefs {
     fn default() -> Self {
         Self {
             tool_page: NodeRef::new(),
+            page_content: NodeRef::new(),
+            settings_content: NodeRef::new(),
             eyedropper: NodeRef::new(),
             tooltip: NodeRef::new(),
             palette_dot: NodeRef::new(),
@@ -68,6 +75,9 @@ impl Default for PickerRefs {
             topmost: NodeRef::new(),
             sampling: RwSignal::new(false),
             menu: NodeRef::new(),
+            axis_trigger: NodeRef::new(),
+            axis_options: std::array::from_fn(|_| NodeRef::new()),
+            always_snap: NodeRef::new(),
             gamut_toggles: std::array::from_fn(|_| NodeRef::new()),
             companion: NodeRef::new(),
             csp_pull: NodeRef::new(),
@@ -95,10 +105,10 @@ pub fn Picker(model: PickerModel, refs: PickerRefs) -> impl IntoView {
     let app_root = NodeRef::new();
     provide_context(InputExit(app_root));
     let app_size = app_root.observe_border_size();
+    let maximized = use_window().maximized();
     let scale = use_window().scale();
     let tips = crate::tooltip::Tooltips::mount();
     for (node, label) in [
-        (refs.menu, "Settings"),
         (refs.swap, "Swap colors"),
         (refs.tabs[0], "Picker · Ctrl+1"),
         (refs.tabs[1], "Harmony · Ctrl+2"),
@@ -109,13 +119,29 @@ pub fn Picker(model: PickerModel, refs: PickerRefs) -> impl IntoView {
     crate::tooltip::Tooltips::bind(refs.companion, move || {
         let hint = model.companion.hint.get_untracked();
         if model.companion.active() && !hint.is_empty() {
-            format!("{} · {hint}", model.companion.label())
+            format!("Disconnect CSP · {hint}")
+        } else if model.companion.active() {
+            "Disconnect CSP".into()
         } else {
             model.companion.label().into()
         }
     });
     let clipboard = use_clipboard();
     let settings = RwSignal::new(false);
+    Tooltips::bind(refs.menu, move || {
+        if settings.get_untracked() {
+            "Close settings"
+        } else {
+            "Settings"
+        }
+        .into()
+    });
+    #[cfg(windows)]
+    if let Some(bridge) =
+        use_context::<StoredValue<crate::windows_caption::CaptionBridge, LocalStorage>>()
+    {
+        bridge.with_value(|bridge| bridge.bind_content(refs, model));
+    }
     let shortcut = move |cx: &mut EventCx<'_, events::KeyDown>| {
         if cx.key == Key::Named(NamedKey::Escape) && refs.sampling.get_untracked() {
             refs.sampling.set(false);
@@ -134,6 +160,9 @@ pub fn Picker(model: PickerModel, refs: PickerRefs) -> impl IntoView {
             return;
         }
         if cx.key == Key::Named(NamedKey::Escape) && settings.get_untracked() {
+            if refs.axis_options[0].window_bounds().is_some() {
+                return;
+            }
             settings.set(false);
             refs.menu.focus();
             cx.prevent_default();
@@ -222,13 +251,13 @@ pub fn Picker(model: PickerModel, refs: PickerRefs) -> impl IntoView {
     });
     on_cleanup_local(move || drop(shortcuts));
     view! {
-        column(class="app",class:dragging=move ||gestures.dragging.get().is_some(),node_ref=app_root,tabindex=Focus::Programmatic) {
+        column(class="app",class:expanded-chart=move ||maximized.get() && model.tab.get()==Tab::Picker, class:dragging=move ||gestures.dragging.get().is_some(),node_ref=app_root,tabindex=Focus::Programmatic) {
             Titlebar(refs=refs,settings=settings)
             if move ||settings.get() {
                 Settings(model=model,refs=refs)
             } else {
                 column(class="scroll-body",node_ref=refs.tool_page) {
-                column(class="page-content",style:width=move ||app_size.get().map(|size|format!("{}px",(size.width.0/scale.get()-40.0).max(0.0)))) {
+                column(class="page-content",node_ref=refs.page_content,style:width=move ||app_size.get().map(|size|format!("{}px",(size.width.0/scale.get()-40.0).max(0.0)))) {
                     RecentColors(model=model,node=refs.recents)
                     if move ||model.tab.get()==Tab::Picker {
                         GamutPanel(model=model,refs=refs)
@@ -312,7 +341,7 @@ pub(crate) fn RecentColors(model: PickerModel, node: NodeRef) -> impl IntoView {
                 }
             }
             box(class="recent-gutter") {
-                if move ||position.get().content_size.width.0>position.get().scrollport.width.0 && !position.get().is_at_end_horizontally() {
+                if move ||{let pos=position.get(); pos.content_size.width.0-pos.scrollport.width.0-pos.offset.x.0>0.5} {
                     control(class="recent-nav",node_ref=Tooltips::button(NodeRef::new(),"Older recent colors"),tabindex=Focus::Sequential,a11y:label="Older recent colors",
                         on:click=move |_|shift(1.0)) {box(class="history-arrow redo") {}}
                 }
@@ -378,7 +407,7 @@ fn Fallbacks(model: PickerModel, refs: PickerRefs) -> impl IntoView {
     }
 }
 
-/// These two small menus share dismissal and focus behavior, without owning application state.
+/// Close each popup on Escape or an outside press and restore keyboard focus.
 pub(crate) fn dismiss_menu(open: RwSignal<bool>, popup: NodeRef, trigger: NodeRef) {
     let effect = RenderEffect::new(move |_| {
         if !open.get() || popup.get().is_none() {
@@ -413,7 +442,7 @@ fn GamutPanel(model: PickerModel, refs: PickerRefs) -> impl IntoView {
         let Some((legend, plot)) = legend_size.get().zip(plot_size.get()) else {
             return false;
         };
-        plot.width.0 * ((model.c.get() / model.max_chroma.get()) as f32)
+        plot.width.0 * (SurfaceKind::Slice.marker(model)[0].clamp(0.0, 1.0) as f32)
             < legend.width.0 + 10.0 * scale.get()
     };
     view! {
@@ -421,13 +450,17 @@ fn GamutPanel(model: PickerModel, refs: PickerRefs) -> impl IntoView {
                     ColorControl(model=model,kind=SurfaceKind::Slice,node=refs.slice)
                     row(class="plot-caption") {
                         row(class="legend-group",node_ref=legend,class:right=near_legend) {
-                            text(class="legend srgb") {"sRGB"}
-                            if move ||model.show_p3.get() {text(class="legend p3") {"P3"}}
-                            if move ||model.show_rec2020.get() {text(class="legend rec2020") {"Rec.2020"}}
+                            text(class="legend") {{move || {
+                                let c=model.color();
+                                if c.in_gamut(Gamut::Srgb) {"sRGB"} else if c.in_gamut(Gamut::DisplayP3) {"P3"}
+                                else if c.in_gamut(Gamut::Rec2020) {"Rec.2020"} else {"Out of gamut"}
+                            }}}
                         }
-                        text(class="axis-c",style:left=move ||Some(format!("{}%",(model.c.get()/model.max_chroma.get()).clamp(0.01,0.99)*100.0))) {"C"}
+                        text(class="axis-c",style:left=move ||Some(format!("{}%",SurfaceKind::Slice.marker(model)[0].clamp(0.01,0.99)*100.0))) {{move ||if model.tools.get().fixed_axis==crate::workspace::FixedAxis::Hue {"C"} else {"H"}}}
                     }
-                    ColorControl(model=model,kind=SurfaceKind::Hue,node=refs.bars[2])
+                    for axis in move ||[model.tools.get().fixed_axis],key=|axis:&crate::workspace::FixedAxis|axis.label() {
+                        ColorControl(model=model,kind=axis.bar(),node=refs.bars[axis.bar() as usize-1])
+                    }
                     if move ||model.tools.get().show_alpha_slider {ColorControl(model=model,kind=SurfaceKind::Alpha,node=refs.bars[3])}
                 }
     }
@@ -492,7 +525,7 @@ fn Titlebar(refs: PickerRefs, settings: RwSignal<bool>) -> impl IntoView {
     view! {
         row(class="titlebar",on:pointer_down=window.move_drag_handler()) {
             control(class="menu-button",node_ref=refs.menu,tabindex=Focus::Sequential,
-                class:open=move ||settings.get(),a11y:label="Settings",on:pointer_down=window.no_drag_handler(),
+                class:open=move ||settings.get(),a11y:label=move ||if settings.get() {"Close settings"} else {"Settings"},on:pointer_down=window.no_drag_handler(),
                 on:click=move |_|settings.update(|open|*open = !*open)) {
                 box(class="menu-line first") {} box(class="menu-line second") {}
                 {zgui::elements::vector().document(include_str!("../assets/menu-close.svg")).class("menu-close")}
@@ -508,9 +541,14 @@ fn Titlebar(refs: PickerRefs, settings: RwSignal<bool>) -> impl IntoView {
 
 #[component]
 fn Settings(model: PickerModel, refs: PickerRefs) -> impl IntoView {
+    use crate::workspace::FixedAxis;
     let level_window = StoredValue::new_local(use_window());
+    let menu = RwSignal::new(false);
+    let popup = NodeRef::new();
+    let trigger = refs.axis_trigger;
+    dismiss_menu(menu, popup, trigger);
     view! {
-        column(class="body settings") {
+        column(class="body settings",node_ref=refs.settings_content) {
             SettingToggle(label="Always on top",node=refs.topmost,checked=Memo::new(move |_|model.tools.get().always_on_top),
                 toggle=UnsyncCallback::new(move |()|{
                     model.tools.update(|tools|tools.always_on_top = !tools.always_on_top);
@@ -527,6 +565,23 @@ fn Settings(model: PickerModel, refs: PickerRefs) -> impl IntoView {
                 SettingToggle(label="Show P3",node=refs.gamut_toggles[0],checked=Memo::new(move |_|model.show_p3.get()),
                     toggle=UnsyncCallback::new(move |()|model.toggle_gamut(Gamut::DisplayP3)))
             }
+            column(class="folder-anchor") {
+                control(class="setting-row folder-heading",class:open=move ||menu.get(),node_ref=trigger,tabindex=Focus::Sequential,
+                    a11y:label="Gamut chart fixed axis",on:click=move |_|menu.update(|v| *v = !*v)) {
+                    text {"Gamut chart"} spacer() text {{move ||model.tools.get().fixed_axis.label()}}
+                    box(class="folder-chevron") {box(class="chevron") {}}
+                }
+                if move ||menu.get() {
+                    column(class="folder-menu",node_ref=popup) {
+                        for axis in move ||[FixedAxis::Lightness,FixedAxis::Chroma,FixedAxis::Hue],key=|axis:&FixedAxis|axis.label() {
+                            control(node_ref=refs.axis_options[axis.bar() as usize-1],class:selected=move ||model.tools.get().fixed_axis==axis,tabindex=Focus::Sequential,
+                                on:click=move |_|{model.tools.update(|t|t.fixed_axis=axis);menu.set(false);trigger.focus();}) {text {{axis.label()}}}
+                        }
+                    }
+                }
+            }
+            SettingToggle(label="Always snap to gamut boundaries",node=refs.always_snap,checked=Memo::new(move |_|model.tools.get().always_snap),
+                toggle=UnsyncCallback::new(move |()|model.tools.update(|t|t.always_snap = !t.always_snap)))
             SettingToggle(label="Show alpha slider",node=NodeRef::new(),checked=Memo::new(move |_|model.tools.get().show_alpha_slider),
                 toggle=UnsyncCallback::new(move |()|model.tools.update(|t|t.show_alpha_slider = !t.show_alpha_slider)))
         }
@@ -596,7 +651,7 @@ fn Statusbar(model: PickerModel, refs: PickerRefs, settings: RwSignal<bool>) -> 
         }
         control(class="csp-connect",node_ref=refs.companion,tabindex=Focus::Sequential,
             class:warning=move ||matches!(model.companion.state.get(),okcolor_csp::worker::State::Failed(_)),
-            a11y:label=move ||model.companion.label(),
+            a11y:label=move ||if model.companion.active() {"Disconnect CSP"} else {model.companion.label()},
             on:click=move |_|{if model.companion.active(){model.companion.disconnect();}else{model.companion.scan();}}) {
             if move ||model.companion.active() {
                 box(class="disconnect open") {box(class="menu-line first") {} box(class="menu-line second") {}}
@@ -954,7 +1009,7 @@ fn CodeField(model: PickerModel, node: NodeRef, primary: bool) -> impl IntoView 
                             exit.focus();cx.stop_propagation();cx.prevent_default();
                         }}) {{draft.get_untracked()}}
                 if move || !primary {
-                    control(class="format-trigger",
+                    control(class="format-trigger",class:open=move ||menu.get(),
                         node_ref=Tooltips::button(trigger,"Choose output format"),
                         tabindex=Focus::Sequential,
                         a11y:label="Choose output format",

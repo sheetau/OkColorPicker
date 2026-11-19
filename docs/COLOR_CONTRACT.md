@@ -86,14 +86,15 @@ An active wide output path does not promise complete P3/Rec.2020 panel coverage.
 
 ## Slice and history
 
-A slice fixes hue, puts absolute chroma on the horizontal axis, and increases
-lightness upward. Its chroma extent is explicit and does not change per sample.
-Out-of-gamut clicks do not start a selection. Once a drag starts inside the gamut,
+By default the chart fixes hue, puts absolute chroma on the horizontal axis, and
+increases lightness upward. Fixing lightness or chroma puts hue on the horizontal
+axis and the other component on the vertical axis. Its chroma extent is explicit and does not change per sample.
+Without snapping, out-of-gamut clicks do not start a selection. Once a drag starts inside the gamut,
 coordinates stay captured outside the chart and project to the nearest valid
-point in the chart's screen coordinates. Both lightness and chroma may change;
+point in the chart's screen coordinates. Both plotted components may change;
 the calculation accounts for the rendered width/height ratio. Boundary samples
 are cached for the gesture, and local minima are refined against the actual
-gamut boundary. Hue and alpha are preserved.
+gamut boundary. The fixed component and alpha are preserved.
 Reentering the gamut resumes direct selection. Markers are not clamped, so numeric/external colors can
 remain outside the chart. Each gamut boundary is calculated independently;
 Display P3 and Rec.2020 must not be forced into a nested order.
