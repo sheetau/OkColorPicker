@@ -193,10 +193,10 @@ fn shade(input: ShaderInput, params: Params) -> vec4<f32> {
         // A crossing in either axis marks the exact RGB-boundary neighborhood.
         if params.kind > 0.5 && !in_gamut(lab, params.gamut) {
             // Perpendicular distance to parallel 45-degree strokes, in device pixels.
-            let pitch = 11.0 * input.scale;
+            let pitch = 6.0 * input.scale;
             let normal = dot(input.local, vec2<f32>(0.70710678));
             let distance = abs(fract(normal / pitch + 0.5) - 0.5) * pitch;
-            rgb *= clamp(distance - 4.0 * input.scale + 0.5, 0.0, 1.0);
+            rgb *= clamp(distance - 0.5 * input.scale + 0.5, 0.0, 1.0);
         }
         for (var g = 2; g >= 0; g -= 1) {
             if (g == 1 && params.show_p3 < 0.5) || (g == 2 && params.show_rec2020 < 0.5) { continue; }
@@ -243,8 +243,8 @@ fn shade(input: ShaderInput, params: Params) -> vec4<f32> {
         let d = max((p.x - p.y) * 0.70710678, p.y - input.size.y);
         let stroke = input.scale;
         let coverage = 1.0 - smoothstep(-0.5, 0.5, d);
-        let luminance = dot(vec3<f32>(decode_channel(rgb.r), decode_channel(rgb.g), decode_channel(rgb.b)), vec3<f32>(0.2126, 0.7152, 0.0722));
-        let ink = select(1.0, 0.0, luminance > 0.179);
+        // Mirror the near-black swatch threshold at the white end of the range.
+        let ink = select(1.0, 40.0 / 255.0, min(min(rgb.r, rgb.g),rgb.b) > 246.0 / 255.0);
         rgb = mix(rgb, vec3<f32>(ink), smoothstep(-stroke - 0.5, -stroke + 0.5, d));
         return vec4<f32>(rgb * coverage, coverage);
     }

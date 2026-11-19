@@ -102,6 +102,16 @@ impl TileGestures {
         })
     }
 
+    pub(crate) fn palette_boundary(self, index: usize) -> String {
+        self.palette.with(|colors| {
+            let black = Oklch::new(0.0, 0.0, 0.0, 1.0).expect("black");
+            let i = index.min(colors.len());
+            let left = i.checked_sub(1).map_or(black, |j| colors[j].0);
+            let right = colors.get(i).map_or(black, |entry| entry.0);
+            boundary_ink(left, right)
+        })
+    }
+
     fn drop_at(self, model: PickerModel, source: Source, color: Oklch, destination: Destination) {
         let destination = match destination {
             Destination::Folder(folder) => Destination::Library(folder, None),
@@ -239,7 +249,18 @@ pub(crate) fn ColorTile(
     let suppress_click = RwSignal::new(false);
     let copied = RwSignal::new(false);
     crate::tooltip::Tooltips::bind(node, move || {
-        let text = label.get_untracked();
+        let mut text = label.get_untracked();
+        if (matches!(source, Source::Library(_))
+            || matches!(class, "preset-color" | "transparent-color"))
+            && let Ok(hex) = format_color(
+                color.get_untracked(),
+                okcolor_core::ColorFormat::Hex,
+                model.mapping.get_untracked(),
+            )
+        {
+            text.push(' ');
+            text.push_str(&hex.text);
+        }
         if matches!(source, Source::Palette(_)) {
             format!("{text} · Shift-click to lock or unlock")
         } else {
@@ -269,7 +290,7 @@ pub(crate) fn ColorTile(
                     hold.start(move || {
                         suppress_click.set(true);
                         origin.set(None);
-                        rename.0.run(id);
+                        rename.begin.run(id);
                     });
                 }
             }
@@ -342,6 +363,7 @@ pub(crate) fn ColorTile(
     let unavailable = Memo::new(move |_| {
         class == "slot-tile" && model.display.get().unavailable(color.get()).is_some()
     });
+    let renaming = move || matches!(source, Source::Library(id) if rename.is_some_and(|state| state.active.get() == Some(id)));
     let ink = move || boundary_ink(color.get(), Oklch::new(0.0, 0.0, 0.0, 1.0).expect("black"));
     let fill = Memo::new(move |_| {
         if class == "slot-tile" {
@@ -352,7 +374,8 @@ pub(crate) fn ColorTile(
     });
     view! {control(class=class,node_ref=node,tabindex=Focus::Sequential,a11y:label=move ||label.get(),
         class:dragged=move ||shared.dragging.get()==Some(node),
-        style:outline-color=move ||(shared.dragging.get()==Some(node)).then(&ink),
+        class:renaming=renaming,
+        style:outline-color=move ||(shared.dragging.get()==Some(node) || renaming()).then(&ink),
         on:pointer_enter=move |_|{
             if let Some(heading)=heading{heading.0.set(label.get_untracked());}
         },
@@ -370,7 +393,7 @@ pub(crate) fn ColorTile(
             suppress_click.set(false);
         }) {
             ColorSwatch(model=model,color=fill,outline_dark=class!="transparent-color")
-            if move ||destination.is_some() && shared.hovering.get()==destination {box(class="insertion-line") {}}
+            if move ||destination.is_some() && shared.hovering.get()==destination {box(class="insertion-line",style:background-color=move ||match destination { Some(Destination::Palette(i))=>Some(shared.palette_boundary(i)), _=>None }) {}}
             if move ||unavailable.get() {
                 box(class="unavailable-slot") {{zgui::elements::vector().document(include_str!("../assets/unavailable.svg")).class("unavailable-cross")}}
             }

@@ -62,8 +62,13 @@ fn marker_checker_has_a_fixed_origin_and_dark_samples_have_inner_borders() {
             channels: [0.0, 0.0, 0.0, 1.0],
             ..Default::default()
         },
+        ColorParams {
+            kind: 6.0,
+            channels: [0.83, 0.0, 0.0, 1.0],
+            ..Default::default()
+        },
     ];
-    app().with_size(16.0,96.0).with_renderer(Box::new(factory))
+    app().with_size(16.0,112.0).with_renderer(Box::new(factory))
         .with_stylesheet(":root { background-color: #000; } .sample { width: 16px; height: 16px; min-height: 16px; }")
         .run_on(|handler| {let mut harness=Harness::new(handler);harness.settle(32);Ok(())}, move || {
             zgui::elements::column().child(cases.into_iter().map(|params| zgui::custom::custom(ColorSurface::new(params)).0.class("sample").into_view()).collect::<Vec<_>>())
@@ -80,8 +85,15 @@ fn marker_checker_has_a_fixed_origin_and_dark_samples_have_inner_borders() {
         image.rgba(7, 24),
         "checker cells must not travel with the marker"
     );
-    assert!(image.rgba(13, 70)[0] < 75, "black outline on white marker");
+    assert!(
+        image.rgba(13, 70)[0] < 110,
+        "dark gray outline on white marker"
+    );
     assert!(image.rgba(13, 86)[0] > 180, "white outline on black marker");
+    assert!(
+        image.rgba(13, 102)[0] > 226,
+        "ordinary light gray retains white marker ink"
+    );
     assert_eq!(image.rgba(0, 40), [40, 40, 40, 255]);
     assert_eq!(image.rgba(1, 40), [0, 0, 0, 255]);
     assert_eq!(image.rgba(8, 40), [0, 0, 0, 255]);
@@ -249,8 +261,8 @@ fn gpu_surfaces_match_f64_mapping_and_working_gamut_mask() {
                 };
                 if (1.0..=3.0).contains(&params.kind) && !source.in_gamut(Gamut::DisplayP3) {
                     let normal = f64::from(x + y + 1) * std::f64::consts::FRAC_1_SQRT_2;
-                    let distance = (normal - 11.0 * (normal / 11.0).round()).abs();
-                    expected = expected.map(|v| v * (distance - 3.5).clamp(0.0, 1.0));
+                    let distance = (normal - 6.0 * (normal / 6.0).round()).abs();
+                    expected = expected.map(|v| v * distance.clamp(0.0, 1.0));
                 }
                 if params.kind == 0.0 {
                     let col = (f64::from(if params.fixed_axis == 0.0 {

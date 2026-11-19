@@ -174,6 +174,10 @@ pub fn Picker(model: PickerModel, refs: PickerRefs) -> impl IntoView {
             && !settings.get_untracked()
         {
             let field = match cx.key.as_str() {
+                Some("l" | "L") => Some(refs.numbers[0]),
+                Some("c" | "C") => Some(refs.numbers[1]),
+                Some("h" | "H") => Some(refs.numbers[2]),
+                Some("a" | "A") => Some(refs.numbers[3]),
                 Some("o" | "O") => Some(refs.codes[0]),
                 Some("r" | "R") => Some(refs.codes[1]),
                 _ => None,

@@ -215,6 +215,7 @@ fn PaletteInsert(
     node: NodeRef,
     hot: RwSignal<Option<usize>>,
 ) -> impl IntoView {
+    let dragging_tile = TileGestures::current().dragging;
     let tail = index == usize::MAX;
     const PIXELS_PER_COLOR: f32 = 12.0;
     let origin_y = RwSignal::new(None::<f32>);
@@ -251,6 +252,7 @@ fn PaletteInsert(
         }
     });
     view! {control(class=if tail {"palette-tail"}else{"palette-insert"},
+        class:tile-drag=move ||dragging_tile.get().is_some(),
         class:visible=move ||origin_y.get().is_some() || hot.get()==Some(index),
         style:left=move ||(!tail).then(||if index==0 {"0px".into()} else {format!("{}%",100.0*index as f32/model.palette.get().len() as f32)}),
         class:interior=!tail&&index>0,node_ref=node,tabindex=Focus::Sequential,
@@ -357,7 +359,7 @@ fn Palette(model: PickerModel, refs: PickerRefs) -> impl IntoView {
                 PaletteInsert(model=model,index=i,node=NodeRef::new(),hot=hot)
             }
             PaletteInsert(model=model,index=usize::MAX,node=tail,hot=hot)
-            if move ||gestures.hovering.get()==Some(end) {box(class="palette-end-line") {}}
+            if move ||gestures.hovering.get()==Some(end) {box(class="palette-end-line",style:background-color=move ||Some(gestures.palette_boundary(usize::MAX))) {}}
         }
     }}
 }

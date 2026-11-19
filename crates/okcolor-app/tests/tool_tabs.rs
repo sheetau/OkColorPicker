@@ -139,6 +139,14 @@ fn mounted_tabs_edit_recall_adjust_and_restore() {
                 h.run_for(Duration::from_secs(2),Duration::from_millis(20));h.settle(32);
                 assert!(refs.tooltip.window_bounds().is_some(),"eyedropper hover must mount a tooltip");
                 assert!(refs.tooltip.text_content().contains("Eyedropper"),"tooltip: {}",refs.tooltip.text_content());
+                for (i,shortcut) in ["l","c","h","a"].into_iter().enumerate() {
+                    key(&mut h,KeyEvent::character(shortcut),Modifiers::NONE);
+                    assert!(model.editing_text.get_untracked());
+                    key(&mut h,KeyEvent::character("7"),Modifiers::NONE);
+                    assert_eq!(refs.numbers[i].text_content(),"7");
+                    key(&mut h,KeyEvent::named(NamedKey::Escape,PhysicalKey::Unidentified(0)),Modifiers::NONE);
+                    assert_eq!(model.current(),original);
+                }
                 // A fresh window routes a printable key to the document root.
                 key(&mut h,KeyEvent::character("r"),Modifiers::NONE);
                 assert!(model.editing_text.get_untracked(),"unfocused window shortcut");
@@ -364,6 +372,13 @@ fn mounted_tabs_edit_recall_adjust_and_restore() {
                 tile_pointer(&mut h, PointerAction::Pressed, primary, palette_start);
                 let before_reorder=model.palette.get_untracked();
                 tile_pointer(&mut h, PointerAction::Moved, primary, palette_end);
+                {
+                    let capture=frames.lock().unwrap();
+                    let frame=capture.last().unwrap();
+                    let x=(tail.origin.x.0+tail.size.width.0/2.0) as i32;
+                    let y=(tail.origin.y.0+tail.size.height.0/2.0) as i32;
+                    assert_eq!(frame.rgba(x,y),frame.rgba(x+3,y+3),"dragging hides the plus icon");
+                }
                 tile_pointer(&mut h, PointerAction::Released, primary, palette_end);
                 let reordered=model.palette.get_untracked();
                 model.undo();h.settle(32);
@@ -812,9 +827,17 @@ fn mounted_tabs_edit_recall_adjust_and_restore() {
                 tile_pointer(&mut h,PointerAction::Pressed,primary,tile);
                 h.run_for(hold,Duration::from_millis(20));h.settle(32);
                 tile_pointer(&mut h,PointerAction::Released,primary,tile);
+                let tile_border=point_in(refs.library[7],0.0,9.0);
+                let pixel=|p:Point<CssPx,zgui::geom::Css>|frames.lock().unwrap().last().unwrap().rgba(p.x.0 as i32,p.y.0 as i32);
+                assert_ne!(pixel(tile_border),pixel(tile),"rename outlines the selected swatch");
                 type_text(&mut h,input,"Peach");
                 key(&mut h,enter(),Modifiers::NONE);
                 assert_eq!(model.library.get_untracked().swatches.last().unwrap().name,"Peach");
+                tile_pointer(&mut h,PointerAction::Moved,primary,center);
+                tile_pointer(&mut h,PointerAction::Moved,primary,tile);
+                h.run_for(Duration::from_secs(2),Duration::from_millis(20));h.settle(32);
+                let hex=okcolor_core::format_color(model.library.get_untracked().swatches.last().unwrap().color(),okcolor_core::ColorFormat::Hex,model.mapping.get_untracked()).unwrap().text;
+                assert_eq!(refs.tooltip.text_content(),format!("Peach{hex}"));
                 // Press then move early: the same hold opens the menu without entering the name field.
                 tile_pointer(&mut h,PointerAction::Pressed,primary,tile);
                 tile_pointer(&mut h,PointerAction::Moved,primary,center);

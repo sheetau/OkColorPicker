@@ -37,7 +37,10 @@ impl Hold {
 }
 
 #[derive(Clone, Copy)]
-pub(crate) struct RenameSwatch(pub UnsyncCallback<u64>);
+pub(crate) struct RenameSwatch {
+    pub begin: UnsyncCallback<u64>,
+    pub active: Memo<Option<u64>>,
+}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Heading {
@@ -137,7 +140,13 @@ pub(crate) fn Swatches(model: PickerModel, refs: PickerRefs) -> impl IntoView {
         menu.set(false);
         heading.set(Heading::Rename(id));
     };
-    provide_context(RenameSwatch(UnsyncCallback::new(rename)));
+    provide_context(RenameSwatch {
+        begin: UnsyncCallback::new(rename),
+        active: Memo::new(move |_| match heading.get() {
+            Heading::Rename(id) => Some(id),
+            _ => None,
+        }),
+    });
     let remove = move |id| {
         model.edit_library(|lib| {
             lib.remove(id);

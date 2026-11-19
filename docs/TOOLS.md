@@ -15,7 +15,7 @@ The chart holds one component constant. In Settings, **Lightness** shows the con
 The slider edits the component held constant in that view. Hold Shift to snap to a visible gamut boundary
 on the chart or slider. **Always snap to gamut boundaries** reverses the Shift
 behavior. Settings controls the gamut boundaries, the alpha slider and
-**Always on top**. Press **O** or **R** outside a text
+**Always on top**. Press **L**, **C**, **H** or **A** outside a text field to select the corresponding numeric value for replacement. Press **O** or **R** outside a text
 field to select the corresponding code for replacement. Escape discards an
 uncommitted field edit and releases text focus. The eyedropper
 (**Ctrl+Shift+C**) samples a visible SDR desktop pixel across Windows displays.
