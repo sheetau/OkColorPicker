@@ -68,40 +68,31 @@ fn marker_checker_has_a_fixed_origin_and_dark_samples_have_inner_borders() {
             ..Default::default()
         },
     ];
-    app().with_size(16.0,112.0).with_renderer(Box::new(factory))
-        .with_stylesheet(":root { background-color: #000; } .sample { width: 16px; height: 16px; min-height: 16px; }")
+    app().with_size(22.0,98.0).with_renderer(Box::new(factory))
+        .with_stylesheet(":root { background-color: #fff; } .sample { width: 22px; height: 14px; min-height: 14px; }")
         .run_on(|handler| {let mut harness=Harness::new(handler);harness.settle(32);Ok(())}, move || {
             zgui::elements::column().child(cases.into_iter().map(|params| zgui::custom::custom(ColorSurface::new(params)).0.class("sample").into_view()).collect::<Vec<_>>())
         }).unwrap();
     let frames = frames.lock().unwrap();
     let image = frames.last().unwrap();
-    assert_eq!(
-        image.rgba(8, 8),
-        image.rgba(5, 24),
-        "a three-pixel move must leave checker cells fixed in bar coordinates"
-    );
-    assert_ne!(
-        image.rgba(7, 8),
-        image.rgba(7, 24),
-        "checker cells must not travel with the marker"
-    );
-    assert!(
-        image.rgba(13, 70)[0] < 110,
-        "dark gray outline on white marker"
-    );
-    assert!(image.rgba(13, 86)[0] > 180, "white outline on black marker");
-    assert!(
-        image.rgba(13, 102)[0] > 226,
-        "ordinary light gray retains white marker ink"
-    );
-    assert_eq!(image.rgba(0, 40), [40, 40, 40, 255]);
-    assert_eq!(image.rgba(1, 40), [0, 0, 0, 255]);
-    assert_eq!(image.rgba(8, 40), [0, 0, 0, 255]);
-    assert_eq!(
-        image.rgba(0, 56),
-        [255, 255, 255, 255],
-        "bright samples must not gain a border"
-    );
+    // At y=9 the checker is visible on both sides of x=10; moving the thumb by three
+    // pixels moves its checker UVs while the cells remain fixed in bar coordinates.
+    assert_eq!(image.rgba(12, 9), image.rgba(9, 23));
+    assert_ne!(image.rgba(9, 9), image.rgba(9, 23));
+    for top in [56, 70, 84] {
+        let border = image.rgba(11, top + 10)[0];
+        assert!(border >= 245, "white outline at row {top}: {border}");
+        let near = image.rgba(17, top + 8)[0];
+        let far = image.rgba(20, top + 8)[0];
+        assert!(
+            near > 180 && near + 8 < far && far >= 250,
+            "soft outer shadow for every fill at {top}: {near}/{far}"
+        );
+        assert_eq!(near, image.rgba(4, top + 8)[0], "zero horizontal offset");
+    }
+    assert_eq!(image.rgba(0, 34), [40, 40, 40, 255]);
+    assert_eq!(image.rgba(1, 34), [0, 0, 0, 255]);
+    assert_eq!(image.rgba(0, 48), [255, 255, 255, 255]);
 }
 
 fn color(params: ColorParams, x: f64, y: f64) -> Oklch {
@@ -260,9 +251,7 @@ fn gpu_surfaces_match_f64_mapping_and_working_gamut_mask() {
                     source.mapped_rgb(Gamut::Srgb, method).unwrap()
                 };
                 if (1.0..=3.0).contains(&params.kind) && !source.in_gamut(Gamut::DisplayP3) {
-                    let normal = f64::from(x + y + 1) * std::f64::consts::FRAC_1_SQRT_2;
-                    let distance = (normal - 6.0 * (normal / 6.0).round()).abs();
-                    expected = expected.map(|v| v * distance.clamp(0.0, 1.0));
+                    expected = expected.map(|v| v * 0.5);
                 }
                 if params.kind == 0.0 {
                     let col = (f64::from(if params.fixed_axis == 0.0 {

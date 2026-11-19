@@ -230,8 +230,8 @@ pub fn ColorMarker(
         };
         let marker = kind.marker(model);
         [
-            size.width.0 * marker[0].clamp(0.0, 1.0) as f32 - 8.0 * scale.get(),
-            size.height.0 - 8.0 * scale.get(),
+            size.width.0 * marker[0].clamp(0.0, 1.0) as f32 - 11.0 * scale.get(),
+            size.height.0 - 11.0 * scale.get(),
         ]
     })
 }

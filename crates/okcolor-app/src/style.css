@@ -38,7 +38,7 @@ control:disabled { opacity: 0.25; }
 .expanded-chart .page-content { height: 100%; }
 .expanded-chart .plot-section, .expanded-chart .color-control.slice { flex: 1; }
 .color-surface { width: 100%; height: 100%; pointer-events: none; }
-.color-marker { position: absolute; width: var(--icon); height: 8px; margin-left: -8px; bottom: 0; }
+.color-marker { position: absolute; width: 22px; height: 14px; margin-left: -11px; bottom: -3px; pointer-events: none; }
 .axis-l, .axis-c { position: absolute; font-family: var(--mono); font-size: var(--text-sm); line-height: 10px; height: 10px; color: var(--text); pointer-events: none; }
 .axis-l { right: 2px; }
 .axis-c { margin-left: -3px; }
