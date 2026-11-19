@@ -10,10 +10,11 @@ use std::{cell::Cell, rc::Rc, time::Duration};
 use windows_sys::Win32::{
     Foundation::{HWND, LPARAM, POINT, RECT},
     Graphics::Gdi::{
-        ClientToScreen, DC_BRUSH, FillRect, GetDC, GetPixel, GetStockObject, ReleaseDC,
-        ScreenToClient, SetDCBrushColor, UpdateWindow,
+        ClientToScreen, DC_BRUSH, EnumDisplayMonitors, FillRect, GetDC, GetPixel, GetStockObject,
+        HDC, HMONITOR, ReleaseDC, ScreenToClient, SetDCBrushColor, UpdateWindow,
     },
     UI::{
+        HiDpi::GetDpiForWindow,
         Input::KeyboardAndMouse::{GetCapture, MAPVK_VK_TO_VSC, MapVirtualKeyW, VK_ESCAPE, VK_UP},
         WindowsAndMessaging::*,
     },
@@ -56,6 +57,159 @@ fn click(hwnd: HWND, node: NodeRef) {
     for message in [WM_MOUSEMOVE, WM_LBUTTONDOWN, WM_LBUTTONUP] {
         mouse(hwnd, message, point);
     }
+}
+
+// The monitor rectangles and the fixture window DPI come from the current desktop.
+fn verify_monitor_samples(owner: HWND, patch: HWND, preview: HWND) -> POINT {
+    unsafe extern "system" fn collect(_: HMONITOR, _: HDC, rect: *mut RECT, data: LPARAM) -> i32 {
+        unsafe {
+            (&mut *(data as *mut Vec<RECT>)).push(*rect);
+        }
+        1
+    }
+    let mut monitors = Vec::<RECT>::new();
+    assert_ne!(
+        unsafe {
+            EnumDisplayMonitors(
+                std::ptr::null_mut(),
+                std::ptr::null(),
+                Some(collect),
+                &raw mut monitors as LPARAM,
+            )
+        },
+        0
+    );
+    assert!(!monitors.is_empty());
+    let mut last = POINT::default();
+    for m in monitors {
+        for at_edge in [false, true] {
+            let patch_color = if at_edge { 0x95c73a } else { 0xf16693 };
+            let (left, top) = if at_edge {
+                (m.right - 104, m.bottom - 70)
+            } else {
+                (m.left + 32, m.top + 32)
+            };
+            let screen = if at_edge {
+                POINT {
+                    x: m.right - 3,
+                    y: m.bottom - 3,
+                }
+            } else {
+                POINT {
+                    x: left + 3,
+                    y: top + 3,
+                }
+            };
+            unsafe {
+                assert_ne!(
+                    SetWindowPos(patch, HWND_TOPMOST, left, top, 104, 70, SWP_NOACTIVATE),
+                    0
+                );
+                UpdateWindow(patch);
+                let dc = GetDC(patch);
+                SetDCBrushColor(dc, patch_color);
+                FillRect(
+                    dc,
+                    &RECT {
+                        left: 0,
+                        top: 0,
+                        right: 104,
+                        bottom: 70,
+                    },
+                    GetStockObject(DC_BRUSH),
+                );
+                ReleaseDC(patch, dc);
+                windows_sys::Win32::Graphics::Dwm::DwmFlush();
+            }
+            let dpi = unsafe { GetDpiForWindow(patch) };
+            assert_ne!(dpi, 0);
+            let px = |n: i32| (n * dpi as i32 + 48) / 96;
+            let mut point = screen;
+            assert_ne!(unsafe { ScreenToClient(owner, &mut point) }, 0);
+            mouse(owner, WM_MOUSEMOVE, point);
+            let mut chip = RECT::default();
+            unsafe {
+                GetWindowRect(preview, &mut chip);
+                UpdateWindow(preview);
+            }
+            let (x, y) = if at_edge {
+                (screen.x - px(5) - px(82), screen.y - px(10) - px(32))
+            } else {
+                (screen.x + px(5), screen.y + px(10))
+            };
+            assert_eq!(
+                (
+                    chip.left,
+                    chip.top,
+                    chip.right - chip.left,
+                    chip.bottom - chip.top
+                ),
+                (x, y, px(82), px(32)),
+                "desktop preview at {}x{} ({dpi} DPI)",
+                screen.x,
+                screen.y
+            );
+            let factor = f64::from(dpi) / 96.0;
+            check_preview_pixels(preview, chip, factor, patch_color);
+            eprintln!(
+                "Desktop eyedropper at ({}, {}), DPI {dpi}, chip {}x{}",
+                screen.x,
+                screen.y,
+                chip.right - chip.left,
+                chip.bottom - chip.top
+            );
+            last = screen;
+        }
+    }
+    last
+}
+
+fn check_preview_pixels(preview: HWND, chip: RECT, factor: f64, expected: u32) {
+    let dc = unsafe { GetDC(preview) };
+    let color = unsafe { GetPixel(dc, (12.0 * factor) as i32, (12.0 * factor) as i32) };
+    assert_eq!(unsafe { GetPixel(dc, 0, 0) }, 0x424242, "preview frame");
+    assert_eq!(
+        unsafe { GetPixel(dc, (30.0 * factor) as i32, (16.0 * factor) as i32) },
+        0,
+        "gap between swatch and HEX"
+    );
+    if let Ok(dir) = std::env::var("OKCOLOR_TOOLS_CAPTURE_DIR") {
+        let (width, height) = (chip.right - chip.left, chip.bottom - chip.top);
+        let mut pixels = Vec::with_capacity((width * height * 4) as usize);
+        let mut text_ink = 0;
+        for y in 0..height {
+            for x in 0..width {
+                let pixel = unsafe { GetPixel(dc, x, y) };
+                pixels.extend_from_slice(&[
+                    pixel as u8,
+                    (pixel >> 8) as u8,
+                    (pixel >> 16) as u8,
+                    255,
+                ]);
+                if f64::from(x) > 32.0 * factor
+                    && x < width - 2
+                    && y > 2
+                    && y < height - 2
+                    && pixel as u8 > 100
+                {
+                    text_ink += 1;
+                }
+            }
+        }
+        assert!(text_ink > 24, "the HEX label must be painted");
+        std::fs::write(
+            std::path::Path::new(&dir).join(format!("eyedropper-{width}x{height}.rgba")),
+            pixels,
+        )
+        .unwrap();
+    }
+    unsafe {
+        ReleaseDC(preview, dc);
+    }
+    assert_eq!(
+        color, expected,
+        "preview shows the external test window's pixel"
+    );
 }
 
 struct Probe {
@@ -215,20 +369,14 @@ impl FrameProbe for Probe {
                 click(hwnd, refs.menu);
             }
             11 if refs.eyedropper.window_bounds().is_some() => {
-                // An independent, test-owned surface beside the picker provides a known desktop pixel.
-                let x = if rect.right + 110 < unsafe { GetSystemMetrics(SM_CXSCREEN) } {
-                    rect.right + 5
-                } else {
-                    rect.left - 110
-                };
                 let external = unsafe {
                     CreateWindowExW(
                         WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
                         windows_sys::w!("STATIC"),
                         windows_sys::w!("OkColorPicker desktop test patch"),
                         WS_POPUP | WS_VISIBLE,
-                        x,
-                        rect.top + 40,
+                        rect.left,
+                        rect.top,
                         104,
                         70,
                         std::ptr::null_mut(),
@@ -238,41 +386,11 @@ impl FrameProbe for Probe {
                     )
                 };
                 assert!(!external.is_null());
-                unsafe {
-                    UpdateWindow(external);
-                    let dc = GetDC(external);
-                    SetDCBrushColor(dc, 0x95c73a);
-                    FillRect(
-                        dc,
-                        &RECT {
-                            left: 0,
-                            top: 0,
-                            right: 104,
-                            bottom: 70,
-                        },
-                        GetStockObject(DC_BRUSH),
-                    );
-                    ReleaseDC(external, dc);
-                    windows_sys::Win32::Graphics::Dwm::DwmFlush();
-                }
                 self.sample_window.set(external);
                 self.stage.set(12);
                 click(hwnd, refs.eyedropper);
             }
             12 if refs.sampling.get_untracked() => {
-                let mut ext = RECT::default();
-                unsafe {
-                    GetWindowRect(self.sample_window.get(), &mut ext);
-                }
-                let mut point = POINT {
-                    x: ext.left + 3,
-                    y: ext.top + 3,
-                };
-                let screen = point;
-                unsafe {
-                    ScreenToClient(hwnd, &mut point);
-                }
-                mouse(hwnd, WM_MOUSEMOVE, point);
                 let preview = unsafe {
                     FindWindowW(
                         windows_sys::w!("STATIC"),
@@ -281,63 +399,7 @@ impl FrameProbe for Probe {
                 };
                 assert!(!preview.is_null());
                 assert_eq!(unsafe { GetWindow(preview, GW_OWNER) }, hwnd);
-                let mut chip = RECT::default();
-                unsafe {
-                    GetWindowRect(preview, &mut chip);
-                    UpdateWindow(preview);
-                }
-                let factor = (chip.right - chip.left) as f64 / 82.0;
-                assert!(((chip.top - screen.y) as f64 - 10.0 * factor).abs() <= 1.0);
-                assert!(
-                    ((chip.left - screen.x) as f64 - 5.0 * factor).abs() <= 1.0
-                        || ((screen.x - chip.right) as f64 - 5.0 * factor).abs() <= 1.0
-                );
-                let dc = unsafe { GetDC(preview) };
-                let color = unsafe { GetPixel(dc, (12.0 * factor) as i32, (12.0 * factor) as i32) };
-                assert_eq!(unsafe { GetPixel(dc, 0, 0) }, 0x424242, "preview frame");
-                assert_eq!(
-                    unsafe { GetPixel(dc, (30.0 * factor) as i32, (16.0 * factor) as i32) },
-                    0,
-                    "gap between swatch and HEX"
-                );
-                if let Ok(dir) = std::env::var("OKCOLOR_TOOLS_CAPTURE_DIR") {
-                    let (width, height) = (chip.right - chip.left, chip.bottom - chip.top);
-                    let mut pixels = Vec::with_capacity((width * height * 4) as usize);
-                    let mut text_ink = 0;
-                    for y in 0..height {
-                        for x in 0..width {
-                            let pixel = unsafe { GetPixel(dc, x, y) };
-                            pixels.extend_from_slice(&[
-                                pixel as u8,
-                                (pixel >> 8) as u8,
-                                (pixel >> 16) as u8,
-                                255,
-                            ]);
-                            if f64::from(x) > 32.0 * factor
-                                && x < width - 2
-                                && y > 2
-                                && y < height - 2
-                                && pixel as u8 > 100
-                            {
-                                text_ink += 1;
-                            }
-                        }
-                    }
-                    assert!(text_ink > 24, "the HEX label must be painted");
-                    std::fs::write(
-                        std::path::Path::new(&dir)
-                            .join(format!("eyedropper-{width}x{height}.rgba")),
-                        pixels,
-                    )
-                    .unwrap();
-                }
-                unsafe {
-                    ReleaseDC(preview, dc);
-                }
-                assert_eq!(
-                    color, 0x95c73a,
-                    "preview shows the external test window's pixel"
-                );
+                let screen = verify_monitor_samples(hwnd, self.sample_window.get(), preview);
                 // Feed the preview's queued hook messages without injecting OS mouse clicks.
                 unsafe {
                     SendMessageW(preview, WM_APP + 2, screen.x as usize, screen.y as isize);

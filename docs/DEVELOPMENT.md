@@ -232,8 +232,10 @@ It also checks checkerboard alpha and finite output for extreme input. Simulated
 display policies do not establish the behavior of an actual monitor transition.
 The desktop eyedropper check routes both halves of a click through the temporary
 Windows hook and checks its return value without injecting global input. The
-native input test compares an independent test window pixel to the preview
-and the committed color, then cancels a second session with Escape.
+native input test moves a colored fixture across the connected monitors. It checks
+the preview pixels and physical bounds against each monitor's DPI in the interior
+and at the lower-right edge. It commits the final pixel and cancels a second
+session with Escape.
 `native_display` uses its own hidden window to read the current display
 configuration without changing OS settings. It requires local display access;
 remote sessions or mirrored displays may prevent an unambiguous query.
