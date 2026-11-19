@@ -1,4 +1,4 @@
-//! Durable swatch library and tool preferences, independent of color edit history.
+//! Durable swatch library and tool preferences.
 use okcolor_core::Oklch;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -84,6 +84,13 @@ impl Library {
         }
         Ok(())
     }
+    /// Undo restores the collection contents while keeping allocated IDs reserved.
+    pub(crate) fn restore_contents(&mut self, snapshot: &Self) {
+        self.folders.clone_from(&snapshot.folders);
+        self.swatches.clone_from(&snapshot.swatches);
+        self.next_id = self.next_id.max(snapshot.next_id);
+    }
+
     fn has_folder(&self, folder: Option<u64>) -> bool {
         folder.is_none_or(|id| self.folders.iter().any(|f| f.id == id))
     }

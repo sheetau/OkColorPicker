@@ -52,8 +52,18 @@ fn marker_checker_has_a_fixed_origin_and_dark_samples_have_inner_borders() {
             outline_dark: 1.0,
             ..Default::default()
         },
+        ColorParams {
+            kind: 6.0,
+            channels: [1.0, 0.0, 0.0, 1.0],
+            ..Default::default()
+        },
+        ColorParams {
+            kind: 6.0,
+            channels: [0.0, 0.0, 0.0, 1.0],
+            ..Default::default()
+        },
     ];
-    app().with_size(16.0,64.0).with_renderer(Box::new(factory))
+    app().with_size(16.0,96.0).with_renderer(Box::new(factory))
         .with_stylesheet(":root { background-color: #000; } .sample { width: 16px; height: 16px; min-height: 16px; }")
         .run_on(|handler| {let mut harness=Harness::new(handler);harness.settle(32);Ok(())}, move || {
             zgui::elements::column().child(cases.into_iter().map(|params| zgui::custom::custom(ColorSurface::new(params)).0.class("sample").into_view()).collect::<Vec<_>>())
@@ -70,6 +80,8 @@ fn marker_checker_has_a_fixed_origin_and_dark_samples_have_inner_borders() {
         image.rgba(7, 24),
         "checker cells must not travel with the marker"
     );
+    assert!(image.rgba(13, 70)[0] < 75, "black outline on white marker");
+    assert!(image.rgba(13, 86)[0] > 180, "white outline on black marker");
     assert_eq!(image.rgba(0, 40), [40, 40, 40, 255]);
     assert_eq!(image.rgba(1, 40), [0, 0, 0, 255]);
     assert_eq!(image.rgba(8, 40), [0, 0, 0, 255]);

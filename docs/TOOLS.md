@@ -37,10 +37,16 @@ to insert before it, or onto **+** to append it. Drag within the library to
 reorder. Middle-click a recent or library tile to remove it. Right-click a
 color to copy it in the R field's selected format.
 
-The folder menu opens the library editor. Select a tile to edit its name,
-or enter a name and choose **New folder**. Use **Move** to change the folder
-of the selected tile. Removing a folder keeps its colors in the unfiled
-section. Library changes save independently of color undo.
+Choose **+ New folder** and type its name in the heading. Enter or leaving
+the field saves the name. Escape or an empty name cancels the edit. Hold a
+folder heading or a saved swatch still for 650 ms to rename it. Middle-click
+a folder heading to remove it. For a populated folder, **Yes** removes the
+folder and keeps its colors unfiled. **No** or Escape cancels.
+
+While dragging a color, hover over the heading for 650 ms to open the folder
+menu. Release on a folder or **Swatch Tiles** to move a saved swatch there or
+to add a copy of another color. Ctrl+Z and Ctrl+Y undo and redo library,
+palette, APCA and color edits in the order they occurred.
 
 ## Harmony
 

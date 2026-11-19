@@ -243,7 +243,9 @@ fn shade(input: ShaderInput, params: Params) -> vec4<f32> {
         let d = max((p.x - p.y) * 0.70710678, p.y - input.size.y);
         let stroke = input.scale;
         let coverage = 1.0 - smoothstep(-0.5, 0.5, d);
-        rgb = mix(rgb, vec3<f32>(1.0), smoothstep(-stroke - 0.5, -stroke + 0.5, d));
+        let luminance = dot(vec3<f32>(decode_channel(rgb.r), decode_channel(rgb.g), decode_channel(rgb.b)), vec3<f32>(0.2126, 0.7152, 0.0722));
+        let ink = select(1.0, 0.0, luminance > 0.179);
+        rgb = mix(rgb, vec3<f32>(ink), smoothstep(-stroke - 0.5, -stroke + 0.5, d));
         return vec4<f32>(rgb * coverage, coverage);
     }
     return vec4<f32>(rgb, 1.0);

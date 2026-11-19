@@ -1,5 +1,3 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-linejoin="round">
-  <path transform="translate(1 7.1829)" d="M5.568 0l-4.5075 4.5075-1.0605 3.7125 3.7125-1.0605 4.5075-4.5075-2.652-2.652z"/>
-  <path transform="translate(6.568 1)" d="M0 6.18286l3.7125-5.304c1.17181-1.17181 3.07169-1.17181 4.2435 0 1.17181 1.17181 1.17181 3.07169 0 4.2435l-5.304 3.7125"/>
-  <path transform="translate(4.447 5.0619)" d="M0 0l6.894 6.894"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-linecap="butt" stroke-linejoin="round">
+  <path d="M6.5 7l-4 4L1.5 14.5 5 13.5l4-4M4.5 5.5l6 6M6.5 7l3.6-5a2.7 2.7 0 0 1 3.9 3.8l-5 3.7"/>
 </svg>

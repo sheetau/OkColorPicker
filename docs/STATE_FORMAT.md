@@ -54,8 +54,8 @@ the Settings overlay are transient. Startup restores the last tool tab, folded
 Harmony sections, window position, client dimensions and maximized state.
 The chart stores its fixed axis, snapping preference and height in CSS pixels
 as `fixed_axis`, `always_snap` and `plot_height`. Older profiles default to Hue,
-Shift-only snapping and 152 pixels. Library edits are independent of the session
-color Undo history.
+Shift-only snapping and 152 pixels. Library edits share the session undo history
+with palette, APCA and color edits. The palette itself lasts for the session.
 
 No clipboard contents, font paths, pairing credentials or undo stack are stored.
 

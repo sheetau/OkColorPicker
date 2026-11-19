@@ -14,6 +14,8 @@ pub(crate) enum Source {
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Destination {
+    FolderMenu,
+    Folder(Option<u64>),
     Library(Option<u64>, Option<u64>),
     Palette(usize),
 }
@@ -21,22 +23,22 @@ pub(crate) enum Destination {
 #[derive(Clone, Copy)]
 pub(crate) struct TileGestures {
     page: NodeRef,
+    folder_menu: NodeRef,
     zones: StoredValue<Vec<(NodeRef, Destination)>, LocalStorage>,
     pub hovering: RwSignal<Option<Destination>>,
     pub dragging: RwSignal<Option<NodeRef>, LocalStorage>,
-    pub generator: StoredValue<okcolor_core::PaletteGenerator>,
     pub palette: RwSignal<Vec<(Oklch, bool)>>,
 }
 
 impl TileGestures {
-    pub fn mount(page: NodeRef) -> Self {
+    pub fn mount(page: NodeRef, folder_menu: NodeRef, model: PickerModel) -> Self {
         let gestures = Self {
             page,
+            folder_menu,
             zones: StoredValue::new_local(Vec::new()),
             hovering: RwSignal::new(None),
             dragging: RwSignal::new_local(None),
-            generator: StoredValue::new(okcolor_core::PaletteGenerator::default()),
-            palette: RwSignal::new(Vec::new()),
+            palette: model.palette,
         };
         provide_context(gestures);
         gestures
@@ -60,11 +62,21 @@ impl TileGestures {
         if y < visible.origin.y.0 || y >= visible.origin.y.0 + visible.size.height.0 {
             return None;
         }
+        let in_menu = self.folder_menu.window_bounds().is_some_and(|b| {
+            x >= b.origin.x.0
+                && x < b.origin.x.0 + b.size.width.0
+                && y >= b.origin.y.0
+                && y < b.origin.y.0 + b.size.height.0
+        });
         self.zones.with_value(|zones| {
             zones
                 .iter()
                 .rev()
                 .filter_map(|(node, dest)| {
+                    // Clip scrolled options and keep tiles under the open menu out of hit testing.
+                    if matches!(dest, Destination::Folder(_)) != in_menu {
+                        return None;
+                    }
                     let b = node.window_bounds()?;
                     let mut destination = *dest;
                     if let Destination::Palette(i) = destination
@@ -91,33 +103,36 @@ impl TileGestures {
     }
 
     fn drop_at(self, model: PickerModel, source: Source, color: Oklch, destination: Destination) {
+        let destination = match destination {
+            Destination::Folder(folder) => Destination::Library(folder, None),
+            other => other,
+        };
         match destination {
+            Destination::FolderMenu | Destination::Folder(_) => {}
             Destination::Library(folder, before) => {
-                let mut library = model.library.get_untracked();
-                let result = match source {
-                    Source::Library(id) => library.move_swatch(id, folder).map(|()| id),
-                    _ => library.add(color, folder),
-                };
-                match result {
-                    Ok(id) => {
-                        if before != Some(id)
-                            && let Some(from) =
-                                library.swatches.iter().position(|entry| entry.id == id)
-                        {
-                            let tile = library.swatches.remove(from);
-                            let to = library
-                                .swatches
-                                .iter()
-                                .position(|entry| Some(entry.id) == before)
-                                .unwrap_or(library.swatches.len());
-                            library.swatches.insert(to, tile);
+                model.edit_library(|library| {
+                    let id = match source {
+                        Source::Library(id) => {
+                            library.move_swatch(id, folder)?;
+                            id
                         }
-                        model.library.set(library);
+                        _ => library.add(color, folder)?,
+                    };
+                    if before != Some(id)
+                        && let Some(from) = library.swatches.iter().position(|s| s.id == id)
+                    {
+                        let swatch = library.swatches.remove(from);
+                        let to = library
+                            .swatches
+                            .iter()
+                            .position(|s| Some(s.id) == before)
+                            .unwrap_or(library.swatches.len());
+                        library.swatches.insert(to, swatch);
                     }
-                    Err(error) => model.message.set(error.into()),
-                }
+                    Ok(())
+                });
             }
-            Destination::Palette(index) => self.palette.update(|colors| {
+            Destination::Palette(index) => model.edit_palette(|colors| {
                 let mut to = index.min(colors.len());
                 let entry = if let Source::Palette(from) = source {
                     if from >= colors.len() {
@@ -232,8 +247,11 @@ pub(crate) fn ColorTile(
         }
     });
     let timers = StoredValue::new_local(zgui::view::Timers::current().expect("picker window"));
+    let rename = use_context::<crate::swatches::RenameSwatch>();
+    let hold = crate::swatches::Hold::new();
     let copy_timer = StoredValue::new_local(None::<zgui::view::TimeoutHandle>);
     let cancel = move || {
+        hold.cancel();
         origin.set(None);
         if shared.dragging.get_untracked() == Some(node) {
             shared.dragging.set(None);
@@ -247,6 +265,13 @@ pub(crate) fn ColorTile(
             Some(PointerButton::Primary) => {
                 origin.set(Some((cx.position.x.0, cx.position.y.0)));
                 cx.capture_pointer();
+                if let (Source::Library(id), Some(rename)) = (source, rename) {
+                    hold.start(move || {
+                        suppress_click.set(true);
+                        origin.set(None);
+                        rename.0.run(id);
+                    });
+                }
             }
             Some(PointerButton::Secondary) => {
                 if let Ok(formatted) = format_color(
@@ -265,8 +290,13 @@ pub(crate) fn ColorTile(
                 Source::Recent => model
                     .recent
                     .update(|recent| recent.retain(|entry| *entry != color.get_untracked())),
-                Source::Library(id) => model.library.update(|library| library.remove(id)),
-                Source::Palette(i) => shared.palette.update(|colors| {
+                Source::Library(id) => {
+                    model.edit_library(|library| {
+                        library.remove(id);
+                        Ok(())
+                    });
+                }
+                Source::Palette(i) => model.edit_palette(|colors| {
                     if i < colors.len() && colors.len() > 2 {
                         colors.remove(i);
                     }
@@ -281,6 +311,7 @@ pub(crate) fn ColorTile(
             if shared.dragging.get_untracked() != Some(node)
                 && (cx.position.x.0 - x).hypot(cx.position.y.0 - y) >= 4.0
             {
+                hold.cancel();
                 shared.dragging.set(Some(node));
                 suppress_click.set(true);
             }
@@ -333,7 +364,7 @@ pub(crate) fn ColorTile(
         on:click=move |cx|{
             if !suppress_click.get_untracked(){
                 if let Source::Palette(index)=source && cx.modifiers.contains(Modifiers::SHIFT) {
-                    shared.palette.update(|colors|{if let Some(entry)=colors.get_mut(index){entry.1 = !entry.1;}});
+                    model.edit_palette(|colors|{if let Some(entry)=colors.get_mut(index){entry.1 = !entry.1;}});
                 }else{activate.run(());}
             }
             suppress_click.set(false);
@@ -346,7 +377,7 @@ pub(crate) fn ColorTile(
             if move ||class=="transparent-color" {
                 {zgui::elements::vector().document(include_str!("../assets/transparent.svg")).class("transparent-mark")}
             }
-            box(class="tile-check",style:color=move ||Some(contrast_ink(color.get()).to_owned()),class:visible=move ||copied.get()) {
+            box(class="tile-check",style:color=move ||Some(if unavailable.get() { "#ffffff" } else { contrast_ink(color.get()) }.to_owned()),class:visible=move ||copied.get()) {
                 {zgui::elements::vector().document(include_str!("../assets/check.svg")).class("check-icon")}
             }
     }}

@@ -7,7 +7,8 @@ use crate::{
     window_frame::ResizeEdgesProps,
 };
 use crate::{
-    tools_ui::{ContrastProps, HarmoniesProps, SwatchesProps},
+    swatches::SwatchesProps,
+    tools_ui::{ContrastProps, HarmoniesProps},
     workspace::Tab,
 };
 use okcolor_core::{ColorFormat, Gamut, GamutMapping, Oklch};
@@ -111,7 +112,7 @@ impl Default for PickerRefs {
 #[component]
 pub fn Picker(model: PickerModel, refs: PickerRefs) -> impl IntoView {
     provide_context(model);
-    let gestures = TileGestures::mount(refs.tool_page);
+    let gestures = TileGestures::mount(refs.tool_page, refs.folder_menu, model);
     let app_root = NodeRef::new();
     provide_context(InputExit(app_root));
     let app_size = app_root.observe_border_size();

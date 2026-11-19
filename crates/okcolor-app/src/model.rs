@@ -1,5 +1,9 @@
 use crate::persistence::{RECENT_LIMIT, SavedState};
 use okcolor_core::{ColorFormat, Gamut, GamutMapping, History, Oklch, format_color, parse_color};
+use std::{
+    hash::{BuildHasher, RandomState},
+    sync::Arc,
+};
 use zgui::prelude::*;
 
 /// Shared stepping policy for channel fields, bars and the gamut slice.
@@ -39,6 +43,8 @@ pub struct ColorEdit {
 
 #[derive(Clone, PartialEq)]
 struct Snapshot {
+    library: Arc<crate::workspace::Library>,
+    palette: Arc<Vec<(Oklch, bool)>>,
     colors: [Oklch; 2],
     contrast: std::sync::Arc<(crate::workspace::ContrastGrid, [f64; 4])>,
 }
@@ -48,6 +54,8 @@ struct Snapshot {
 pub struct PickerModel {
     pub window_geometry: RwSignal<Option<crate::workspace::WindowGeometry>>,
     pub tab: RwSignal<crate::workspace::Tab>,
+    pub palette: RwSignal<Vec<(Oklch, bool)>>,
+    generator: StoredValue<okcolor_core::PaletteGenerator>,
     pub library: RwSignal<crate::workspace::Library>,
     pub tools: RwSignal<crate::workspace::ToolSettings>,
     pub companion: crate::companion::Companion,
@@ -101,8 +109,12 @@ impl PickerModel {
             .iter()
             .copied()
             .collect();
+        let mut generator = okcolor_core::PaletteGenerator::default();
+        let palette = generator.generate(&[], saved.gamut, RandomState::new().hash_one(()));
         let history = History::new(
             Snapshot {
+                library: Arc::new(saved.library.clone()),
+                palette: Arc::new(palette.clone()),
                 colors,
                 contrast: std::sync::Arc::new((
                     saved.tools.contrast_grid.clone(),
@@ -117,6 +129,8 @@ impl PickerModel {
             tab: RwSignal::new(saved.tools.last_tab),
             window_geometry: RwSignal::new(saved.tools.window),
             library: RwSignal::new(saved.library),
+            palette: RwSignal::new(palette),
+            generator: StoredValue::new(generator),
             tools: RwSignal::new(saved.tools),
             companion: crate::companion::Companion::default(),
             edit: RwSignal::new(ColorEdit {
@@ -487,8 +501,78 @@ impl PickerModel {
         }
     }
 
-    fn restore_contrast(self) {
+    pub(crate) fn edit_library<T>(
+        self,
+        edit: impl FnOnce(&mut crate::workspace::Library) -> Result<T, &'static str>,
+    ) -> Option<T> {
+        self.finish_remote();
+        let mut library = self.library.get_untracked();
+        let value = match edit(&mut library) {
+            Ok(value) => value,
+            Err(error) => {
+                self.message.set(error.into());
+                return None;
+            }
+        };
+        let result = self
+            .history
+            .try_update(|history| {
+                history.set_without_recent(Snapshot {
+                    library: Arc::new(library.clone()),
+                    ..history.current()
+                })
+            })?
+            .ok()?;
+        if result {
+            self.library.set(library);
+            self.publish(true);
+        }
+        self.message.set(String::new());
+        Some(value)
+    }
+
+    pub(crate) fn edit_palette(self, edit: impl FnOnce(&mut Vec<(Oklch, bool)>)) {
+        self.finish_remote();
+        let mut palette = self.palette.get_untracked();
+        edit(&mut palette);
+        if self.history.try_update(|history| {
+            history.set_without_recent(Snapshot {
+                palette: Arc::new(palette.clone()),
+                ..history.current()
+            })
+        }) == Some(Ok(true))
+        {
+            self.palette.set(palette);
+            self.publish(true);
+        }
+    }
+
+    pub(crate) fn generate_palette(self) {
+        self.edit_palette(|palette| {
+            self.generator.update_value(|generator| {
+                *palette = generator.generate(
+                    palette,
+                    self.gamut.get_untracked(),
+                    RandomState::new().hash_one(()),
+                );
+            });
+        });
+    }
+
+    fn restore_collections_and_contrast(self) {
         let snapshot = self.history.with_untracked(History::current);
+        if self.library.with_untracked(|v| {
+            v.swatches != snapshot.library.swatches || v.folders != snapshot.library.folders
+        }) {
+            self.library
+                .update(|v| v.restore_contents(&snapshot.library));
+        }
+        if self
+            .palette
+            .with_untracked(|v| v != snapshot.palette.as_ref())
+        {
+            self.palette.set((*snapshot.palette).clone());
+        }
         if self.tools.with_untracked(|t| {
             t.contrast_grid != snapshot.contrast.0 || t.background != snapshot.contrast.1
         }) {
@@ -504,7 +588,7 @@ impl PickerModel {
         self.history.update(|history| {
             let _ = history.undo();
         });
-        self.restore_contrast();
+        self.restore_collections_and_contrast();
         self.publish(true);
     }
     pub fn redo(self) {
@@ -512,7 +596,7 @@ impl PickerModel {
         self.history.update(|history| {
             let _ = history.redo();
         });
-        self.restore_contrast();
+        self.restore_collections_and_contrast();
         self.publish(true);
     }
 

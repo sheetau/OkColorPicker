@@ -3,7 +3,6 @@ use crate::tooltip::Tooltips;
 use crate::{
     model::PickerModel,
     ui::{CopyButtonProps, PickerRefs},
-    workspace::Library,
 };
 use okcolor_core::{
     ColorFormat, Gamut, GamutMapping, Harmony, Oklch, Variation, apca_in, closest_current_contrast,
@@ -11,173 +10,6 @@ use okcolor_core::{
 };
 use zgui::reactive::UnsyncCallback;
 use zgui::{prelude::*, reactive::RenderEffect};
-
-fn library_edit(model: PickerModel, f: impl FnOnce(&mut Library) -> Result<(), &'static str>) {
-    let mut next = model.library.get_untracked();
-    match f(&mut next) {
-        Ok(()) => {
-            model.library.set(next);
-            model.message.set(String::new());
-        }
-        Err(message) => model.message.set(message.into()),
-    }
-}
-
-/// Drafts stay local; buttons explicitly apply them. Unmounting cannot leave text focus latched.
-#[component]
-fn Entry(
-    model: PickerModel,
-    node: NodeRef,
-    draft: RwSignal<String>,
-    label: &'static str,
-) -> impl IntoView {
-    let exit = expect_context::<crate::ui::InputExit>().0;
-    let composing = RwSignal::new(false);
-    let original = StoredValue::new(String::new());
-    let focused = RwSignal::new(false);
-    let effect = RenderEffect::new(move |_| {
-        let text = draft.get();
-        if !focused.get() {
-            node.set_value(&text);
-        }
-    });
-    on_cleanup_local(move || {
-        drop(effect);
-        model.editing_text.set(false);
-    });
-    view! {field(class="tool-entry",node_ref=node,a11y:label=label,
-    on:ime_start=move |_|composing.set(true),on:ime_preedit=move |_|composing.set(true),
-    on:ime_commit=move |_|composing.set(false),on:ime_end=move |_|composing.set(false),
-    on:key_down=move |cx|{if composing.get_untracked(){return}
-        match cx.key {
-            Key::Named(NamedKey::Enter)=>{},
-            Key::Named(NamedKey::Escape)=>{let text=original.get_value();node.set_value(&text);draft.set(text);},
-            _=>return,
-        }
-        exit.focus();cx.prevent_default();cx.stop_propagation();},
-    on:focus_in=move |_|{original.set_value(draft.get_untracked());focused.set(true);model.editing_text.set(true);},on:focus_out=move |_|{focused.set(false);model.editing_text.set(false);},
-    on:input=move |cx|{if let Some(value)=cx.payload().as_value(){draft.set(value.value.to_string());}}) {{draft.get_untracked()}}}
-}
-
-#[component]
-pub(crate) fn Swatches(model: PickerModel, refs: PickerRefs) -> impl IntoView {
-    let selected = RwSignal::new(None::<u64>);
-    let destination = RwSignal::new(None::<u64>);
-    let editor = RwSignal::new(false);
-    let draft = RwSignal::new(String::new());
-    let menu = RwSignal::new(false);
-    let trigger = refs.library[1];
-    let popup = refs.folder_menu;
-    crate::ui::dismiss_menu(menu, popup, trigger);
-    let scroll = refs.tool_page.observe_scroll();
-    let size = refs.tool_page.observe_border_size();
-    let scale = use_window().scale();
-    let placement = Memo::new(move |_| {
-        scroll.get();
-        size.get();
-        if !menu.get() {
-            return (false, 0.0);
-        }
-        let (Some(button), Some(page)) = (trigger.window_bounds(), refs.tool_page.window_bounds())
-        else {
-            return (false, 0.0);
-        };
-        let below =
-            (page.origin.y.0 + page.size.height.0 - button.origin.y.0 - button.size.height.0)
-                .max(0.0);
-        let above = (button.origin.y.0 - page.origin.y.0).max(0.0);
-        let above = above / scale.get();
-        let below = below / scale.get();
-        let height = (model.library.get().folders.len() + 2) as f32 * 22.0;
-        let up = below < height && above > below;
-        (up, if up { above } else { below })
-    });
-    view! {
-        column(class="swatch-library") {
-            box(class="folder-anchor") {
-                control(class="folder-heading",class:up=move ||menu.get() && placement.get().0,class:open=move ||menu.get(),node_ref=Tooltips::button(refs.library[1],"Choose swatch folder"),tabindex=Focus::Sequential,
-                    a11y:label="Choose swatch folder",on:click=move |_|menu.update(|v|*v = !*v)) {
-                    text {{move ||model.library.get().folders.iter().find(|f|Some(f.id)==destination.get()).map(|f|f.name.clone()).unwrap_or_else(||"Swatch Tiles".into())}}
-                    box(class="folder-chevron") {{zgui::elements::vector().document(include_str!("../assets/chevron.svg")).class("chevron")}}
-                }
-                if move ||menu.get() {
-                    column(class="folder-menu",node_ref=popup,class:above=move ||placement.get().0,style:max-height=move ||Some(format!("{}px",placement.get().1))) {
-                        control(tabindex=Focus::Sequential,class:selected=move ||destination.get().is_none(),on:click=move |_|{destination.set(None);selected.set(None);menu.set(false);}) {text {"Swatch Tiles"}}
-                        for id in move ||model.library.get().folders.iter().map(|f|f.id).collect::<Vec<_>>(),key=|id:&u64|*id {
-                            control(tabindex=Focus::Sequential,class:selected=move ||destination.get()==Some(id),on:click=move |_|{destination.set(Some(id));selected.set(Some(id));menu.set(false);}) {
-                                text {{move ||model.library.get().folders.iter().find(|f|f.id==id).map(|f|f.name.clone()).unwrap_or_default()}}
-                            }
-                        }
-                        control(tabindex=Focus::Sequential,on:click=move |_|{editor.set(true);menu.set(false);draft.set(String::new());}) {text {"New folder / Edit"}}
-                    }
-                }
-            }
-            for folder in move ||[destination.get()],key=|folder:&Option<u64>|*folder {
-                Tiles(model=model,folder=folder,refs=refs,selected=selected,draft=draft)
-            }
-            if move ||editor.get() {
-                column(class="library-editor") {
-                    Entry(model=model,node=refs.library[2],draft=draft,label="Swatch or folder name")
-                    row(class="tool-actions") {
-                        control(class="tool-action",node_ref=Tooltips::button(refs.library[3],"Rename selection"),tabindex=Focus::Sequential,disabled=move ||selected.get().is_none(),on:click=move |_| {
-                            if let Some(id)=selected.get_untracked(){library_edit(model,|library|library.rename(id,&draft.get_untracked()));}
-                        }) {"Rename"}
-                        control(class="tool-action",node_ref=Tooltips::button(refs.library[4],"Create folder"),tabindex=Focus::Sequential,on:click=move |_|library_edit(model,|library|{
-                            let name=draft.get_untracked();let name=if name.trim().is_empty(){"New folder"}else{&name};
-                            let id=library.create_folder(name)?;destination.set(Some(id));selected.set(Some(id));draft.set(name.into());Ok(())
-                        })) {"New folder"}
-                        control(class="tool-action",node_ref=Tooltips::button(refs.library[5],"Remove selection"),tabindex=Focus::Sequential,disabled=move ||selected.get().is_none(),on:click=move |_| {
-                            if let Some(id)=selected.get_untracked(){library_edit(model,|library|{library.remove(id);Ok(())});selected.set(None);if destination.get_untracked()==Some(id){destination.set(None);}}
-                        }) {"Remove"}
-                    }
-                    text(class="tool-hint") {"Destination · select a tile, then Move"}
-                    row(class="tool-actions wrap") {
-                        control(class="tool-action",class:active=move ||destination.get().is_none(),tabindex=Focus::Sequential,on:click=move |_|destination.set(None)) {"Unfiled"}
-                        for id in move ||model.library.get().folders.iter().map(|f|f.id).collect::<Vec<_>>(),key=|id:&u64|*id {
-                            control(class="tool-action",class:active=move ||destination.get()==Some(id),tabindex=Focus::Sequential,on:click=move |_|destination.set(Some(id))) {
-                                {move ||model.library.get().folders.iter().find(|f|f.id==id).map(|f|f.name.clone()).unwrap_or_default()}
-                            }
-                        }
-                    }
-                    row(class="tool-actions") {
-                        control(class="tool-action",node_ref=Tooltips::button(refs.library[6],"Move selected swatch"),tabindex=Focus::Sequential,
-                            disabled=move ||!model.library.get().swatches.iter().any(|s|Some(s.id)==selected.get()),
-                            on:click=move |_|{if let Some(id)=selected.get_untracked(){library_edit(model,|library|library.move_swatch(id,destination.get_untracked()));}}) {"Move"}
-                        control(class="tool-action",tabindex=Focus::Sequential,on:click=move |_|editor.set(false)) {"Close editor"}
-                    }
-                    text(class="tool-hint") {"Removing a folder keeps its colors unfiled."}
-                }
-            }
-        }
-    }
-}
-
-#[component]
-fn Tiles(
-    model: PickerModel,
-    folder: Option<u64>,
-    refs: PickerRefs,
-    selected: RwSignal<Option<u64>>,
-    draft: RwSignal<String>,
-) -> impl IntoView {
-    let end = Destination::Library(folder, None);
-    let gestures = TileGestures::current();
-    gestures.register(refs.library[0], end);
-    view! {
-        row(class="swatch-tiles",node_ref=refs.library[7]) {
-            for id in move ||model.library.get().swatches.iter().filter(|s|s.folder==folder).map(|s|s.id).collect::<Vec<_>>(),key=|id:&u64|*id {
-                ColorTile(class="library-tile",node=NodeRef::new(),source=Source::Library(id),destination=Some(Destination::Library(folder,Some(id))),
-                    color=Memo::new(move |_|model.library.get().swatches.iter().find(|s|s.id==id).map(|s|s.color()).unwrap_or(model.current())),
-                    label=Memo::new(move |_|model.library.get().swatches.iter().find(|s|s.id==id).map(|s|s.name.clone()).unwrap_or_default()),
-                    activate=UnsyncCallback::new(move |()|{if let Some(swatch)=model.library.get_untracked().swatches.iter().find(|s|s.id==id){model.select(swatch.color());selected.set(Some(id));draft.set(swatch.name.clone());}}))
-            }
-            control(class="tool-icon add-tile",node_ref=Tooltips::button(refs.library[0],"Save current color"),tabindex=Focus::Sequential,
-                a11y:label="Save current color",on:click=move |_|library_edit(model,|library|{
-                    let id=library.add(model.current(),folder)?;selected.set(Some(id));draft.set(format!("Color {id}"));Ok(())
-                })) {{zgui::elements::vector().document(include_str!("../assets/add.svg")).class("add-icon")} if move ||gestures.hovering.get()==Some(end) {box(class="insertion-line") {}}}
-        }
-    }
-}
 
 #[component]
 fn Generated(
@@ -383,14 +215,13 @@ fn PaletteInsert(
     node: NodeRef,
     hot: RwSignal<Option<usize>>,
 ) -> impl IntoView {
-    let gestures = TileGestures::current();
     let tail = index == usize::MAX;
     const PIXELS_PER_COLOR: f32 = 12.0;
     let origin_y = RwSignal::new(None::<f32>);
     let count = RwSignal::new(0usize);
     let scrubbed = RwSignal::new(false);
     let insert = move |requested| {
-        gestures.palette.update(|colors| {
+        model.edit_palette(|colors| {
             insert_palette_colors(
                 colors,
                 index,
@@ -403,7 +234,7 @@ fn PaletteInsert(
     let update_count = move |y: f32| {
         if let Some(start) = origin_y.get_untracked() {
             let steps = ((start - y) / PIXELS_PER_COLOR).floor() as usize;
-            let available = MAX_PALETTE.saturating_sub(gestures.palette.get_untracked().len());
+            let available = MAX_PALETTE.saturating_sub(model.palette.get_untracked().len());
             if steps > 0 {
                 scrubbed.set(true);
             }
@@ -421,7 +252,7 @@ fn PaletteInsert(
     });
     view! {control(class=if tail {"palette-tail"}else{"palette-insert"},
         class:visible=move ||origin_y.get().is_some() || hot.get()==Some(index),
-        style:left=move ||(!tail).then(||if index==0 {"0px".into()} else {format!("{}%",100.0*index as f32/gestures.palette.get().len() as f32)}),
+        style:left=move ||(!tail).then(||if index==0 {"0px".into()} else {format!("{}%",100.0*index as f32/model.palette.get().len() as f32)}),
         class:interior=!tail&&index>0,node_ref=node,tabindex=Focus::Sequential,
         a11y:label=if tail {"Append palette color"}else{"Insert palette colors"},
         on:pointer_down=move |cx|{
@@ -469,7 +300,7 @@ fn Palette(model: PickerModel, refs: PickerRefs) -> impl IntoView {
         let scale = scale.get_untracked();
         let width = b.size.width.0 / scale;
         let x = cx.position.x.0 - b.origin.x.0 / scale;
-        let count = gestures.palette.get_untracked().len();
+        let count = model.palette.get_untracked().len();
         let cell = width / count as f32;
         let index = (x / cell).round() as usize;
         let next = if x < 21.0 {
@@ -486,20 +317,7 @@ fn Palette(model: PickerModel, refs: PickerRefs) -> impl IntoView {
     let tail = refs.tools[2];
     let end = Destination::Palette(usize::MAX);
     gestures.register(tail, end);
-    let regenerate = move || {
-        use std::hash::{BuildHasher, RandomState};
-        // RandomState supplies independent session entropy without a platform RNG dependency.
-        let seed = RandomState::new().hash_one(());
-        gestures.generator.update_value(|generator| {
-            let next = gestures
-                .palette
-                .with_untracked(|old| generator.generate(old, model.gamut.get_untracked(), seed));
-            gestures.palette.set(next);
-        });
-    };
-    if gestures.palette.get_untracked().is_empty() {
-        regenerate();
-    }
+    let regenerate = move || model.generate_palette();
     let shortcut = RenderEffect::new(move |_| {
         refs.tools[0].get()?;
         Some(refs.tools[0].window_root()?.listen(
@@ -524,18 +342,18 @@ fn Palette(model: PickerModel, refs: PickerRefs) -> impl IntoView {
             control(node_ref=Tooltips::button(refs.tools[0],"Generate palette · Space"),tabindex=Focus::Sequential,class="generate-button",a11y:label="Generate palette",on:click=move |_|regenerate()) {{zgui::elements::vector().document(include_str!("../assets/generate.svg")).class("generate-icon")}}
         }
         row(class="palette-strip",node_ref=refs.tools[5],on:pointer_move=palette_hover,on:pointer_leave=move |_|hot.set(None)) {
-            for i in move ||0..gestures.palette.get().len(),key=|i:&usize|*i {
+            for i in move ||0..model.palette.get().len(),key=|i:&usize|*i {
                 column(class="palette-cell",node_ref=if i==0{refs.tools[6]}else{NodeRef::new()}) {
                     ColorTile(class="palette-color",node=NodeRef::new(),source=Source::Palette(i),destination=Some(Destination::Palette(i)),
-                        color=Memo::new(move |_|gestures.palette.get().get(i).map(|v|v.0).unwrap_or(model.current())),
-                        label=Memo::new(move |_|gestures.palette.get().get(i).map(|v|swatch_name(v.0)).unwrap_or_default()),
-                        activate=UnsyncCallback::new(move |()|{if let Some(v)=gestures.palette.get_untracked().get(i){model.select(v.0);}}))
-                    if move ||gestures.palette.get().get(i).is_some_and(|entry|entry.1) {
-                        box(class="palette-lock",node_ref=if i==0{refs.palette_dot}else{NodeRef::new()},style:background-color=move ||gestures.palette.get().get(i).map(|v|crate::tiles::contrast_ink(v.0).to_owned())) {}
+                        color=Memo::new(move |_|model.palette.get().get(i).map(|v|v.0).unwrap_or(model.current())),
+                        label=Memo::new(move |_|model.palette.get().get(i).map(|v|swatch_name(v.0)).unwrap_or_default()),
+                        activate=UnsyncCallback::new(move |()|{if let Some(v)=model.palette.get_untracked().get(i){model.select(v.0);}}))
+                    if move ||model.palette.get().get(i).is_some_and(|entry|entry.1) {
+                        box(class="palette-lock",node_ref=if i==0{refs.palette_dot}else{NodeRef::new()},style:background-color=move ||model.palette.get().get(i).map(|v|crate::tiles::contrast_ink(v.0).to_owned())) {}
                     }
                 }
             }
-            for i in move ||0..gestures.palette.get().len(),key=|i:&usize|*i {
+            for i in move ||0..model.palette.get().len(),key=|i:&usize|*i {
                 PaletteInsert(model=model,index=i,node=NodeRef::new(),hot=hot)
             }
             PaletteInsert(model=model,index=usize::MAX,node=tail,hot=hot)

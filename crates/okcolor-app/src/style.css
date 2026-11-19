@@ -84,7 +84,7 @@ field:focus { color: var(--bright); }
 .menu-button, .swap-colors, .format-trigger, .recent-nav, .copy { color: var(--muted); }
 .menu-button:hover, .swap-colors:hover, .format-trigger:hover, .recent-nav:hover { color: var(--bright); background-color: transparent; }
 .copy:hover { color: var(--bright); }
-.swap-icon { --zgui-fill: currentColor; }
+.swap-icon { --zgui-stroke: currentColor; }
 .history-arrow { border-color: currentColor; pointer-events: none; }
 .number:hover { color: var(--bright); }
 .caption-control.caption_hover { background-color: var(--raised); }
@@ -102,18 +102,12 @@ field:focus { color: var(--bright); }
 .section-heading { color: var(--text); font-size: var(--text-md); min-height: var(--small-tile); align-items: center; gap: var(--gap); }
 .tool-icon { color: var(--muted); width: var(--small-tile); height: var(--small-tile); font-size: 16px; text-align: center; }
 .tool-icon:hover { color: var(--bright); background-color: transparent; }
-.swatch-tiles { flex-wrap: wrap; gap: var(--tile-gap); min-height: 1px; }
-.library-tile { width: var(--tile); min-width: var(--tile); height: var(--tile); border-radius: 0; }
+.swatch-tiles { min-height: 19px; flex-wrap: wrap; gap: var(--tile-gap); }
+.library-tile { width: 19px; min-width: 19px; height: 19px; border-radius: 0; }
 .folder-heading { width: 100%; text-align: left; color: var(--text); align-self: flex-start; padding: 0; max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; display: flex; flex-direction: row; height: var(--icon); align-items: center; }
-.library-editor { margin-top: 12px; padding-top: 8px; border-top: 1px solid #222; gap: 8px; }
-.tool-entry { background-color: var(--surface); color: var(--text); height: 26px; min-width: 0; flex: 1; padding: var(--gap); box-sizing: border-box; font-family: var(--mono); font-size: var(--text-md); white-space: nowrap; overflow: hidden; }
-.library-editor > .tool-entry { flex: none; width: 100%; }
-.tool-actions { gap: 6px; align-items: center; min-height: 26px; }
-.tool-actions.wrap { flex-wrap: wrap; }
 .tool-action { padding: var(--gap) 6px; color: var(--text); white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 .tool-action:hover { color: var(--bright); }
 .tool-action.active { color: var(--bright); background-color: var(--raised); }
-.tool-hint { color: var(--text); font-size: var(--text-sm); }
 .tool-sections { gap: var(--space-y); }
 .tool-section { gap: var(--gap); }
 .generated-colors { gap: 0; height: var(--small-tile); min-height: var(--small-tile); }
@@ -149,7 +143,7 @@ field:focus { color: var(--bright); }
 .recent, .library-tile, .generated-color, .add-tile { position: relative; }
 .dragged { cursor: grabbing; outline: 1px solid var(--bright); outline-offset: -1px; }
 .insertion-line { position: absolute; top: 0; left: -2px; width: var(--tile-gap); height: 100%; background-color: var(--bright); pointer-events: none; }
-.tile-check { position: absolute; pointer-events: none; background-color: transparent; color: var(--bright); inset: 0; text-align: center; display: flex; align-items: center; justify-content: center; opacity: 0; transform: scale(0.7); transition: opacity 220ms ease, transform 220ms ease; }
+.tile-check { position: absolute; pointer-events: none; background-color: transparent; color: var(--bright); top: 0; left: 0; width: 100%; height: 100%; text-align: center; display: flex; align-items: center; justify-content: center; opacity: 0; transform: scale(0.7); transition: opacity 220ms ease, transform 220ms ease; }
 
 .palette-strip { position: relative; width: 100%; height: var(--sample); min-height: var(--sample); }
 .palette-cell { position: relative; flex-grow: 1; flex-shrink: 1; flex-basis: 0; min-width: 0; overflow: visible; }
@@ -245,6 +239,13 @@ field:focus { color: var(--bright); }
 .hover-value { font-size: var(--text-sm); font-family: var(--mono); color: var(--muted); }
 
 .folder-chevron, .format-trigger { position: relative; width: var(--icon); min-width: var(--icon); height: var(--icon); }
+.folder-input { width: 100%; min-width: 0; height: var(--icon); padding: 0 3px; box-sizing: border-box; background-color: var(--surface); color: var(--bright); font-size: var(--text-md); }
+.folder-confirm { align-items: center; gap: 20px; height: var(--icon); }
+.folder-confirm control { padding: 0; color: var(--text); }
+.folder-confirm control:hover, .folder-menu control.drag-over { color: var(--bright); }
+.folder-menu .new-folder { flex-direction: row; gap: var(--gap); }
+.new-folder .add-icon { align-self: flex-start; margin-left: -5px; width: 21px; height: 21px; }
+.add-tile .add-icon { position: absolute; left: -1px; top: -1px; width: 21px; height: 21px; }
 .swatch-library .folder-heading { justify-content: space-between; }
 .settings .folder-heading { gap: var(--gap); }
 .format-trigger.open .chevron, .folder-heading.up .chevron { transform: scaleY(-1); }
@@ -252,7 +253,7 @@ field:focus { color: var(--bright); }
 
 .axis-l.left { right: auto; left: 2px; }
 .add-icon { width: var(--tile); height: var(--tile); --zgui-stroke: currentColor; pointer-events: none; }
-.add-tile { width: var(--tile); height: var(--tile); outline: 1px solid var(--muted); outline-offset: -1px; }
+.add-tile { display: flex; align-items: center; justify-content: center; width: 19px; min-width: 19px; height: 19px; outline: 1px solid var(--muted); outline-offset: -1px; }
 
 .palette-tail, .palette-insert { display: flex; align-items: center; justify-content: center; padding: 0; pointer-events: none; opacity: 0; position: absolute; height: var(--palette-add); width: var(--palette-add); top: 9.5px; background-color: var(--black); color: var(--bright); }
 .palette-tail { right: 0; }

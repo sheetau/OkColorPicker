@@ -120,6 +120,19 @@ fn mounted_tabs_edit_recall_adjust_and_restore() {
                 h.settle(64);
                 let (model, refs): (PickerModel, PickerRefs) = state.get().unwrap();
                 let original = model.current();
+                let badge=refs.tabs[2].window_bounds().unwrap();
+                {
+                    let captured=frames.lock().unwrap();
+                    let img=captured.last().unwrap();
+                    let (x,y)=(badge.origin.x.0.round() as i32,badge.origin.y.0.round() as i32);
+                    for dy in 0..24 {for dx in 0..24 {
+                        let radius=(dx as f32-11.5).hypot(dy as f32-11.5);
+                        if (7.25..8.4).contains(&radius) {
+                            assert!(img.rgba(x+dx,y+dy)[0].abs_diff(img.rgba(x+23-dx,y+23-dy)[0])<=6,
+                                "APCA inner arc must stay inside the circular contour at {dx}/{dy}");
+                        }
+                    }}
+                }
                 let eye=refs.eyedropper.window_bounds().unwrap();
                 let eye_center=Point::new(CssPx(eye.origin.x.0+8.0),CssPx(eye.origin.y.0+8.0));
                 tile_pointer(&mut h,PointerAction::Moved,PointerButton::Primary,eye_center);
@@ -194,7 +207,20 @@ fn mounted_tabs_edit_recall_adjust_and_restore() {
                             assert!(diagonal.abs_diff(66) < fill.abs_diff(66)/2, "fixed-ink cross");
                         }
                     }
-                    if slot==0 {click(&mut h,refs.fallback_samples[0]);}
+                    if slot==0 {
+                        let center=Point::new(CssPx(b.origin.x.0+20.0),CssPx(b.origin.y.0+20.0));
+                        for action in [PointerAction::Moved,PointerAction::Pressed,PointerAction::Released] {
+                            tile_pointer(&mut h,action,PointerButton::Secondary,center);
+                        }
+                        h.run_for(Duration::from_millis(300),Duration::from_millis(16)); h.settle(32);
+                        let captured=frames.lock().unwrap();
+                        let image=captured.last().unwrap();
+                        let (x,y)=(center.x.0 as i32,center.y.0 as i32);
+                        assert!((-8..8).any(|dx|(-8..8).any(|dy|image.rgba(x+dx,y+dy)[0]>170)),
+                            "white copy confirmation on the black unavailable swatch");
+                        drop(captured);
+                        click(&mut h,refs.fallback_samples[0]);
+                    }
                     else {
                         let b=refs.fallback_samples[1].window_bounds().unwrap();
                         let icon=Point::new(CssPx(b.origin.x.0-15.0),CssPx(b.origin.y.0+10.0));
@@ -314,7 +340,14 @@ fn mounted_tabs_edit_recall_adjust_and_restore() {
                 let cell=refs.tools[6].window_bounds().unwrap();
                 assert!((dot.origin.x.0+2.5-cell.origin.x.0-cell.size.width.0*0.5).abs()<=1.0);
                 assert!((cell.origin.y.0+cell.size.height.0-dot.origin.y.0-dot.size.height.0-5.0).abs()<=1.0);
+                let before_generation=model.palette.get_untracked();
                 click(&mut h, refs.tools[0]);
+                let generated=model.palette.get_untracked();
+                assert_ne!(generated,before_generation);
+                model.undo();h.settle(32);
+                assert_eq!(model.palette.get_untracked(),before_generation);
+                model.redo();h.settle(32);
+                assert_eq!(model.palette.get_untracked(),generated);
                 for action in [PointerAction::Pressed,PointerAction::Released] {tile_pointer(&mut h,action,primary,last_color);}
                 let before_space = model.current();
                 key(&mut h,KeyEvent::named(NamedKey::Space,PhysicalKey::Unidentified(0)),Modifiers::NONE);
@@ -329,8 +362,20 @@ fn mounted_tabs_edit_recall_adjust_and_restore() {
                     "generation preserves the locked color"
                 );
                 tile_pointer(&mut h, PointerAction::Pressed, primary, palette_start);
+                let before_reorder=model.palette.get_untracked();
                 tile_pointer(&mut h, PointerAction::Moved, primary, palette_end);
                 tile_pointer(&mut h, PointerAction::Released, primary, palette_end);
+                let reordered=model.palette.get_untracked();
+                model.undo();h.settle(32);
+                assert_eq!(model.palette.get_untracked(),before_reorder);
+                model.redo();h.settle(32);
+                assert_eq!(model.palette.get_untracked(),reordered);
+                for action in [PointerAction::Pressed,PointerAction::Released] {
+                    tile_pointer(&mut h,action,PointerButton::Middle,last_color);
+                }
+                assert_eq!(model.palette.get_untracked().len(),reordered.len()-1);
+                model.undo();h.settle(32);
+                assert_eq!(model.palette.get_untracked(),reordered,"restore deleted color and its lock");
                 model.select(original);
                 tile_pointer(&mut h, PointerAction::Pressed, primary, last_color);
                 tile_pointer(&mut h, PointerAction::Released, primary, last_color);
@@ -381,6 +426,11 @@ fn mounted_tabs_edit_recall_adjust_and_restore() {
                 tile_pointer(&mut h,PointerAction::Moved,primary,raised(48.0));
                 tile_pointer(&mut h,PointerAction::Moved,primary,raised(24.0));
                 tile_pointer(&mut h,PointerAction::Released,primary,raised(24.0));
+                let inserted=model.palette.get_untracked();
+                model.undo();h.settle(32);
+                assert_eq!(model.palette.get_untracked().len(),5);
+                model.redo();h.settle(32);
+                assert_eq!(model.palette.get_untracked(),inserted);
                 let lock=refs.tools[6].window_bounds().unwrap();
                 let cell_width=lock.size.width.0;
                 assert!((cell_width-strip.size.width.0/7.0).abs()<2.0,"releasing at two upward steps inserts two colors, got cell width {cell_width}");
@@ -411,6 +461,10 @@ fn mounted_tabs_edit_recall_adjust_and_restore() {
                 );
                 assert_eq!(model.library.get_untracked().swatches[0].color(), second);
                 assert_eq!(model.library.get_untracked().swatches[1].id, first_id);
+                model.undo();h.settle(32);
+                assert_eq!(model.library.get_untracked().swatches[0].id, first_id);
+                model.redo();h.settle(32);
+                assert_eq!(model.library.get_untracked().swatches[1].id, first_id);
                 tile_pointer(
                     &mut h,
                     PointerAction::Pressed,
@@ -438,6 +492,10 @@ fn mounted_tabs_edit_recall_adjust_and_restore() {
                     first,
                 );
                 assert_eq!(model.library.get_untracked().swatches.len(), 1);
+                model.undo();h.settle(32);
+                assert_eq!(model.library.get_untracked().swatches.len(),2);
+                model.redo();h.settle(32);
+                assert_eq!(model.library.get_untracked().swatches.len(),1);
                 model.select(original);
                 refs.menu.focus();
                 h.settle(32);
@@ -606,6 +664,9 @@ fn mounted_tabs_edit_recall_adjust_and_restore() {
                 {
                     let frames=frames.lock().unwrap();
                     let image=frames.last().unwrap();
+                    let left=reset.origin.x.0.round() as i32;
+                    let top=reset.origin.y.0.round() as i32;
+                    assert!(image.rgba(left+13,top+2)[0]>=60 && image.rgba(left+12,top+2)[0]<15 && image.rgba(left+14,top+2)[0]<15,"reset arrowhead occupies one pixel");
                     let x=(reset.origin.x.0+reset.size.width.0+5.0).round() as i32;
                     let y=reset.origin.y.0.round() as i32;
                     let bg=image.rgba(x+5,y+9);
@@ -702,15 +763,111 @@ fn mounted_tabs_edit_recall_adjust_and_restore() {
                 let edit = Point::new(CssPx(menu.origin.x.0+20.0),CssPx(menu.origin.y.0+menu.size.height.0-13.0));
                 for action in [PointerAction::Pressed,PointerAction::Released] {tile_pointer(&mut h,action,primary,edit);}
                 assert!(refs.library[2].window_bounds().is_some(),"the overlaid menu receives clicks");
-                let before=refs.library[2].text_content();
-                type_text(&mut h,refs.library[2],"Discarded draft");
-                key(&mut h,KeyEvent::named(NamedKey::Escape,PhysicalKey::Unidentified(0)),Modifiers::NONE);
-                assert_eq!(refs.library[2].text_content(),before);
+                let input=refs.library[2];
+                let heading=refs.library[1];
+                let new_folder=refs.library[4];
+                let escape=||KeyEvent::named(NamedKey::Escape,PhysicalKey::Unidentified(0));
+                let point_in=|node:NodeRef,dx,dy| {
+                    let b=node.window_bounds().unwrap();
+                    Point::new(CssPx(b.origin.x.0+dx),CssPx(b.origin.y.0+dy))
+                };
+                let field=input.window_bounds().unwrap();
+                assert_eq!(field.size,anchor.size);
+                assert!(model.editing_text.get_untracked(),"new name receives keyboard focus");
+                key(&mut h,KeyEvent::character("Discarded draft"),Modifiers::NONE);
+                key(&mut h,escape(),Modifiers::NONE);
+                assert!(input.window_bounds().is_none());
                 assert!(!model.editing_text.get_untracked());
-                type_text(&mut h,refs.library[2],"Sample group");
+                click(&mut h,heading);click(&mut h,new_folder);
+                key(&mut h,KeyEvent::character("Sample group"),Modifiers::NONE);
                 key(&mut h,enter(),Modifiers::NONE);
-                assert!(!model.editing_text.get_untracked());
-                assert_eq!(refs.library[2].text_content(),"Sample group");
+                let id=model.library.get_untracked().folders.last().expect("created folder").id;
+                assert_eq!(heading.text_content(),"Sample group");
+                click(&mut h,heading);click(&mut h,new_folder);
+                key(&mut h,enter(),Modifiers::NONE);
+                assert_eq!(heading.text_content(),"Sample group","blank creation returns to previous folder");
+                let center=point_in(heading,10.0,8.0);
+                let hold=Duration::from_millis(730);
+                tile_pointer(&mut h,PointerAction::Pressed,primary,center);
+                h.run_for(hold,Duration::from_millis(20));h.settle(32);
+                tile_pointer(&mut h,PointerAction::Released,primary,center);
+                assert_eq!(input.text_content(),"Sample group");
+                type_text(&mut h,input,"Warm");
+                refs.menu.focus();h.settle(32);
+                assert_eq!(heading.text_content(),"Warm","blur commits a rename");
+                click(&mut h,refs.library[0]);
+                let plus=refs.library[0].window_bounds().unwrap();
+                assert_eq!((plus.size.width.0,plus.size.height.0),(19.0,19.0));
+                {
+                    let capture=frames.lock().unwrap();
+                    let frame=capture.last().unwrap();
+                    let (x,y)=(plus.origin.x.0.round() as i32,plus.origin.y.0.round() as i32);
+                    for dy in 4..15 {for dx in 4..15 {
+                        let ink=(dx==9 && (5..14).contains(&dy)) || (dy==9 && (5..14).contains(&dx));
+                        assert_eq!(frame.rgba(x+dx,y+dy)[0]>50,ink,"19px swatch add at {dx}/{dy}");
+                    }}
+                }
+                let entry=model.library.get_untracked().swatches.last().unwrap().id;
+                let tile=point_in(refs.library[7],9.0,9.0);
+                tile_pointer(&mut h,PointerAction::Pressed,primary,tile);
+                h.run_for(hold,Duration::from_millis(20));h.settle(32);
+                tile_pointer(&mut h,PointerAction::Released,primary,tile);
+                type_text(&mut h,input,"Peach");
+                key(&mut h,enter(),Modifiers::NONE);
+                assert_eq!(model.library.get_untracked().swatches.last().unwrap().name,"Peach");
+                // Press then move early: the same hold opens the menu without entering the name field.
+                tile_pointer(&mut h,PointerAction::Pressed,primary,tile);
+                tile_pointer(&mut h,PointerAction::Moved,primary,center);
+                h.run_for(Duration::from_millis(240),Duration::from_millis(20));h.settle(32);
+                assert!(refs.folder_menu.window_bounds().is_none());
+                h.run_for(hold,Duration::from_millis(20));h.settle(32);
+                let unfiled=point_in(refs.folder_menu,12.0,10.0);
+                tile_pointer(&mut h,PointerAction::Moved,primary,unfiled);
+                tile_pointer(&mut h,PointerAction::Released,primary,unfiled);
+                let moved=model.library.get_untracked();
+                assert_eq!(moved.swatches.last().unwrap().id,entry);
+                assert_eq!(moved.swatches.last().unwrap().folder,None);
+                assert!(refs.folder_menu.window_bounds().is_none());
+                refs.menu.focus();
+                key(&mut h,KeyEvent::character("z"),Modifiers::CONTROL);
+                assert_eq!(model.library.get_untracked().swatches.last().unwrap().folder,Some(id));
+                // Populated folders require confirmation and preserve their colors unfiled.
+                for cancel in [true,false] {
+                    tile_pointer(&mut h,PointerAction::Pressed,PointerButton::Middle,center);
+                    tile_pointer(&mut h,PointerAction::Released,PointerButton::Middle,center);
+                    assert!(refs.library[5].window_bounds().is_some());
+                    if cancel {key(&mut h,escape(),Modifiers::NONE);} else {click(&mut h,refs.library[5]);}
+                }
+                assert!(model.library.get_untracked().folders.iter().all(|f|f.id!=id));
+                assert_eq!(model.library.get_untracked().swatches.last().unwrap().folder,None);
+                model.undo(); h.settle(32);
+                let restored=model.library.get_untracked();
+                assert_eq!(restored.swatches.last().unwrap().folder,Some(id));
+                assert_eq!(restored.swatches.last().unwrap().name,"Peach");
+                assert_eq!(restored.folders.last().unwrap().name,"Warm");
+                let outside_tile=point_in(refs.swatches[0],17.0,17.0);
+                tile_pointer(&mut h,PointerAction::Pressed,primary,outside_tile);
+                tile_pointer(&mut h,PointerAction::Moved,primary,center);
+                h.run_for(hold,Duration::from_millis(20));h.settle(32);
+                let folder_option=point_in(refs.folder_menu,12.0,33.0);
+                tile_pointer(&mut h,PointerAction::Released,primary,folder_option);
+                let after_drop=model.library.get_untracked();
+                assert_eq!(after_drop.swatches.len(),restored.swatches.len()+1);
+                assert_eq!(after_drop.swatches.last().unwrap().folder,Some(id));
+                assert_eq!(after_drop.swatches.last().unwrap().color(),model.colors()[0]);
+                assert_eq!(heading.text_content(),"Swatch Tiles");
+                tile_pointer(&mut h,PointerAction::Pressed,PointerButton::Middle,center);
+                tile_pointer(&mut h,PointerAction::Released,PointerButton::Middle,center);
+                assert!(refs.library[5].window_bounds().is_none());
+                assert_eq!(model.library.get_untracked(),after_drop);
+                click(&mut h,heading);click(&mut h,new_folder);
+                key(&mut h,KeyEvent::character("Empty"),Modifiers::NONE);
+                key(&mut h,enter(),Modifiers::NONE);
+                tile_pointer(&mut h,PointerAction::Pressed,PointerButton::Middle,center);
+                tile_pointer(&mut h,PointerAction::Released,PointerButton::Middle,center);
+                assert!(refs.library[5].window_bounds().is_none());
+                assert_eq!(heading.text_content(),"Swatch Tiles");
+                assert_eq!(model.library.get_untracked().folders,after_drop.folders);
                 let expected = model.saved_state_untracked();
                 h.shut_down();
                 assert_eq!(

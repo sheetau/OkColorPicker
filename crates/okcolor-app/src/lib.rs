@@ -32,6 +32,7 @@ mod windows_display_watch;
 mod windows_qr;
 
 mod eyedropper;
+mod swatches;
 mod tiles;
 mod tools_ui;
 mod tooltip;
