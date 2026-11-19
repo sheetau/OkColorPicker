@@ -75,12 +75,12 @@ impl CustomElement for ColorSurface {
 impl SurfaceKind {
     /// The expensive color surface subscribes only to the axes it actually depends on.
     pub fn params(self, model: PickerModel) -> ColorParams {
-        let l = if matches!(self, Self::Slice | Self::Lightness) {
+        let l = if self == Self::Lightness {
             0.0
         } else {
             model.l.get()
         };
-        let c = if matches!(self, Self::Slice | Self::Chroma) {
+        let c = if self == Self::Chroma {
             0.0
         } else {
             model.c.get()
@@ -98,6 +98,7 @@ impl SurfaceKind {
                 Gamut::Rec2020 => 2.0,
             },
             kind: self as u8 as f32,
+            outline_dark: if self == Self::Slice { 0.0 } else { 1.0 },
             mapping: if model.mapping.get() == GamutMapping::Clip {
                 1.0
             } else {
@@ -130,11 +131,54 @@ impl SurfaceKind {
         match self {
             Self::Lightness => l = x,
             Self::Chroma => c = x * model.max_chroma.get_untracked(),
-            Self::Hue => h = x * 360.0,
+            Self::Hue => h = (x * 360.0).min(360.0_f64.next_down()),
             Self::Alpha => a = x,
             Self::Slice => unreachable!(),
         }
         Oklch::new(l, c, h, a).ok()
+    }
+
+    fn snapped(self, model: PickerModel, x: f64, y: f64, width: f64) -> Option<Oklch> {
+        if !matches!(self, Self::Lightness | Self::Chroma | Self::Hue) || !(0.0..1.0).contains(&x) {
+            return self.pick(model, x, y);
+        }
+        let at = self.pick(model, x, y)?;
+        let mut closest = 4.0 / width;
+        let mut result = at;
+        for (gamut, visible) in [
+            (Gamut::Srgb, true),
+            (Gamut::DisplayP3, model.show_p3.get_untracked()),
+            (Gamut::Rec2020, model.show_rec2020.get_untracked()),
+        ] {
+            if !visible {
+                continue;
+            }
+            let inside = at.in_gamut(gamut);
+            for direction in [-1.0, 1.0] {
+                let mut near = x;
+                for pixel in 1..=4 {
+                    let mut far = (x + direction * f64::from(pixel) / width).clamp(0.0, 1.0);
+                    if self.pick(model, far, y)?.in_gamut(gamut) != inside {
+                        for _ in 0..12 {
+                            let mid = (near + far) * 0.5;
+                            if self.pick(model, mid, y)?.in_gamut(gamut) == inside {
+                                near = mid
+                            } else {
+                                far = mid
+                            }
+                        }
+                        let distance = (near - x).abs();
+                        if distance <= closest {
+                            closest = distance;
+                            result = self.pick(model, if inside { near } else { far }, y)?;
+                        }
+                        break;
+                    }
+                    near = far;
+                }
+            }
+        }
+        Some(result)
     }
 
     pub fn marker(self, model: PickerModel) -> [f64; 2] {
@@ -223,9 +267,14 @@ pub fn ColorControl(model: PickerModel, kind: SurfaceKind, node: NodeRef) -> imp
     on_cleanup_local(move || drop(effect));
     let dragging = RwSignal::new(false);
     let projection = RwSignal::new_local(None::<GamutProjection>);
+    let scale = use_window().scale();
+    let pick = move |x, y| {
+        let width = node.window_bounds()?.size.width.0 / scale.get_untracked();
+        kind.snapped(model, x, y, f64::from(width))
+    };
     let drag = move |x, y| {
         if kind != SurfaceKind::Slice {
-            return kind.pick(model, x, y);
+            return pick(x, y);
         }
         let bounds = node.window_bounds()?;
         projection.with_untracked(|projection| {
@@ -237,7 +286,6 @@ pub fn ColorControl(model: PickerModel, kind: SurfaceKind, node: NodeRef) -> imp
             )
         })
     };
-    let scale = use_window().scale();
     let coordinate =
         move |position: zgui::geom::Point<zgui::geom::CssPx, zgui::geom::Css>,
               bounds: Option<zgui::geom::Rect<DevicePx, zgui::geom::Device>>| {
@@ -246,6 +294,15 @@ pub fn ColorControl(model: PickerModel, kind: SurfaceKind, node: NodeRef) -> imp
                 return None;
             }
             let scale = scale.get_untracked();
+            if kind != SurfaceKind::Slice {
+                let window = node.window_root()?.window_bounds()?;
+                if !window.contains(Point::new(
+                    DevicePx(position.x.0 * scale),
+                    DevicePx(position.y.0 * scale),
+                )) {
+                    return None;
+                }
+            }
             Some((
                 f64::from((position.x.0 * scale - bounds.origin.x.0) / bounds.size.width.0),
                 f64::from((position.y.0 * scale - bounds.origin.y.0) / bounds.size.height.0),
@@ -256,7 +313,7 @@ pub fn ColorControl(model: PickerModel, kind: SurfaceKind, node: NodeRef) -> imp
             return;
         }
         if let Some((x, y)) = coordinate(cx.position, node.window_bounds())
-            && let Some(color) = kind.pick(model, x, y)
+            && let Some(color) = pick(x, y)
             && model.begin()
         {
             if kind == SurfaceKind::Slice {
@@ -363,8 +420,6 @@ pub fn ColorControl(model: PickerModel, kind: SurfaceKind, node: NodeRef) -> imp
             on:pointer_cancel=move |_| { if dragging.get_untracked() {dragging.set(false);model.cancel();} }) {
             {surface.class("color-surface").into_view()}
             if move ||kind==SurfaceKind::Slice {
-                box(class="crosshair horizontal",style:top=move ||Some(format!("{}%",100.0*(1.0-model.l.get())))) {}
-                box(class="crosshair vertical",style:left=move ||Some(format!("{}%",100.0*(model.c.get()/model.max_chroma.get()).min(1.0)))) {}
                 text(class="axis-l",style:top=move ||{
                     let height = extent.get().map_or(152.0,|s|s.height.0/scale.get());
                     Some(format!("{}px",((1.0-model.l.get())*f64::from(height)-5.0).clamp(0.0,f64::from((height-10.0).max(0.0)))))

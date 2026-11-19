@@ -258,16 +258,12 @@ fn mounted_picker_preserves_wide_color_and_repaints_every_sample_on_display_tran
                                     };
                                     rgb = rgb.map(|c| backdrop * (1.0 - u) + c * u);
                                 }
-                                if kind == SurfaceKind::Hue
-                                    && !color.in_gamut(Gamut::Rec2020)
-                                    && (((x as f32 + y as f32
-                                        - bounds.origin.x.0
-                                        - bounds.origin.y.0)
-                                        .floor() as i32)
-                                        & 1)
-                                        == 0
-                                {
-                                    rgb = [0.0; 3];
+                                if kind == SurfaceKind::Hue && !color.in_gamut(Gamut::Rec2020) {
+                                    let normal = (f64::from(x + y + 1)
+                                        - f64::from(bounds.origin.x.0 + bounds.origin.y.0))
+                                        * std::f64::consts::FRAC_1_SQRT_2;
+                                    let distance = (normal - 3.0 * (normal / 3.0).round()).abs();
+                                    rgb = rgb.map(|v| v * distance.min(1.0));
                                 }
                                 expect_pixel(&pixels, x, y, rgb, white, "surface");
                                 checked += 1;

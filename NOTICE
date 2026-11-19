@@ -38,3 +38,8 @@ See licenses/Colorjs-MIT.txt and docs/CONTRAST.md.
 The closed-hand cursor uses Chromium hand_grabbing.cur (hotspot 13,13),
 revision 4c84a0e082c7d97af376c636329ad71ca16acee3, under the BSD-style
 license reproduced in licenses/Chromium-cursor.txt.
+
+The Similar color dictionary is derived from meodai/color-names, revision
+f889f531210c04a62d2bc5394315ab203ee960c2, src/colornames.csv (HEX and name).
+https://github.com/meodai/color-names
+See licenses/color-names-MIT.txt.

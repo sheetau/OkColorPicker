@@ -139,7 +139,12 @@ fn mounted_tabs_edit_recall_adjust_and_restore() {
                     let wide = okcolor_core::Oklch::new(0.65,0.4,140.0,1.0).unwrap();
                     model.select(wide);
                     h.settle(32);
-                    click(&mut h,refs.fallback_samples[slot as usize]);
+                    if slot==0 {click(&mut h,refs.fallback_samples[0]);}
+                    else {
+                        let b=refs.fallback_samples[1].window_bounds().unwrap();
+                        let icon=Point::new(CssPx(b.origin.x.0-15.0),CssPx(b.origin.y.0+10.0));
+                        for action in [PointerAction::Pressed,PointerAction::Released] {tile_pointer(&mut h,action,PointerButton::Primary,icon);}
+                    }
                     assert!(model.current().in_gamut(okcolor_core::Gamut::Srgb));
                     model.undo();
                     assert_eq!(model.current(), wide);
@@ -289,8 +294,9 @@ fn mounted_tabs_edit_recall_adjust_and_restore() {
                 assert_eq!(
                     refs.codes[1].text_content(),
                     "#00e0e0",
-                    "Enter replaces the focused draft"
+                    "Enter formats the committed value"
                 );
+                assert!(!model.editing_text.get_untracked());
                 model.select(original);
                 key(&mut h, KeyEvent::character("3"), Modifiers::CONTROL);
                 assert_eq!(model.tab.get_untracked(), Tab::Apca);
@@ -322,8 +328,9 @@ fn mounted_tabs_edit_recall_adjust_and_restore() {
                 assert_eq!(model.tools.get_untracked().contrast_grid.levels[0], 65);
                 assert_eq!(model.current(), original);
                 let enter = || KeyEvent::named(NamedKey::Enter,PhysicalKey::Unidentified(0));
-                for lc in [105, 65] {
-                    key(&mut h,KeyEvent::character(lc.to_string()),Modifiers::NONE);
+                for (input,lc) in [("150",110),("-4",0),("65",65)] {
+                    assert!(!model.editing_text.get_untracked());
+                    type_text(&mut h,refs.tools[3],input);
                     key(&mut h,enter(),Modifiers::NONE);
                     assert_eq!(model.tools.get_untracked().contrast_grid.levels[0],lc);
                 }
@@ -337,6 +344,12 @@ fn mounted_tabs_edit_recall_adjust_and_restore() {
                         assert_eq!(node.text_content().to_ascii_lowercase(),value);
                     }
                 }
+                let source=model.current();
+                type_text(&mut h,refs.current_lc[0],"32");
+                key(&mut h,enter(),Modifiers::NONE);
+                assert_eq!(refs.current_lc[0].text_content(),"32");
+                assert_ne!(model.current(),source);
+                model.undo();h.settle(32);assert_eq!(model.current(),source);
                 let grid = refs.tools[5].window_bounds().unwrap();
                 let point=|dx,dy|Point::new(CssPx(grid.origin.x.0+dx),CssPx(grid.origin.y.0+dy));
                 for action in [PointerAction::Moved,PointerAction::Pressed,PointerAction::Released] {
@@ -358,6 +371,8 @@ fn mounted_tabs_edit_recall_adjust_and_restore() {
                 tile_pointer(&mut h, PointerAction::Moved, primary, edge);
                 tile_pointer(&mut h, PointerAction::Released, primary, edge);
                 assert_eq!(model.tools.get_untracked().contrast_grid.split, 0);
+                model.undo(); assert_eq!(model.tools.get_untracked().contrast_grid.split,2);
+                model.redo(); h.settle(32); assert_eq!(model.tools.get_untracked().contrast_grid.split,0);
                 click(&mut h, refs.tools[6]);
                 assert_eq!(model.tools.get_untracked().contrast_grid.split, 2);
                 let saved = model.saved_state_untracked();
@@ -392,7 +407,7 @@ fn mounted_tabs_edit_recall_adjust_and_restore() {
                             primary,
                             Point::new(CssPx(145.0), CssPx(15.0)),
                         );
-                        h.run_for(Duration::from_secs(1), Duration::from_millis(100));
+                        h.run_for(Duration::from_secs(2), Duration::from_millis(16));
                         h.settle(64);
                         assert!(refs.tool_page.window_bounds().unwrap().size.height.0 > 100.0);
                         std::fs::write(
@@ -441,6 +456,10 @@ fn mounted_tabs_edit_recall_adjust_and_restore() {
                 let edit = Point::new(CssPx(menu.origin.x.0+20.0),CssPx(menu.origin.y.0+menu.size.height.0-13.0));
                 for action in [PointerAction::Pressed,PointerAction::Released] {tile_pointer(&mut h,action,primary,edit);}
                 assert!(refs.library[2].window_bounds().is_some(),"the overlaid menu receives clicks");
+                type_text(&mut h,refs.library[2],"Sample group");
+                key(&mut h,enter(),Modifiers::NONE);
+                assert!(!model.editing_text.get_untracked());
+                assert_eq!(refs.library[2].text_content(),"Sample group");
                 let expected = model.saved_state_untracked();
                 h.shut_down();
                 assert_eq!(

@@ -240,19 +240,15 @@ impl Default for ContrastGrid {
 }
 impl ContrastGrid {
     pub fn level_name(&self, index: usize) -> u32 {
-        self.level_names
-            .get(index)
-            .copied()
-            .unwrap_or((index as u32 + 1) * 100)
+        let step = if self.levels.len() <= 9 { 100 } else { 50 };
+        (index as u32 + 1) * step
     }
 
     pub fn insert(&mut self, index: usize) {
         if self.levels.len() >= 16 {
             return;
         }
-        if self.level_names.is_empty() {
-            self.level_names = (0..self.levels.len()).map(|i| self.level_name(i)).collect();
-        }
+        self.level_names.clear();
         let i = index.min(self.levels.len());
         let before = i
             .checked_sub(1)
@@ -271,23 +267,7 @@ impl ContrastGrid {
             (None, Some(b)) => 2 * b - self.levels.get(1).map_or(b + 5, |v| i16::from(*v)),
             _ => 60,
         };
-        let mut name = match (
-            i.checked_sub(1).and_then(|v| self.level_names.get(v)),
-            self.level_names.get(i),
-        ) {
-            (Some(a), Some(b)) => a + (b - a).div_ceil(2),
-            (Some(a), None) => a.saturating_add(100),
-            (None, Some(b)) => b.saturating_sub(100),
-            _ => 100,
-        };
-        if self.level_names.contains(&name) {
-            self.level_names = (1..=self.levels.len() + 1)
-                .map(|n| n as u32 * 100)
-                .collect();
-            name = self.level_names.remove(i);
-        }
         self.levels.insert(i, target.clamp(0, 110) as u8);
-        self.level_names.insert(i, name);
         if i < self.split || (i == self.split && self.split == self.levels.len() - 1) {
             self.split += 1;
         }
@@ -298,9 +278,7 @@ impl ContrastGrid {
             return;
         }
         self.levels.remove(index);
-        if !self.level_names.is_empty() {
-            self.level_names.remove(index);
-        }
+        self.level_names.clear();
         self.split -= usize::from(index < self.split);
     }
 

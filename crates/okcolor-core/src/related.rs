@@ -99,6 +99,51 @@ pub fn ramp_steps<const N: usize>(source: Oklch, kind: Ramp, gamut: Gamut) -> [O
     })
 }
 
+/// Thirteen samples with the exact source in the middle of each variation.
+pub fn variations(source: Oklch, row: Variation, gamut: Gamut) -> [Oklch; 13] {
+    let [l, c, h, a] = source.components();
+    match row {
+        Variation::Lightness => {
+            let shades = ramp_steps::<7>(source, Ramp::Shades, gamut);
+            let tints = ramp_steps::<7>(source, Ramp::Tints, gamut);
+            std::array::from_fn(|i| if i <= 6 { shades[6 - i] } else { tints[i - 6] })
+        }
+        Variation::Temperature => {
+            let mut colors = ramp_steps(source, Ramp::Temperatures, gamut);
+            colors[6] = source;
+            colors
+        }
+        Variation::Chroma | Variation::Hue => {
+            let max = Oklch::new(l, 1.0, h, a)
+                .expect("bounded lightness")
+                .reduce_chroma(gamut)
+                .components()[1];
+            std::array::from_fn(|i| {
+                if i == 6 {
+                    return source;
+                }
+                let t = (i as f64 - 6.0) / 6.0;
+                let (c, h) = if row == Variation::Hue {
+                    (c, h + t * 60.0)
+                } else {
+                    (c + t * if t < 0.0 { c } else { (max - c).max(0.0) }, h)
+                };
+                Oklch::new(l, c, h, a)
+                    .expect("bounded variation")
+                    .reduce_chroma(gamut)
+            })
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Variation {
+    Lightness,
+    Chroma,
+    Hue,
+    Temperature,
+}
+
 /// Nearest CSS named color by Euclidean distance in OKLab.
 fn named_colors() -> &'static [(&'static str, Oklch, [f64; 3])] {
     use std::sync::LazyLock;
@@ -135,10 +180,10 @@ pub fn color_name(color: Oklch) -> &'static str {
 
 /// Four nearest distinct named samples, in perceptual distance order.
 pub fn similar_named(color: Oklch) -> Vec<Oklch> {
-    let lab = color.oklab();
-    let mut names = named_colors().to_vec();
-    names.sort_by(|a, b| distance(a.2, lab).total_cmp(&distance(b.2, lab)));
-    names.into_iter().take(4).map(|entry| entry.1).collect()
+    crate::nearest_named(color, 4)
+        .into_iter()
+        .map(|entry| entry.color)
+        .collect()
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

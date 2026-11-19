@@ -8,6 +8,25 @@ fn color(s: &str) -> Oklch {
 }
 
 #[test]
+fn variations_keep_source_and_alpha_in_each_center() {
+    use okcolor_core::{Variation, variations};
+    let source = Oklch::new(0.51, 0.12, 359.0, 0.37).unwrap();
+    for gamut in [Gamut::Srgb, Gamut::DisplayP3] {
+        for row in [
+            Variation::Lightness,
+            Variation::Chroma,
+            Variation::Hue,
+            Variation::Temperature,
+        ] {
+            let samples = variations(source, row, gamut);
+            assert_eq!(samples[6], source);
+            assert!(samples.iter().all(|c| c.components()[3] == 0.37));
+            assert_ne!(samples[0], samples[12]);
+        }
+    }
+}
+
+#[test]
 fn signed_apca_reference_values_and_alpha() {
     // Color.js 0.0.98G reference results, encoded sRGB endpoints.
     assert!((apca(color("#000"), color("#fff"), M).unwrap() - 106.04067321268862).abs() < 1e-5);

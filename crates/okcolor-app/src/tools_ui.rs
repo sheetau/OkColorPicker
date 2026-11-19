@@ -5,8 +5,8 @@ use crate::{
     workspace::Library,
 };
 use okcolor_core::{
-    ColorFormat, Gamut, GamutMapping, Harmony, Oklch, Ramp, apca_in, contrast_sample, format_color,
-    harmony, parse_color, ramp_steps,
+    ColorFormat, Gamut, GamutMapping, Harmony, Oklch, Variation, apca_in, contrast_sample,
+    format_color, harmony, parse_color, variations,
 };
 use zgui::reactive::UnsyncCallback;
 use zgui::{prelude::*, reactive::RenderEffect};
@@ -30,6 +30,8 @@ fn Entry(
     draft: RwSignal<String>,
     label: &'static str,
 ) -> impl IntoView {
+    let exit = expect_context::<crate::ui::InputExit>().0;
+    let composing = RwSignal::new(false);
     let focused = RwSignal::new(false);
     let effect = RenderEffect::new(move |_| {
         let text = draft.get();
@@ -42,6 +44,9 @@ fn Entry(
         model.editing_text.set(false);
     });
     view! {field(class="tool-entry",node_ref=node,a11y:label=label,
+    on:ime_start=move |_|composing.set(true),on:ime_preedit=move |_|composing.set(true),
+    on:ime_commit=move |_|composing.set(false),on:ime_end=move |_|composing.set(false),
+    on:key_down=move |cx|{if !composing.get_untracked() && cx.key==Key::Named(NamedKey::Enter){exit.focus();cx.prevent_default();cx.stop_propagation();}},
     on:focus_in=move |_|{focused.set(true);model.editing_text.set(true);},on:focus_out=move |_|{focused.set(false);model.editing_text.set(false);},
     on:input=move |cx|{if let Some(value)=cx.payload().as_value(){draft.set(value.value.to_string());}}) {{draft.get_untracked()}}}
 }
@@ -75,7 +80,7 @@ pub(crate) fn Swatches(model: PickerModel, refs: PickerRefs) -> impl IntoView {
         let above = (button.origin.y.0 - page.origin.y.0).max(0.0);
         let above = above / scale.get();
         let below = below / scale.get();
-        let height = (model.library.get().folders.len() + 2) as f32 * 22.0 + 10.0;
+        let height = (model.library.get().folders.len() + 2) as f32 * 27.0 - 5.0;
         let up = below < height && above > below;
         (up, if up { above } else { below })
     });
@@ -89,9 +94,9 @@ pub(crate) fn Swatches(model: PickerModel, refs: PickerRefs) -> impl IntoView {
                 }
                 if move ||menu.get() {
                     column(class="folder-menu",node_ref=popup,class:above=move ||placement.get().0,style:max-height=move ||Some(format!("{}px",placement.get().1))) {
-                        control(tabindex=Focus::Sequential,on:click=move |_|{destination.set(None);selected.set(None);menu.set(false);}) {"Swatch Tiles"}
+                        control(tabindex=Focus::Sequential,class:selected=move ||destination.get().is_none(),on:click=move |_|{destination.set(None);selected.set(None);menu.set(false);}) {"Swatch Tiles"}
                         for id in move ||model.library.get().folders.iter().map(|f|f.id).collect::<Vec<_>>(),key=|id:&u64|*id {
-                            control(tabindex=Focus::Sequential,on:click=move |_|{destination.set(Some(id));selected.set(Some(id));menu.set(false);}) {
+                            control(tabindex=Focus::Sequential,class:selected=move ||destination.get()==Some(id),on:click=move |_|{destination.set(Some(id));selected.set(Some(id));menu.set(false);}) {
                                 {move ||model.library.get().folders.iter().find(|f|f.id==id).map(|f|f.name.clone()).unwrap_or_default()}
                             }
                         }
@@ -173,13 +178,25 @@ fn Generated(
     colors: Memo<Vec<Oklch>>,
     node: NodeRef,
 ) -> impl IntoView {
-    view! {row(class="generated-colors",class:similar=name=="Similar",node_ref=node) {
+    view! {row(class="generated-colors",node_ref=node) {
         for index in move ||0..colors.get().len(),key=|index:&usize|*index {
             ColorTile(class="generated-color",node=NodeRef::new(),source=Source::Sample,destination=None,
                 color=Memo::new(move |_|colors.get().get(index).copied().unwrap_or(model.current())),
-                label=Memo::new(move |_|{let c=colors.get().get(index).copied().unwrap_or(model.current());if name=="Similar"{swatch_name(c)}else{format!("{name} {}",hex(c))}}),
+                label=Memo::new(move |_|{let c=colors.get().get(index).copied().unwrap_or(model.current());format!("{name} {}",hex(c))}),
                 activate=UnsyncCallback::new(move |()|{if let Some(color)=colors.get_untracked().get(index){model.select(*color);}}))
 
+        }
+    }}
+}
+
+#[component]
+fn Similar(model: PickerModel) -> impl IntoView {
+    let hits = Memo::new(move |_| okcolor_core::nearest_named(model.palette_source(), 4));
+    view! {row(class="generated-colors similar"){
+        for hit in move ||hits.get(),key=|hit:&okcolor_core::NamedColor|hit.name {
+            ColorTile(class="generated-color",node=NodeRef::new(),source=Source::Sample,destination=None,
+                color=Memo::new(move |_|hit.color),label=Memo::new(move |_|format!("{} {}",hit.name,hex(hit.color))),
+                activate=UnsyncCallback::new(move |()|{model.select(hit.color);}))
         }
     }}
 }
@@ -287,12 +304,16 @@ fn RelatedGroup(model: PickerModel, refs: PickerRefs, group: usize) -> impl Into
             HoverLabel(heading=heading)
         }
         if move ||open.get() {
-            if move ||group<2 {
-                for kind in move ||if group==0 {vec![Ramp::Shades,Ramp::Tints,Ramp::Tones,Ramp::Temperatures]}else{vec![Ramp::Similar]},key=|kind:&Ramp|*kind as u8 {
-                    Generated(model=model,name=match kind {Ramp::Shades=>"Shades",Ramp::Tints=>"Tints",Ramp::Tones=>"Tones",Ramp::Temperatures=>"Temperature",Ramp::Similar=>"Similar"},node=if kind==Ramp::Shades {refs.tools[7]}else{NodeRef::new()},
-                        colors=Memo::new(move |_|if kind==Ramp::Similar {okcolor_core::similar_named(model.palette_source())} else {ramp_steps::<13>(model.palette_source(),kind,model.gamut.get()).to_vec()}))
+            if move ||group==0 {
+                for entry in move ||[(Variation::Lightness,"Shades / Tints"),(Variation::Chroma,"Tones"),(Variation::Hue,"Hue"),(Variation::Temperature,"Temperature")],key=|entry:&(Variation,&str)|entry.0 as u8 {
+                    Generated(model=model,name=entry.1,node=if entry.0==Variation::Lightness {refs.tools[7]}else{NodeRef::new()},
+                        colors=Memo::new(move |_|variations(model.palette_source(),entry.0,model.gamut.get()).to_vec()))
                 }
-            } else {
+            }
+            if move ||group==1 {
+                Similar(model=model)
+            }
+            if move ||group==2 {
                 row(class="harmony-combinations") {
                     for kind in move ||Harmony::ALL,key=|kind:&Harmony|*kind as u8 {
                         box(class="combination",style:width=match kind {Harmony::Complementary=>"40px",Harmony::Tetradic|Harmony::Square=>"80px",_=>"60px"}) {
@@ -506,12 +527,92 @@ fn grid_reference(settings: &crate::workspace::ToolSettings, dark: bool) -> Oklc
     Oklch::new(l, c, h, a).expect("validated contrast reference")
 }
 
-fn label_ink(preferred: Oklch, background: Oklch, gamut: Gamut) -> String {
-    if apca_in(preferred, background, GamutMapping::Clip, gamut).is_ok_and(|lc| lc.abs() >= 45.0) {
-        hex(preferred)
+fn parse_lc(text: &str) -> Option<u8> {
+    text.trim()
+        .parse::<f64>()
+        .ok()
+        .filter(|v| v.is_finite())
+        .map(|v| v.round().clamp(0.0, 110.0) as u8)
+}
+
+fn current_lc(
+    color: Oklch,
+    reference: Oklch,
+    to_text: bool,
+    gamut: Gamut,
+    mapping: GamutMapping,
+) -> Option<f64> {
+    if to_text {
+        apca_in(reference, color, mapping, gamut)
     } else {
-        crate::tiles::contrast_ink(background).to_owned()
+        apca_in(color, reference, mapping, gamut)
     }
+    .ok()
+}
+
+// Keep hue, chroma and alpha. Monotone lightness search also clamps requests
+// beyond the attainable range and picks the nearer side of the APCA dead zone.
+fn adjust_current_lc(
+    model: PickerModel,
+    reference: Oklch,
+    to_text: bool,
+    gamut: Gamut,
+    value: String,
+) {
+    let Some(target) = parse_lc(&value) else {
+        model.message.set("Enter a finite contrast value".into());
+        return;
+    };
+    let source = model.current();
+    let [l, c, h, a] = source.components();
+    let score = |v| current_lc(v, reference, to_text, gamut, model.mapping.get_untracked());
+    let Some(score_now) = score(source) else {
+        model
+            .message
+            .set("A contrast background must be opaque".into());
+        return;
+    };
+    if score_now.abs().round() == f64::from(target) {
+        return;
+    }
+    let positive = if score_now == 0.0 {
+        (reference.components()[0] < 0.5) == to_text
+    } else {
+        score_now > 0.0
+    };
+    let target = if positive {
+        f64::from(target)
+    } else {
+        -f64::from(target)
+    };
+    let mut best = (source, (score_now - target).abs());
+    let mut lo = 0.0;
+    let mut hi = 1.0;
+    for i in 0..34 {
+        let mid = match i {
+            0 => 0.0,
+            1 => 1.0,
+            _ => (lo + hi) * 0.5,
+        };
+        let candidate = Oklch::new(mid, c, h, a).expect("bounded lightness");
+        let Some(actual) = score(candidate) else {
+            return;
+        };
+        let error = (actual - target).abs();
+        if error < best.1
+            || (error == best.1 && (mid - l).abs() < (best.0.components()[0] - l).abs())
+        {
+            best = (candidate, error)
+        }
+        if i >= 2 {
+            if (actual < target) == to_text {
+                lo = mid
+            } else {
+                hi = mid
+            }
+        }
+    }
+    model.select(best.0);
 }
 
 fn hex(color: Oklch) -> String {
@@ -528,6 +629,7 @@ fn GridField(
     value: Memo<String>,
     apply: UnsyncCallback<String>,
 ) -> impl IntoView {
+    let exit = expect_context::<crate::ui::InputExit>().0;
     let editing = RwSignal::new(false);
     let composing = RwSignal::new(false);
     let draft = RwSignal::new(String::new());
@@ -566,11 +668,11 @@ fn GridField(
     on:key_down=move |cx|{
         if composing.get_untracked(){return;}
         match cx.key {
-            Key::Named(NamedKey::Enter)=>commit(),
-            Key::Named(NamedKey::Escape)=>reset(),
+            Key::Named(NamedKey::Enter)=>{commit();exit.focus();},
+            Key::Named(NamedKey::Escape)=>{reset();node.select_all();},
             _=>return,
         }
-        node.select_all();cx.prevent_default();cx.stop_propagation();
+        cx.prevent_default();cx.stop_propagation();
     }) {{value.get_untracked()}}}
 }
 
@@ -579,7 +681,7 @@ fn ReferenceField(model: PickerModel, dark: Memo<bool>, node: NodeRef) -> impl I
     view! {GridField(model=model,node=node,label="Reference HEX",value=Memo::new(move |_|hex(grid_reference(&model.tools.get(),dark.get()))),
     apply=UnsyncCallback::new(move |value:String|{
         match parse_color(value.trim(),0.0) {
-            Ok(color) if color.components()[3]==1.0 => model.tools.update(|t|if dark.get_untracked(){t.contrast_grid.dark_reference=color.components();}else{t.background=color.components();}),
+            Ok(color) if color.components()[3]==1.0 => model.edit_contrast(|t|if dark.get_untracked(){t.contrast_grid.dark_reference=color.components();}else{t.background=color.components();}),
             _=> model.message.set("Enter an opaque reference color".into()),
         }
     }))}
@@ -588,7 +690,14 @@ fn ReferenceField(model: PickerModel, dark: Memo<bool>, node: NodeRef) -> impl I
 #[component]
 pub(crate) fn Contrast(model: PickerModel, refs: PickerRefs) -> impl IntoView {
     let heading = crate::tiles::TileHeading::mount();
-    let grid = Memo::new(move |_| model.tools.get().contrast_grid);
+    let preview_split = RwSignal::new(None::<usize>);
+    let grid = Memo::new(move |_| {
+        let mut grid = model.tools.get().contrast_grid;
+        if let Some(split) = preview_split.get() {
+            grid.split = split.min(grid.levels.len());
+        }
+        grid
+    });
     let gamut = move || {
         if grid.get().p3 {
             Gamut::DisplayP3
@@ -598,7 +707,7 @@ pub(crate) fn Contrast(model: PickerModel, refs: PickerRefs) -> impl IntoView {
     };
     let candidates = Memo::new(move |_| {
         let t = model.tools.get();
-        let g = &t.contrast_grid;
+        let g = grid.get();
         g.levels
             .iter()
             .enumerate()
@@ -622,10 +731,10 @@ pub(crate) fn Contrast(model: PickerModel, refs: PickerRefs) -> impl IntoView {
             let count = grid.get_untracked().levels.len();
             let local = (y * scale.get_untracked() - b.origin.y.0) / scale.get_untracked();
             let index = ((local - 20.0) / 40.0).round().clamp(0.0, count as f32) as usize;
-            model.tools.update(|t| t.contrast_grid.split = index);
+            preview_split.set(Some(index));
         }
     };
-    let insert = move |i: usize| model.tools.update(|t| t.contrast_grid.insert(i));
+    let insert = move |i: usize| model.edit_contrast(|t| t.contrast_grid.insert(i));
     let origin = move |dark: bool| {
         let g = grid.get();
         if dark { 0 } else { g.split }
@@ -698,9 +807,9 @@ pub(crate) fn Contrast(model: PickerModel, refs: PickerRefs) -> impl IntoView {
     view! {column(class="tool-section") {
         row(class="section-heading contrast-heading") {
             text {"APCA"} spacer() HoverLabel(heading=heading)
-            control(class="tool-action",node_ref=refs.tools[0],tabindex=Focus::Sequential,on:click=move |_|model.tools.update(|t|t.contrast_grid.to_text = !t.contrast_grid.to_text)) {{move ||if grid.get().to_text{"To text"}else{"To bg"}}}
-            control(class="tool-action",node_ref=refs.tools[1],tabindex=Focus::Sequential,on:click=move |_|model.tools.update(|t|t.contrast_grid.p3 = !t.contrast_grid.p3)) {{move ||if grid.get().p3{"P3"}else{"sRGB"}}}
-            control(class="tool-action",node_ref=refs.tools[2],tabindex=Focus::Sequential,on:click=move |_|model.tools.update(|t|t.contrast_grid.max_chroma = !t.contrast_grid.max_chroma)) {{move ||if grid.get().max_chroma{"Max C"}else{"Current C"}}}
+            control(class="tool-action",node_ref=refs.tools[0],tabindex=Focus::Sequential,on:click=move |_|model.edit_contrast(|t|t.contrast_grid.to_text = !t.contrast_grid.to_text)) {{move ||if grid.get().to_text{"To text"}else{"To bg"}}}
+            control(class="tool-action",node_ref=refs.tools[1],tabindex=Focus::Sequential,on:click=move |_|model.edit_contrast(|t|t.contrast_grid.p3 = !t.contrast_grid.p3)) {{move ||if grid.get().p3{"P3"}else{"sRGB"}}}
+            control(class="tool-action",node_ref=refs.tools[2],tabindex=Focus::Sequential,on:click=move |_|model.edit_contrast(|t|t.contrast_grid.max_chroma = !t.contrast_grid.max_chroma)) {{move ||if grid.get().max_chroma{"Max C"}else{"Current C"}}}
             CopyButton(text=UnsyncCallback::new(move |()|css()),compact=true,label="Copy generated CSS colors")
         }
         column(class="contrast-grid",node_ref=region) {
@@ -708,7 +817,7 @@ pub(crate) fn Contrast(model: PickerModel, refs: PickerRefs) -> impl IntoView {
             for i in move ||0..grid.get().levels.len(),key=|i:&usize|*i {
                 row(class="contrast-row",style:background-color=move ||Some(hex(grid_reference(&model.tools.get(),i<grid.get().split))),
                     style:color=move ||Some(crate::tiles::contrast_ink(grid_reference(&model.tools.get(),i<grid.get().split)).into()),
-                    on:pointer_down=move |cx|{if cx.button==Some(PointerButton::Middle){model.tools.update(|t|t.contrast_grid.remove(i));cx.prevent_default();cx.stop_propagation();}}) {
+                    on:pointer_down=move |cx|{if cx.button==Some(PointerButton::Middle){model.edit_contrast(|t|t.contrast_grid.remove(i));cx.prevent_default();cx.stop_propagation();}}) {
                     box(class="current-spacer") {}
                     row(class="level-info") {
                         text(class="level-number") {{move ||grid.get().level_name(i)}}
@@ -718,14 +827,14 @@ pub(crate) fn Contrast(model: PickerModel, refs: PickerRefs) -> impl IntoView {
                                 let reference=grid_reference(&model.tools.get(),i<grid.get().split);
                                 let candidate=candidates.get().get(i).copied().flatten();
                                 Some(candidate.map_or_else(||crate::tiles::contrast_ink(reference).to_owned(),|c|{
-                                    if grid.get().to_text {label_ink(reference,c,gamut())} else {label_ink(c,reference,gamut())}
+                                    if grid.get().to_text {hex(reference)} else {hex(c)}
                                 }))
                             },
                             style:border-color=move ||candidates.get().get(i).copied().flatten().map(hex)) {
                             GridField(model=model,node=if i==0{refs.tools[3]}else{NodeRef::new()},label="Target contrast Lc",
                                 value=Memo::new(move |_|grid.get().levels.get(i).map(u8::to_string).unwrap_or_default()),
-                                apply=UnsyncCallback::new(move |v:String|{if let Some(lc)=v.trim().parse::<u8>().ok().filter(|v|*v<=110){
-                                    model.tools.update(|t|{if let Some(level)=t.contrast_grid.levels.get_mut(i){*level=lc;}});
+                                apply=UnsyncCallback::new(move |v:String|{if let Some(lc)=parse_lc(&v){
+                                    model.edit_contrast(|t|{if let Some(level)=t.contrast_grid.levels.get_mut(i){*level=lc;}});
                                 }else{model.message.set("Enter a contrast from 0 to 110".into());}}))
                         }
                     }
@@ -745,33 +854,32 @@ pub(crate) fn Contrast(model: PickerModel, refs: PickerRefs) -> impl IntoView {
             }
             box(class="grid-padding",style:background-color=move ||Some(hex(grid_reference(&model.tools.get(),grid.get().split==grid.get().levels.len())))) {}
             for dark in move ||[true,false].into_iter().filter(|v|count(*v)>0).collect::<Vec<_>>(),key=|dark:&bool|*dark {
-                text(class="contrast-current",class:outline=move ||!grid.get().to_text,
+                box(class="contrast-current",class:outline=move ||!grid.get().to_text,
                     style:top=move ||Some(format!("{}px",20+40*origin(dark)+20*(count(dark).saturating_sub(1)))),
                     style:border-color=move ||Some(hex(model.color())),
                     style:color=move ||{
                         let reference=grid_reference(&model.tools.get(),dark);
-                        Some(if grid.get().to_text {label_ink(reference,model.color(),gamut())} else {label_ink(model.color(),reference,gamut())})
+                        Some(if grid.get().to_text {hex(reference)} else {hex(model.color())})
                     },
-                    style:background-color=move ||grid.get().to_text.then(||hex(model.color()))) {{move ||{
-                    let reference=grid_reference(&model.tools.get(),dark);
-                    let current=model.color();
-                    let score=if grid.get().to_text{apca_in(reference,current,model.mapping.get(),gamut())}else{apca_in(current,reference,model.mapping.get(),gamut())};
-                    score.map(|v|format!("{:.0}",v.abs())).unwrap_or_else(|_|"—".into())
-                }}}
+                    style:background-color=move ||grid.get().to_text.then(||hex(model.color()))) {
+                    GridField(model=model,node=refs.current_lc[usize::from(!dark)],label="Current color contrast Lc",
+                        value=Memo::new(move |_|current_lc(model.color(),grid_reference(&model.tools.get(),dark),grid.get().to_text,gamut(),model.mapping.get()).map_or_else(||"—".into(),|v|format!("{:.0}",v.abs()))),
+                        apply=UnsyncCallback::new(move |v|adjust_current_lc(model,grid_reference(&model.tools.get_untracked(),dark),grid.get_untracked().to_text,gamut(),v)))
+                }
                 box(class="reference-field",style:top=move ||{
-                    let g=grid.get();let top=if g.split==0{10}else if dark {20+40*g.split-22}else{20+40*g.split+10};
+                    let g=grid.get();let top=if g.split==0{10}else if g.split==g.levels.len(){40+40*g.split-26}else if dark {20+40*g.split-26}else{20+40*g.split+10};
                     Some(format!("{top}px"))},style:color=move ||Some(crate::tiles::contrast_ink(grid_reference(&model.tools.get(),dark)).into())) {
                     ReferenceField(model=model,node=if dark{refs.tools[4]}else{refs.tools[7]},dark=Memo::new(move |_|dark))
                 }
             }
             if move ||dragging.get() || (grid.get().split>0 && grid.get().split<grid.get().levels.len()) {
-                box(class="contrast-boundary",style:top=move ||Some(format!("{}px",20+40*grid.get().split)),
+                box(class="contrast-boundary",class:active=move ||dragging.get(),style:top=move ||Some(format!("{}px",20+40*grid.get().split)),
                     on:pointer_down=move |cx|{if cx.button==Some(PointerButton::Primary){dragging.set(true);cx.capture_pointer();}},
                     on:pointer_move=move |cx|{if dragging.get_untracked(){boundary(cx.position.y.0);}},
-                    on:pointer_up=move |cx|{if dragging.get_untracked(){boundary(cx.position.y.0);cx.release_pointer();dragging.set(false);}},
-                    on:pointer_cancel=move |_|dragging.set(false)) {}
+                    on:pointer_up=move |cx|{if dragging.get_untracked(){boundary(cx.position.y.0);cx.release_pointer();if let Some(split)=preview_split.get_untracked(){model.edit_contrast(|t|t.contrast_grid.split=split);}preview_split.set(None);dragging.set(false);}},
+                    on:pointer_cancel=move |_|{preview_split.set(None);dragging.set(false);}) {box(class="divider-line") {}}
             } else {
-                control(class="restore-reference",class:at-top=move ||grid.get().split>0,node_ref=refs.tools[6],style:color=move ||Some(crate::tiles::contrast_ink(grid_reference(&model.tools.get(),grid.get().split>0)).into()),tabindex=Focus::Sequential,a11y:label="Restore both backgrounds",on:click=move |_|model.tools.update(|t|{if t.contrast_grid.levels.len()==1{t.contrast_grid.insert(1);}t.contrast_grid.split=t.contrast_grid.levels.len()/2;})) {{zgui::elements::vector().document(include_str!("../assets/add.svg")).class("add-icon")}}
+                control(class="restore-reference",class:at-top=move ||grid.get().split>0,node_ref=refs.tools[6],style:color=move ||Some(crate::tiles::contrast_ink(grid_reference(&model.tools.get(),grid.get().split>0)).into()),tabindex=Focus::Sequential,a11y:label="Restore both backgrounds",on:click=move |_|model.edit_contrast(|t|{if t.contrast_grid.levels.len()==1{t.contrast_grid.insert(1);}t.contrast_grid.split=t.contrast_grid.levels.len()/2;})) {{zgui::elements::vector().document(include_str!("../assets/add.svg")).class("add-icon")}}
             }
             control(class="contrast-insert append-level",tabindex=Focus::Sequential,a11y:label="Append contrast level",on:click=move |_|insert(grid.get_untracked().levels.len())) {{zgui::elements::vector().document(include_str!("../assets/add.svg")).class("add-icon")}}
         }

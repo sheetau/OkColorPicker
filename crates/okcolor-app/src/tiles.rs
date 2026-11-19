@@ -207,7 +207,7 @@ pub(crate) fn ColorTile(
                     clipboard.set_text(ClipboardKind::Standard, formatted.text);
                     copied.set(true);
                     copy_timer.set_value(Some(timers.with_value(|timers| {
-                        timers.set_timeout(Duration::from_millis(650), move || copied.set(false))
+                        timers.set_timeout(Duration::from_millis(850), move || copied.set(false))
                     })));
                 }
             }
@@ -286,6 +286,11 @@ pub(crate) fn ColorTile(
     view! {control(class=class,node_ref=node,tabindex=Focus::Sequential,a11y:label=move ||label.get(),
         class:dark=move ||class=="preset-color" && color.get().components()[0]<0.5,
         class:dragged=move ||shared.dragging.get()==Some(node),
+        style:outline-color=move ||(shared.dragging.get()==Some(node)).then(||{
+            let l=color.get().components()[0];
+            let neutral=Oklch::new((l+if l<0.5 {1.0}else{0.0})*0.5,0.0,0.0,1.0).expect("bounded lightness");
+            okcolor_core::format_color(neutral,okcolor_core::ColorFormat::Hex,okcolor_core::GamutMapping::Clip).expect("neutral color").text
+        }),
         on:pointer_enter=move |_|{
             if let Some(heading)=heading{heading.0.set(label.get_untracked());}
         },

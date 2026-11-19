@@ -416,7 +416,11 @@ fn mounted_picker_draws_and_drag_is_one_undo() {
                 let before_scrub=model.current();
                 harness.deliver_to_first(scrub(PointerAction::Pressed,0.0));harness.settle(32);
                 assert!(!model.editing_text.get_untracked(),"press alone must not enter text editing");
-                for dx in [8.0,16.0,24.0] {harness.deliver_to_first(scrub(PointerAction::Moved,dx));harness.settle(32);}
+                for dx in [3.5,8.0,16.0,24.0] {
+                    harness.deliver_to_first(scrub(PointerAction::Moved,dx));harness.settle(32);
+                    assert!(!model.editing_text.get_untracked(),"scrubbing must keep the caret outside the field");
+                    if dx<4.0 {assert_eq!(model.current(),before_scrub);}
+                }
                 harness.deliver_to_first(scrub(PointerAction::Released,24.0));harness.settle(32);
                 assert!((model.current().components()[1]-before_scrub.components()[1]-0.006).abs()<1e-12);
                 model.undo();harness.settle(32);assert_eq!(model.current(),before_scrub);
@@ -449,6 +453,7 @@ fn mounted_picker_draws_and_drag_is_one_undo() {
                 };
                 let original_color=model.current();
                 click(&mut harness,refs.menu);
+                assert!(refs.gamut_toggles[0].window_bounds().is_some(),"Settings did not open after cancelling a captured scrub");
                 click(&mut harness,refs.gamut_toggles[0]);
                 assert!(model.show_p3.get_untracked());
                 assert_eq!(model.gamut.get_untracked(),okcolor_core::Gamut::DisplayP3);
@@ -537,7 +542,7 @@ fn mounted_picker_draws_and_drag_is_one_undo() {
                 model.set_channel(2,180.0);
                 harness.settle(32);
                 let bar=refs.bars[2].window_bounds().unwrap();
-                for (action,x) in [(PointerAction::Pressed,0.5),(PointerAction::Moved,0.75),(PointerAction::Released,0.75)] {
+                for (action,x) in [(PointerAction::Pressed,0.5),(PointerAction::Moved,0.75),(PointerAction::Moved,-2.0),(PointerAction::Released,-2.0)] {
                     let at=Point::new(CssPx(bar.origin.x.0+bar.size.width.0*x),CssPx(bar.origin.y.0+bar.size.height.0-2.0));
                     harness.deliver_to_first(SurfaceEvent::Pointer {action,event:PointerEvent::mouse(at).with_button(PointerButton::Primary),modifiers:Modifiers::NONE,timestamp:Timestamp::ORIGIN});
                     harness.settle(32);
@@ -546,6 +551,20 @@ fn mounted_picker_draws_and_drag_is_one_undo() {
                 model.undo();
                 assert_eq!(model.current().components()[2],180.0);
 
+                // Snapping must use the same membership crossing as the vertical ink.
+                let before_snap=model.current();
+                let at_hue=|h|okcolor_core::Oklch::new(0.65,0.24,h,1.0).unwrap();
+                model.select(at_hue(0.0));harness.settle(32);
+                let edge=(10..350).find(|h|at_hue(f64::from(*h)).in_gamut(okcolor_core::Gamut::Srgb)!=at_hue(f64::from(*h-1)).in_gamut(okcolor_core::Gamut::Srgb)).unwrap();
+                let point=Point::new(CssPx(bar.origin.x.0+bar.size.width.0*edge as f32/360.0+2.0),CssPx(bar.origin.y.0+8.0));
+                for action in [PointerAction::Pressed,PointerAction::Released] {
+                    harness.deliver_to_first(SurfaceEvent::Pointer {action,event:PointerEvent::mouse(point).with_button(PointerButton::Primary),modifiers:Modifiers::NONE,timestamp:Timestamp::ORIGIN});
+                    harness.settle(32);
+                }
+                let snapped=model.current().components()[2];
+                assert!((f64::from(edge-1)..=f64::from(edge)).contains(&snapped));
+                assert_ne!(at_hue(snapped-0.01).in_gamut(okcolor_core::Gamut::Srgb),at_hue(snapped+0.01).in_gamut(okcolor_core::Gamut::Srgb));
+                model.select(before_snap);harness.settle(32);
                 let mut short_slice = 0.0;
                 for (width,height) in [(330.0,520.0),(330.0,720.0),(600.0,720.0),(300.0,520.0),(330.0,560.0)] {
                     harness.deliver_to_first(SurfaceEvent::Resized(Size::new(DevicePx(width),DevicePx(height))));
@@ -618,6 +637,8 @@ fn mounted_picker_draws_and_drag_is_one_undo() {
 
                 // IME Enter must not commit a partially composed numeric/color draft.
                 let committed = model.current();
+                assert!(!model.editing_text.get_untracked());
+                refs.codes[0].focus();harness.settle(32);
                 harness.deliver_to_first(key(KeyEvent::character("a"), Modifiers::CONTROL));
                 harness.deliver_to_first(SurfaceEvent::Ime(ImeEvent::Enabled));
                 harness.deliver_to_first(SurfaceEvent::Ime(ImeEvent::Preedit {
@@ -770,6 +791,12 @@ fn mounted_picker_draws_and_drag_is_one_undo() {
                 }
                 harness.settle(64);
                 let recent=refs.recents.window_bounds().unwrap();
+                let older=Point::new(CssPx((recent.origin.x.0+recent.size.width.0)/2.0+8.0),CssPx((recent.origin.y.0+recent.size.height.0*0.5)/2.0));
+                for action in [PointerAction::Pressed,PointerAction::Released] {
+                    harness.deliver_to_first(SurfaceEvent::Pointer {action,event:PointerEvent::mouse(older).with_button(PointerButton::Primary),modifiers:Modifiers::NONE,timestamp:Timestamp::ORIGIN});
+                    harness.settle(32);
+                }
+                assert!(refs.recents.scroll_position().offset.x.0>0.0,"right chevron scrolls the strip at 2x DPI");
                 let last=Point::new(CssPx((recent.origin.x.0+recent.size.width.0-4.0)/2.0),CssPx((recent.origin.y.0+recent.size.height.0*0.5)/2.0));
                 harness.deliver_to_first(SurfaceEvent::Wheel {event:WheelEvent {
                     delta:ScrollDelta::Pixels(Size::new(CssPx(0.0),CssPx(1000.0))),phase:ScrollPhase::Discrete,
@@ -778,6 +805,15 @@ fn mounted_picker_draws_and_drag_is_one_undo() {
                 harness.settle(32);
                 assert!(refs.recents.scroll_position().offset.x.0>0.0);
                 assert!(refs.recents.scroll_position().is_at_end_horizontally());
+                let delete=Point::new(CssPx(last.x.0-46.0),last.y);
+                let old_len=model.recent.get_untracked().len();
+                for action in [PointerAction::Pressed,PointerAction::Released] {
+                    harness.deliver_to_first(SurfaceEvent::Pointer {action,event:PointerEvent::mouse(delete).with_button(PointerButton::Middle),modifiers:Modifiers::NONE,timestamp:Timestamp::ORIGIN});
+                    harness.settle(32);
+                }
+                assert_eq!(model.recent.get_untracked().len(),old_len-1);
+                assert!(refs.recents.scroll_position().is_at_end_horizontally());
+                assert!(refs.recents.scroll_position().offset.x.0>0.0);
                 if let Ok(path)=std::env::var("OKCOLOR_TEST_RECENTS_RGBA") {
                     let frames=frames.lock().unwrap();
                     std::fs::write(path,frames.last().unwrap().bytes()).unwrap();

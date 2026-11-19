@@ -29,7 +29,7 @@ pub struct History<T = Oklch> {
     recent_limit: usize,
 }
 
-impl<T: Copy + PartialEq> History<T> {
+impl<T: Clone + PartialEq> History<T> {
     pub fn new(initial: T, history_limit: usize, recent_limit: usize) -> Self {
         Self {
             current: initial,
@@ -43,12 +43,12 @@ impl<T: Copy + PartialEq> History<T> {
     }
 
     pub fn current(&self) -> T {
-        self.current
+        self.current.clone()
     }
 
     /// During a preview, this remains the last committed value.
     pub fn committed(&self) -> T {
-        self.before_edit.unwrap_or(self.current)
+        self.before_edit.as_ref().unwrap_or(&self.current).clone()
     }
 
     /// Restore recents without inventing undo steps. Input order is newest first.
@@ -85,12 +85,12 @@ impl<T: Copy + PartialEq> History<T> {
 
     pub fn begin(&mut self) -> Result<(), EditError> {
         self.ensure_idle()?;
-        self.before_edit = Some(self.current);
+        self.before_edit = Some(self.current.clone());
         Ok(())
     }
 
     pub fn preview(&mut self, color: T) -> Result<(), EditError> {
-        self.before_edit.ok_or(EditError::NotEditing)?;
+        self.before_edit.as_ref().ok_or(EditError::NotEditing)?;
         self.current = color;
         Ok(())
     }
@@ -106,9 +106,9 @@ impl<T: Copy + PartialEq> History<T> {
         }
         push_bounded(&mut self.undo, before, self.history_limit);
         self.redo.clear();
-        if add_recent {
+        if add_recent && self.recent_limit > 0 {
             self.recent.retain(|color| *color != self.current);
-            self.recent.push_front(self.current);
+            self.recent.push_front(self.current.clone());
             self.recent.truncate(self.recent_limit);
         }
         Ok(true)
@@ -138,8 +138,8 @@ impl<T: Copy + PartialEq> History<T> {
         let Some(previous) = self.undo.pop_back() else {
             return Ok(false);
         };
-        push_bounded(&mut self.redo, self.current, self.history_limit);
-        self.current = previous;
+        let current = std::mem::replace(&mut self.current, previous);
+        push_bounded(&mut self.redo, current, self.history_limit);
         Ok(true)
     }
 
@@ -148,8 +148,8 @@ impl<T: Copy + PartialEq> History<T> {
         let Some(next) = self.redo.pop_back() else {
             return Ok(false);
         };
-        push_bounded(&mut self.undo, self.current, self.history_limit);
-        self.current = next;
+        let current = std::mem::replace(&mut self.current, next);
+        push_bounded(&mut self.undo, current, self.history_limit);
         Ok(true)
     }
 

@@ -54,9 +54,9 @@ impl Tooltips {
                             let text = label();
                             let x = (b.origin.x.0 / zoom).clamp(
                                 2.0,
-                                (width - (text.chars().count() as f32 * 7.0 + 12.0)).max(2.0),
+                                (width - (text.chars().count() as f32 * 5.0 + 12.0)).max(2.0),
                             );
-                            let lines = ((text.chars().count() as f32 * 7.0)
+                            let lines = ((text.chars().count() as f32 * 5.0)
                                 / (width - 16.0).max(1.0))
                             .ceil()
                             .max(1.0);
@@ -97,6 +97,23 @@ impl Tooltips {
             self.text.set(String::new());
         }
     }
+}
+
+pub(crate) fn segments(label: &str) -> Vec<(bool, String)> {
+    let hex = label.split_whitespace().find(|s| {
+        s.strip_prefix('#').is_some_and(|s| {
+            matches!(s.len(), 3 | 4 | 6 | 8) && s.bytes().all(|b| b.is_ascii_hexdigit())
+        })
+    });
+    let Some(hex) = hex else {
+        return vec![(false, label.to_owned())];
+    };
+    let (before, after) = label.split_once(hex).expect("matched substring");
+    [(false, before.trim()), (true, hex), (false, after.trim())]
+        .into_iter()
+        .filter(|(_, s)| !s.is_empty())
+        .map(|(mono, s)| (mono, s.to_owned()))
+        .collect()
 }
 
 fn hover_delay() -> Duration {

@@ -37,6 +37,12 @@ pub struct ColorEdit {
     pub origin: EditOrigin,
 }
 
+#[derive(Clone, PartialEq)]
+struct Snapshot {
+    colors: [Oklch; 2],
+    contrast: std::sync::Arc<(crate::workspace::ContrastGrid, [f64; 4])>,
+}
+
 /// Each display dependency has its own signal; history is read only on commands.
 #[derive(Clone, Copy)]
 pub struct PickerModel {
@@ -68,7 +74,7 @@ pub struct PickerModel {
     pub can_save: RwSignal<bool>,
     pub save_request: RwSignal<u64>,
     committed: RwSignal<[Oklch; 2]>,
-    history: RwSignal<History<[Oklch; 2]>, LocalStorage>,
+    history: RwSignal<History<Snapshot>, LocalStorage>,
     remote_edit: RwSignal<bool>,
 }
 
@@ -94,7 +100,17 @@ impl PickerModel {
             .iter()
             .copied()
             .collect();
-        let history = History::new(colors, 100, 0);
+        let history = History::new(
+            Snapshot {
+                colors,
+                contrast: std::sync::Arc::new((
+                    saved.tools.contrast_grid.clone(),
+                    saved.tools.background,
+                )),
+            },
+            100,
+            0,
+        );
         let [l, c, h, alpha] = initial.components();
         Self {
             tab: RwSignal::new(crate::workspace::Tab::Picker),
@@ -163,7 +179,7 @@ impl PickerModel {
     }
 
     pub fn colors(self) -> [Oklch; 2] {
-        self.history.with_untracked(History::current)
+        self.history.with_untracked(History::current).colors
     }
 
     fn replacing(self, color: Oklch) -> [Oklch; 2] {
@@ -192,7 +208,7 @@ impl PickerModel {
 
     /// Shutdown also captures a commit made before the next reactive flush.
     pub fn saved_state_untracked(self) -> SavedState {
-        let colors = self.history.with_untracked(History::committed);
+        let colors = self.history.with_untracked(History::committed).colors;
         SavedState {
             main: colors[0],
             sub: colors[1],
@@ -240,8 +256,12 @@ impl PickerModel {
         self.finish_remote();
         let [main, sub] = self.colors();
         let mut changed = false;
-        self.history
-            .update(|history| changed = history.set([sub, main]) == Ok(true));
+        self.history.update(|history| {
+            changed = history.set(Snapshot {
+                colors: [sub, main],
+                ..history.current()
+            }) == Ok(true)
+        });
         if changed {
             self.record_recent();
         }
@@ -302,7 +322,10 @@ impl PickerModel {
             self.remote_edit.set(true);
         }
         self.history.update(|history| {
-            let _ = history.preview(colors);
+            let _ = history.preview(Snapshot {
+                colors,
+                ..history.current()
+            });
         });
         self.publish_from(false, EditOrigin::Companion);
         if !manipulating {
@@ -335,6 +358,10 @@ impl PickerModel {
         let colors = self.replacing(color);
         let mut accepted = true;
         self.history.update(|history| {
+            let colors = Snapshot {
+                colors,
+                ..history.current()
+            };
             match if add_recent {
                 history.set(colors)
             } else {
@@ -410,7 +437,10 @@ impl PickerModel {
     pub fn preview(self, color: Oklch) {
         let colors = self.replacing(color);
         self.history.update(|history| {
-            let _ = history.preview(colors);
+            let _ = history.preview(Snapshot {
+                colors,
+                ..history.current()
+            });
         });
         self.publish(false);
     }
@@ -429,11 +459,42 @@ impl PickerModel {
         });
         self.publish(false);
     }
+    pub(crate) fn edit_contrast(self, edit: impl FnOnce(&mut crate::workspace::ToolSettings)) {
+        self.finish_remote();
+        let mut settings = self.tools.get_untracked();
+        edit(&mut settings);
+        let contrast = std::sync::Arc::new((settings.contrast_grid.clone(), settings.background));
+        let mut changed = false;
+        self.history.update(|history| {
+            changed = history.set_without_recent(Snapshot {
+                contrast,
+                ..history.current()
+            }) == Ok(true);
+        });
+        if changed {
+            self.tools.set(settings);
+            self.publish(true);
+        }
+    }
+
+    fn restore_contrast(self) {
+        let snapshot = self.history.with_untracked(History::current);
+        if self.tools.with_untracked(|t| {
+            t.contrast_grid != snapshot.contrast.0 || t.background != snapshot.contrast.1
+        }) {
+            self.tools.update(|t| {
+                t.contrast_grid = snapshot.contrast.0.clone();
+                t.background = snapshot.contrast.1;
+            });
+        }
+    }
+
     pub fn undo(self) {
         self.finish_remote();
         self.history.update(|history| {
             let _ = history.undo();
         });
+        self.restore_contrast();
         self.publish(true);
     }
     pub fn redo(self) {
@@ -441,6 +502,7 @@ impl PickerModel {
         self.history.update(|history| {
             let _ = history.redo();
         });
+        self.restore_contrast();
         self.publish(true);
     }
 
@@ -522,7 +584,7 @@ impl PickerModel {
             self.can_undo.set(history.can_undo());
             self.can_redo.set(history.can_redo());
             if committed {
-                let color = history.committed();
+                let color = history.committed().colors;
                 if self.committed.get_untracked() != color {
                     self.committed.set(color);
                 }

@@ -36,9 +36,11 @@ section. Library changes save independently of color undo.
 
 ## Harmony
 
-Click a group heading to collapse or expand it. Variations cover shades,
-tints, tones and temperature shifts. Similar shows the four closest distinct
-CSS colors in OKLab. Harmony shows analogous, complementary, split
+Click a group heading to collapse or expand it. Each variation has thirteen samples with the source in the middle.
+The four rows vary lightness (shades through tints), chroma, hue and temperature.
+Similar shows up to four named sRGB colors from the bundled meodai/color-names
+dictionary, ordered by CIEDE2000 distance in D50 Lab. It excludes the input
+HEX and distances of 30 or more. Harmony shows analogous, complementary, split
 complementary, triadic, tetradic and square combinations. Bounded sRGB
 samples use the RGB color wheel. The wide-gamut tools work in OKLCH.
 Click a sample to select it or drag it to the library.
@@ -58,7 +60,9 @@ generates text for the reference background. Choose sRGB or Display P3.
 **Current C** limits chroma to the selected color's chroma and **Max C**
 uses the available gamut at the generated lightness and hue.
 
-Use **+** between two levels to insert their midpoint. Middle-click a row to remove it. Targets accept Lc values from 0 to 110. Drag the horizontal boundary to change the reference
+Use **+** between two levels to insert their midpoint. Middle-click a row to remove it. Target Lc values round to whole numbers and clamp to 0–110. Editing the
+current color's Lc adjusts its lightness against that reference. Ctrl+Z and
+Ctrl+Y navigate grid changes and color edits in the order they occurred. Drag the horizontal boundary to change the reference
 for adjacent levels. Drag it to an edge to remove that region. Its **+**
 restores the split. Click a candidate to adopt it or use **Copy** to copy
 the available levels as CSS custom properties.

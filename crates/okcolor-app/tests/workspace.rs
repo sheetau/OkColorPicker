@@ -5,6 +5,24 @@ use okcolor_app::{
 use okcolor_core::Oklch;
 
 #[test]
+fn contrast_css_suffixes_renumber_after_every_structural_edit() {
+    let mut grid = okcolor_app::workspace::ContrastGrid {
+        level_names: vec![100, 300, 438, 450],
+        ..Default::default()
+    };
+    for count in 4..=12 {
+        let step = if count <= 9 { 100 } else { 50 };
+        assert_eq!(grid.level_name(0), step);
+        assert_eq!(grid.level_name(count - 1), step * count as u32);
+        grid.insert(2);
+    }
+    for _ in 0..8 {
+        grid.remove(1);
+    }
+    assert_eq!(grid.level_name(4), 500);
+}
+
+#[test]
 fn library_edits_keep_originals_and_folder_removal_keeps_colors() {
     let color = Oklch::new(0.6543210987, 0.42, 312.123456, 0.65).unwrap();
     let mut library = Library::default();

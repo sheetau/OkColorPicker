@@ -12,6 +12,9 @@ use okcolor_core::{ColorFormat, Gamut, GamutMapping, Oklch};
 use zgui::reactive::UnsyncCallback;
 use zgui::{geom::CssPx, prelude::*, reactive::RenderEffect, vocab::ScrollPhase};
 
+#[derive(Clone, Copy)]
+pub(crate) struct InputExit(pub NodeRef);
+
 /// Stable handles also let application tests exercise the actual mounted controls.
 #[derive(Clone, Copy)]
 pub struct PickerRefs {
@@ -21,6 +24,7 @@ pub struct PickerRefs {
     pub library: [NodeRef; 8],
     pub folder_menu: NodeRef,
     pub tools: [NodeRef; 8],
+    pub current_lc: [NodeRef; 2],
     pub topmost: NodeRef,
     pub sampling: RwSignal<bool>,
     pub menu: NodeRef,
@@ -49,6 +53,7 @@ impl Default for PickerRefs {
             tabs: std::array::from_fn(|_| NodeRef::new()),
             folder_menu: NodeRef::new(),
             library: std::array::from_fn(|_| NodeRef::new()),
+            current_lc: std::array::from_fn(|_| NodeRef::new()),
             tools: std::array::from_fn(|_| NodeRef::new()),
             topmost: NodeRef::new(),
             sampling: RwSignal::new(false),
@@ -78,6 +83,7 @@ pub fn Picker(model: PickerModel, refs: PickerRefs) -> impl IntoView {
     provide_context(model);
     let gestures = TileGestures::mount(refs.tool_page);
     let app_root = NodeRef::new();
+    provide_context(InputExit(app_root));
     let app_size = app_root.observe_border_size();
     let scale = use_window().scale();
     let tips = crate::tooltip::Tooltips::mount();
@@ -206,7 +212,7 @@ pub fn Picker(model: PickerModel, refs: PickerRefs) -> impl IntoView {
     });
     on_cleanup_local(move || drop(shortcuts));
     view! {
-        column(class="app",class:dragging=move ||gestures.dragging.get().is_some(),node_ref=app_root) {
+        column(class="app",class:dragging=move ||gestures.dragging.get().is_some(),node_ref=app_root,tabindex=Focus::Programmatic) {
             Titlebar(refs=refs,settings=settings)
             if move ||settings.get() {
                 Settings(model=model,refs=refs)
@@ -230,7 +236,11 @@ pub fn Picker(model: PickerModel, refs: PickerRefs) -> impl IntoView {
             }
             Statusbar(model=model,refs=refs,settings=settings)
             if move ||!tips.text.get().is_empty() {
-                text(class="tooltip",style:left=move ||Some(format!("{}px",tips.position.get().0)),style:top=move ||Some(format!("{}px",tips.position.get().1))) {{move ||tips.text.get()}}
+                row(class="tooltip",style:left=move ||Some(format!("{}px",tips.position.get().0)),style:top=move ||Some(format!("{}px",tips.position.get().1))) {
+                    for part in move ||crate::tooltip::segments(&tips.text.get()),key=|part:&(bool,String)|part.clone() {
+                        text(class:tooltip-hex=part.0) {{part.1.clone()}}
+                    }
+                }
             }
             ResizeEdges()
             if move ||refs.sampling.get() {
@@ -264,16 +274,28 @@ pub(crate) fn RecentColors(model: PickerModel, node: NodeRef) -> impl IntoView {
             ScrollBehavior::Instant,
         );
     };
-    let reset = RenderEffect::new(move |_| {
-        model.recent.track();
-        node.scroll_to(
-            ScrollTarget::Offset(Point::new(DevicePx(0.0), DevicePx(0.0))),
-            ScrollBehavior::Instant,
-        );
+    let reset = RenderEffect::new(move |previous: Option<Vec<Oklch>>| {
+        let recent = model.recent.get();
+        if previous
+            .as_ref()
+            .is_some_and(|old| recent.first() != old.first() && recent.len() >= old.len())
+        {
+            node.scroll_to(
+                ScrollTarget::Offset(Point::new(DevicePx(0.0), DevicePx(0.0))),
+                ScrollBehavior::Instant,
+            );
+        }
+        recent
     });
     on_cleanup_local(move || drop(reset));
     view! {
-        box(class="recent-strip") {
+        row(class="recent-strip") {
+            box(class="recent-gutter") {
+                if move ||position.get().offset.x.0>0.0 {
+                    control(class="recent-nav",tabindex=Focus::Sequential,a11y:label="Newer recent colors",
+                        on:click=move |_|shift(-1.0)) {box(class="history-arrow") {}}
+                }
+            }
             row(class="recents",node_ref=node,a11y:label="Recent colors",on:wheel=move |cx| {
                 let delta=cx.delta.to_pixels(CssPx(22.0));
                 let amount=if delta.width.0.abs()>delta.height.0.abs() {delta.width.0} else {delta.height.0};
@@ -288,11 +310,11 @@ pub(crate) fn RecentColors(model: PickerModel, node: NodeRef) -> impl IntoView {
 
                 }
             }
-            if move ||position.get().content_size.width.0>position.get().scrollport.width.0 {
-                control(class="recent-nav newer",tabindex=Focus::Sequential,a11y:label="Newer recent colors",
-                    disabled=move ||position.get().offset.x.0<=0.0,on:click=move |_|shift(-1.0)) {box(class="history-arrow") {}}
-                control(class="recent-nav older",tabindex=Focus::Sequential,a11y:label="Older recent colors",
-                    disabled=move ||position.get().is_at_end_horizontally(),on:click=move |_|shift(1.0)) {box(class="history-arrow redo") {}}
+            box(class="recent-gutter") {
+                if move ||position.get().content_size.width.0>position.get().scrollport.width.0 && !position.get().is_at_end_horizontally() {
+                    control(class="recent-nav",tabindex=Focus::Sequential,a11y:label="Older recent colors",
+                        on:click=move |_|shift(1.0)) {box(class="history-arrow redo") {}}
+                }
             }
         }
     }
@@ -307,7 +329,14 @@ pub(crate) fn SlotSwatch(model: PickerModel, refs: PickerRefs, index: usize) -> 
     view! {
         box(class="slot-layer",class:main=index==0,class:sub=index==1) {
             ColorTile(node=refs.swatches[index],class="slot-tile",color=color,source=Source::Sample,destination=None,
-                label=Memo::new(move |_|if index==0 {"Main color".into()}else{"Sub color".into()}),
+                label=Memo::new(move |_|{
+                    let c=color.get();let label=if index==0 {"Main color"}else{"Sub color"};
+                    let hex=okcolor_core::format_color(c,ColorFormat::Hex,model.mapping.get()).expect("validated color").text;
+                    if !model.display.get().wide_output && !c.in_gamut(Gamut::Srgb) {
+                        let gamut=if c.in_gamut(Gamut::DisplayP3) {"P3"} else {"Wide gamut"};
+                        format!("{label} {hex} · {gamut} is unavailable on this monitor")
+                    }else{format!("{label} {hex}")}
+                }),
                 activate=UnsyncCallback::new(move |()|model.select_slot(index as u8)))
 
         }
@@ -319,23 +348,28 @@ fn Fallbacks(model: PickerModel, refs: PickerRefs) -> impl IntoView {
     let color = Memo::new(move |_| model.color());
     let unavailable =
         Memo::new(move |_| !model.display.get().wide_output && !color.get().in_gamut(Gamut::Srgb));
-    let fallback = move |method| {
-        let original = color.get();
+    let fallback = move |original: Oklch, method| {
         let [_, _, h, a] = original.components();
         original
             .mapped_rgb(Gamut::Srgb, method)
             .and_then(|rgb| Oklch::from_rgb(rgb, Gamut::Srgb, a, h))
             .unwrap_or(original)
     };
+    let icons = [NodeRef::new(), NodeRef::new()];
+    for (node, label) in icons.into_iter().zip(["Mapped sRGB", "Clipped sRGB"]) {
+        crate::tooltip::Tooltips::bind(node, move || label.into());
+    }
     view! {
         if move ||unavailable.get() {
             column(class="fallback-pair",class:sub-fallback=move ||model.selected.get()==1) {
                 for entry in move ||[(GamutMapping::LocalMinde,"Mapped sRGB",include_str!("../assets/monitor.svg")),(GamutMapping::Clip,"Clipped sRGB",include_str!("../assets/cube.svg"))],key=|entry:&(GamutMapping,&str,&str)|entry.1 {
                     row(class="fallback-row") {
-                        {zgui::elements::vector().document(entry.2).class("fallback-icon")}
+                        control(class="fallback-button",node_ref=icons[usize::from(entry.0==GamutMapping::Clip)],tabindex=Focus::Sequential,a11y:label=entry.1,on:click=move |_|{model.select(fallback(color.get_untracked(),entry.0));}) {
+                            {zgui::elements::vector().document(entry.2).class("fallback-icon")}
+                        }
                         ColorTile(node=refs.fallback_samples[usize::from(entry.0==GamutMapping::Clip)],class="fallback-tile",source=Source::Sample,destination=None,
-                            color=Memo::new(move |_|fallback(entry.0)),label=Memo::new(move |_|entry.1.into()),
-                            activate=UnsyncCallback::new(move |()|{model.select(fallback(entry.0));}))
+                            color=Memo::new(move |_|fallback(color.get(),entry.0)),label=Memo::new(move |_|entry.1.into()),
+                            activate=UnsyncCallback::new(move |()|{model.select(fallback(color.get_untracked(),entry.0));}))
                     }
                 }
             }
@@ -409,11 +443,22 @@ pub(crate) fn dismiss_menu(open: RwSignal<bool>, popup: NodeRef, trigger: NodeRe
 
 #[component]
 fn GamutPanel(model: PickerModel, refs: PickerRefs) -> impl IntoView {
+    let legend = NodeRef::new();
+    let legend_size = legend.observe_border_size();
+    let plot_size = refs.slice.observe_border_size();
+    let scale = use_window().scale();
+    let near_legend = move || {
+        let Some((legend, plot)) = legend_size.get().zip(plot_size.get()) else {
+            return false;
+        };
+        plot.width.0 * ((model.c.get() / model.max_chroma.get()) as f32)
+            < legend.width.0 + 10.0 * scale.get()
+    };
     view! {
                 column(class="plot-section") {
                     ColorControl(model=model,kind=SurfaceKind::Slice,node=refs.slice)
                     row(class="plot-caption") {
-                        row(class="legend-group",class:right=move ||model.c.get()/model.max_chroma.get()<0.32) {
+                        row(class="legend-group",node_ref=legend,class:right=near_legend) {
                             text(class="legend srgb") {"sRGB"}
                             if move ||model.show_p3.get() {text(class="legend p3") {"P3"}}
                             if move ||model.show_rec2020.get() {text(class="legend rec2020") {"Rec.2020"}}
@@ -428,6 +473,8 @@ fn GamutPanel(model: PickerModel, refs: PickerRefs) -> impl IntoView {
 
 #[component]
 fn ColorPanel(model: PickerModel, refs: PickerRefs) -> impl IntoView {
+    let eyedropper = NodeRef::new();
+    crate::tooltip::Tooltips::bind(eyedropper, || "Eyedropper · Ctrl+Shift+C".into());
     view! {
                 row(class="adjustments") {
                     column(class="preview-column") {
@@ -440,7 +487,7 @@ fn ColorPanel(model: PickerModel, refs: PickerRefs) -> impl IntoView {
                                 SlotSwatch(model=model,refs=refs,index=1)
                             }
                             Fallbacks(model=model,refs=refs)
-                            control(class="eyedropper",tabindex=Focus::Sequential,a11y:label="Sample a window color (Ctrl+Shift+C)",
+                            control(class="eyedropper",node_ref=eyedropper,tabindex=Focus::Sequential,a11y:label="Sample a window color (Ctrl+Shift+C)",
                                 on:click=move |_|refs.sampling.set(true)) {
                                 {zgui::elements::vector().document(include_str!("../assets/eyedropper.svg")).class("eyedropper-icon")}
                             }
@@ -533,7 +580,7 @@ fn SettingToggle(
 ) -> impl IntoView {
     view! {control(class="setting-row",node_ref=node,tabindex=Focus::Sequential,a11y:label=label,on:click=move |_|toggle.run(())) {
         text {{label}} spacer()
-        if move ||checked.get() {{zgui::elements::vector().document(include_str!("../assets/check.svg")).class("check-icon")}}
+        box(class="setting-check",class:checked=move ||checked.get()) {{zgui::elements::vector().document(include_str!("../assets/check.svg")).class("check-icon")}}
     }}
 }
 
@@ -626,6 +673,7 @@ fn Channel(
     label: &'static str,
     number: NodeRef,
 ) -> impl IntoView {
+    let exit = expect_context::<InputExit>().0;
     let bar = NodeRef::new();
     let focused = RwSignal::new(false);
     let draft = RwSignal::new(String::new());
@@ -747,11 +795,12 @@ fn Channel(
                 return;
             }
             active = true;
-            number.focus();
+            bar.focus();
         }
         if active {
             let mut channels = model.current().components();
-            channels[index] = stepped_channel(index, base, f64::from(dx) / 4.0, cx.modifiers);
+            channels[index] =
+                stepped_channel(index, base, (f64::from(dx) / 4.0).trunc(), cx.modifiers);
             if let Ok(color) = Oklch::new(channels[0], channels[1], channels[2], channels[3]) {
                 model.preview(color);
             }
@@ -772,7 +821,11 @@ fn Channel(
         bar.focus();
     };
     view! {
-        row(class="channel",node_ref=bar,tabindex=Focus::Programmatic) {
+        row(class="channel",node_ref=bar,tabindex=Focus::Programmatic,on:key_down=move |cx|{
+            if cx.key==Key::Named(NamedKey::Escape) && gesture.get_untracked().is_some(){
+                cancel_number();cx.release_pointer();cx.prevent_default();cx.stop_propagation();
+            }
+        }) {
             text(class="channel-label") {{label}}
             field(class="number",class:editing=move ||focused.get(),node_ref=number,a11y:label=label,
                 on:pointer_down=move |cx| {
@@ -789,8 +842,9 @@ fn Channel(
                 on:pointer_move=move_number,
                 on:pointer_up=move |cx| {
                     if cx.button!=Some(PointerButton::Primary) { return; }
+                    cx.release_pointer();
                     if let Some((_,_,active))=gesture.get_untracked() {
-                        gesture.set(None);cx.release_pointer();
+                        gesture.set(None);
                         if active { model.commit();bar.focus(); } else { number.focus(); number.select_all(); }
                         cx.prevent_default();cx.stop_propagation();
                     }
@@ -817,7 +871,7 @@ fn Channel(
                         cx.prevent_default();
                         cx.stop_propagation();
                     }
-                    if cx.key==Key::Named(NamedKey::Enter) {commit();cx.prevent_default();}
+                    if cx.key==Key::Named(NamedKey::Enter) {commit();dirty.set(false);exit.focus();cx.prevent_default();cx.stop_propagation();}
                     if cx.key == Key::Named(NamedKey::Escape) {
                         let text = display(value.get_untracked());
                         dirty.set(false);
@@ -864,7 +918,7 @@ pub(crate) fn CopyButton(
         on:click=move |_|{
             clipboard.set_text(ClipboardKind::Standard,text.run(()));
             copied.set(true);
-            timer.set_value(Some(clock.set_timeout(std::time::Duration::from_millis(650),move ||copied.set(false))));
+            timer.set_value(Some(clock.set_timeout(std::time::Duration::from_millis(850),move ||copied.set(false))));
         }) {
         if move ||!copied.get() {{zgui::elements::vector().document(asset).class("copy-icon")}}
         box(class="tile-check",class:visible=move ||copied.get()) {{zgui::elements::vector().document(include_str!("../assets/check.svg")).class("check-icon")}}
@@ -873,6 +927,7 @@ pub(crate) fn CopyButton(
 
 #[component]
 fn CodeField(model: PickerModel, node: NodeRef, primary: bool) -> impl IntoView {
+    let exit = expect_context::<InputExit>().0;
     let focused = RwSignal::new(false);
     let menu = RwSignal::new(false);
     let popup = NodeRef::new();
@@ -927,7 +982,7 @@ fn CodeField(model: PickerModel, node: NodeRef, primary: bool) -> impl IntoView 
                     on:change=move |_|commit(),
                     on:key_down=move |cx|{
                         if composing.get_untracked() { return; }
-                        if cx.key==Key::Named(NamedKey::Enter) {commit();cx.prevent_default();}
+                        if cx.key==Key::Named(NamedKey::Enter) {commit();dirty.set(false);exit.focus();cx.prevent_default();cx.stop_propagation();}
                         if cx.key == Key::Named(NamedKey::Escape) {
                             let text = model.output_untracked(selected_format());
                             dirty.set(false);

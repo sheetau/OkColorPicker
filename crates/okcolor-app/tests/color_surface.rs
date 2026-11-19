@@ -137,8 +137,8 @@ fn gpu_surfaces_match_f64_mapping_and_working_gamut_mask() {
     let image = frames.last().expect("shader frame");
     let mut samples = 0;
     for (row, params) in cases.into_iter().enumerate() {
-        for y in [7, 23, 41, 57] {
-            for x in (7..WIDTH - 7).step_by(13) {
+        for y in [7, 19, 23, 41, 57] {
+            for x in (7..WIDTH - 7).step_by(13).chain([191, 192]) {
                 let u = (f64::from(x) + 0.5) / f64::from(WIDTH);
                 let v = (f64::from(y) + 0.5) / f64::from(HEIGHT);
                 // Boundary ink is intentionally decorative. Compare color/mask pixels away
@@ -171,11 +171,23 @@ fn gpu_surfaces_match_f64_mapping_and_working_gamut_mask() {
                 } else {
                     source.mapped_rgb(Gamut::Srgb, method).unwrap()
                 };
-                if (1.0..=3.0).contains(&params.kind)
-                    && !source.in_gamut(Gamut::DisplayP3)
-                    && (x + y) % 2 == 0
-                {
-                    expected = [0.0; 3];
+                if (1.0..=3.0).contains(&params.kind) && !source.in_gamut(Gamut::DisplayP3) {
+                    let normal = f64::from(x + y + 1) * std::f64::consts::FRAC_1_SQRT_2;
+                    let distance = (normal - 3.0 * (normal / 3.0).round()).abs();
+                    expected = expected.map(|v| v * distance.min(1.0));
+                }
+                if params.kind == 0.0 {
+                    let dx = (u - f64::from(params.channels[1] / params.max_chroma)).abs()
+                        * f64::from(WIDTH);
+                    let dy = (v - (1.0 - f64::from(params.channels[0]))).abs() * f64::from(HEIGHT);
+                    let opacity = 0.4 * (1.0 - dx.min(dy)).clamp(0.0, 1.0);
+                    let ink = Oklch::new(0.29, 0.01, 300.0, 1.0)
+                        .unwrap()
+                        .mapped_rgb(Gamut::Srgb, GamutMapping::Clip)
+                        .unwrap();
+                    expected = std::array::from_fn(|i| {
+                        expected[i] * (1.0 - opacity) + (expected[i] - ink[i]).abs() * opacity
+                    });
                 }
                 if params.kind == 4.0 {
                     let backdrop = if (x / 5 + y / 5) % 2 == 1 { 0.23 } else { 0.13 };

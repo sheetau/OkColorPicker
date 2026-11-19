@@ -122,7 +122,7 @@ drafts are adjusted and committed as one history action; invalid drafts and IME
 composition do not change the color. Untouched fields step from full-precision
 model values, with four displayed decimal places for every channel.
 L/alpha stop at their limits, C stops at zero, and hue wraps. Enter commits a text
-draft, and Escape cancels it or an active drag. Ctrl+C/V outside text entry copies
+draft and leaves text entry. Escape cancels it or an active drag. Ctrl+C/V outside text entry copies
 or applies a complete color. Inside text entry, the same shortcuts edit the draft.
 Ctrl+Z, Ctrl+Shift+Z and Ctrl+Y navigate color history outside text entry.
 Committed colors, recent colors and picker settings are restored on startup.
