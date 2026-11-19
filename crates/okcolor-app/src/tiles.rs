@@ -318,7 +318,6 @@ pub(crate) fn ColorTile(
         }
     });
     view! {control(class=class,node_ref=node,tabindex=Focus::Sequential,a11y:label=move ||label.get(),
-        class:dark=move ||class=="preset-color" && color.get().components()[0]<0.5,
         class:dragged=move ||shared.dragging.get()==Some(node),
         style:outline-color=move ||(shared.dragging.get()==Some(node)).then(&ink),
         on:pointer_enter=move |_|{
@@ -337,10 +336,10 @@ pub(crate) fn ColorTile(
             }
             suppress_click.set(false);
         }) {
-            ColorSwatch(model=model,color=fill,outline_dark=class!="transparent-color" && class!="preset-color" && class!="generated-color")
+            ColorSwatch(model=model,color=fill,outline_dark=class!="transparent-color")
             if move ||destination.is_some() && shared.hovering.get()==destination {box(class="insertion-line") {}}
             if move ||unavailable.get() {
-                box(class="unavailable-slot",style:color=move ||Some(ink())) {{zgui::elements::vector().document(include_str!("../assets/unavailable.svg")).class("unavailable-cross")}}
+                box(class="unavailable-slot") {{zgui::elements::vector().document(include_str!("../assets/unavailable.svg")).class("unavailable-cross")}}
             }
             if move ||class=="transparent-color" {
                 {zgui::elements::vector().document(include_str!("../assets/transparent.svg")).class("transparent-mark")}

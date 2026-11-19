@@ -52,7 +52,6 @@ control:disabled { opacity: 0.25; }
 .transparent-color, .transparent-color:hover { overflow: hidden; background-color: #fff; position: relative; }
 .transparent-mark { position: absolute; background-color: #fff; left: 0; top: 0; width: var(--small-tile); height: var(--small-tile); pointer-events: none; }
 .preset-color { position: relative; }
-.preset-color.dark { outline: 1px solid var(--muted); outline-offset: -1px; }
 .channels { flex: 1; min-width: 0; gap: var(--gap); align-items: flex-end; }
 .channel { height: var(--tile); align-items: center; gap: var(--gap); }
 .channel-label { width: 8px; min-width: 8px; color: var(--muted); font-family: var(--mono); font-size: var(--text-md); }
@@ -181,7 +180,7 @@ field:focus { color: var(--bright); }
 
 .slot-layer { position: absolute; width: var(--sample); height: var(--sample); }
 .slot-tile { width: 100%; height: 100%; position: relative; }
-.unavailable-slot { position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; }
+.unavailable-slot { color: #161518; position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; }
 .unavailable-cross { width: 100%; height: 100%; --zgui-stroke: currentColor; pointer-events: none; }
 .fallback-pair { position: absolute; left: 74px; top: -1px; width: 45px; gap: 2px; }
 .sub-fallback { top: 23px; }
@@ -248,7 +247,7 @@ field:focus { color: var(--bright); }
 .add-icon { width: var(--tile); height: var(--tile); --zgui-stroke: currentColor; pointer-events: none; }
 .add-tile { width: var(--tile); height: var(--tile); outline: 1px solid var(--muted); outline-offset: -1px; }
 
-.palette-tail, .palette-insert { pointer-events: none; opacity: 0; position: absolute; height: var(--palette-add); width: var(--palette-add); top: 9.5px; background-color: var(--black); color: var(--bright); }
+.palette-tail, .palette-insert { display: flex; align-items: center; justify-content: center; padding: 0; pointer-events: none; opacity: 0; position: absolute; height: var(--palette-add); width: var(--palette-add); top: 9.5px; background-color: var(--black); color: var(--bright); }
 .palette-tail { right: 0; }
 
 .palette-insert.interior { margin-left: -10.5px; }

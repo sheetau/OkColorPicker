@@ -436,29 +436,73 @@ fn PaletteInsert(
 ) -> impl IntoView {
     let gestures = TileGestures::current();
     let tail = index == usize::MAX;
-    let count = RwSignal::new(1usize);
-    let timer = StoredValue::new_local(None::<zgui::view::IntervalHandle>);
-    let clock = StoredValue::new_local(zgui::view::Timers::current().expect("picker window"));
-    view! {control(class=if tail {"palette-tail"}else{"palette-insert"},class:visible=move ||hot.get()==Some(index),style:left=move ||(!tail).then(||if index==0 {"0px".into()} else {format!("{}%",100.0*index as f32/gestures.palette.get().len() as f32)}),class:interior=!tail&&index>0,node_ref=Tooltips::button(node,if tail {"Append palette color"}else{"Insert palette colors · hold for more"}),tabindex=Focus::Sequential,
+    const PIXELS_PER_COLOR: f32 = 12.0;
+    let origin_y = RwSignal::new(None::<f32>);
+    let count = RwSignal::new(0usize);
+    let scrubbed = RwSignal::new(false);
+    let insert = move |requested| {
+        gestures.palette.update(|colors| {
+            insert_palette_colors(
+                colors,
+                index,
+                requested,
+                model.palette_source_untracked(),
+                model.gamut.get_untracked(),
+            )
+        });
+    };
+    let update_count = move |y: f32| {
+        if let Some(start) = origin_y.get_untracked() {
+            let steps = ((start - y) / PIXELS_PER_COLOR).floor() as usize;
+            let available = MAX_PALETTE.saturating_sub(gestures.palette.get_untracked().len());
+            if steps > 0 {
+                scrubbed.set(true);
+            }
+            count.set(steps.min(available));
+        }
+    };
+    Tooltips::bind(node, move || {
+        if origin_y.get_untracked().is_some() {
+            String::new()
+        } else if tail {
+            "Append palette color · drag up for more".into()
+        } else {
+            "Insert palette colors · drag up for more".into()
+        }
+    });
+    view! {control(class=if tail {"palette-tail"}else{"palette-insert"},
+        class:visible=move ||origin_y.get().is_some() || hot.get()==Some(index),
+        style:left=move ||(!tail).then(||if index==0 {"0px".into()} else {format!("{}%",100.0*index as f32/gestures.palette.get().len() as f32)}),
+        class:interior=!tail&&index>0,node_ref=node,tabindex=Focus::Sequential,
         a11y:label=if tail {"Append palette color"}else{"Insert palette colors"},
         on:pointer_down=move |cx|{
-            if cx.button!=Some(PointerButton::Primary){return;}
-            count.set(1);
-            timer.set_value(Some(clock.with_value(|clock|clock.set_interval(std::time::Duration::from_millis(450),move ||{
-                let max=MAX_PALETTE.saturating_sub(gestures.palette.get_untracked().len()).max(1);
-                count.update(|n|*n=(*n%max)+1);
-            }))));
+            if cx.button==Some(PointerButton::Primary) {
+                scrubbed.set(false);
+                origin_y.set(Some(cx.position.y.0));
+                cx.capture_pointer();
+            }
         },
-        on:pointer_up=move |_|timer.set_value(None),
-        on:pointer_leave=move |_|{timer.set_value(None);count.set(1);},
-        on:pointer_cancel=move |_|{timer.set_value(None);count.set(1);},
-        on:click=move |_|{
-            gestures.palette.update(|v|insert_palette_colors(v,index,count.get_untracked(),model.palette_source_untracked(),model.gamut.get_untracked()));
-            count.set(1);
-        }) {
-        if move ||count.get()==1 {{zgui::elements::vector().document(include_str!("../assets/add.svg")).class("add-icon")}}
+        on:pointer_move=move |cx|{
+            if origin_y.get_untracked().is_some() {
+                update_count(cx.position.y.0);
+                cx.stop_propagation();
+            }
+        },
+        on:pointer_up=move |cx|{
+            if cx.button==Some(PointerButton::Primary) && origin_y.get_untracked().is_some() {
+                update_count(cx.position.y.0);
+                let requested=count.get_untracked();
+                origin_y.set(None);
+                count.set(0);
+                cx.release_pointer();
+                if scrubbed.get_untracked() && requested>0 { insert(requested); }
+            }
+        },
+        on:pointer_cancel=move |_|{origin_y.set(None);count.set(0);scrubbed.set(true);},
+        on:key_down=move |_|scrubbed.set(false),
+        on:click=move |_|{if !scrubbed.get_untracked(){insert(1);} scrubbed.set(false);}) {
+        if move ||count.get()==0 {{zgui::elements::vector().document(include_str!("../assets/add.svg")).class("add-icon")}}
         else {text(class="insert-count") {{move ||count.get().to_string()}}}
-
     }}
 }
 

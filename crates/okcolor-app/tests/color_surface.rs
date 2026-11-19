@@ -149,6 +149,52 @@ fn gpu_surfaces_match_f64_mapping_and_working_gamut_mask() {
         }).expect("draw shader samples");
     let frames = frames.lock().unwrap();
     let image = frames.last().expect("shader frame");
+    // Measure the sRGB contour against the f64 boundary geometry inside the P3 fill.
+    // Its red channel has enough contrast here to resolve fractional pixel coverage.
+    let params = cases[0];
+    let extent = f64::from(params.max_chroma);
+    let slice =
+        okcolor_core::GamutSlice::new(f64::from(params.channels[2]), extent, Gamut::DisplayP3)
+            .unwrap();
+    let boundary_x = |y: f64| {
+        slice
+            .boundary(1.0 - y / f64::from(HEIGHT), Gamut::Srgb)
+            .unwrap()
+            * f64::from(WIDTH)
+            / extent
+    };
+    let mut partial = 0;
+    for y in 29..45 {
+        let center_y = f64::from(y) + 0.5;
+        let edge = boundary_x(center_y);
+        let slope = (boundary_x(center_y + 0.5) - boundary_x(center_y - 0.5)).hypot(1.0);
+        for x in edge.floor() as i32 - 3..=edge.ceil() as i32 + 3 {
+            let center_x = f64::from(x) + 0.5;
+            let source = color(
+                params,
+                center_x / f64::from(WIDTH),
+                center_y / f64::from(HEIGHT),
+            );
+            let red = source
+                .mapped_rgb(Gamut::Srgb, GamutMapping::LocalMinde)
+                .unwrap()[0]
+                * 255.0;
+            let coverage = (1.0 - (center_x - edge).abs() / slope).max(0.0);
+            let expected = red * (1.0 - coverage) + 22.0 * coverage;
+            let actual = f64::from(image.rgba(x, y)[0]);
+            assert!(
+                (actual - expected).abs() < 6.0,
+                "contour ({x},{y}): {actual} vs {expected}"
+            );
+            if (0.1..0.9).contains(&coverage) {
+                partial += 1;
+            }
+        }
+    }
+    assert!(
+        partial >= 16,
+        "subpixel contour coverage on multiple scanlines"
+    );
     let mut samples = 0;
     for (row, params) in cases.into_iter().enumerate() {
         for y in [0, 7, 18, 19, 20, 23, 41, 57, HEIGHT - 1] {
@@ -191,8 +237,8 @@ fn gpu_surfaces_match_f64_mapping_and_working_gamut_mask() {
                 };
                 if (1.0..=3.0).contains(&params.kind) && !source.in_gamut(Gamut::DisplayP3) {
                     let normal = f64::from(x + y + 1) * std::f64::consts::FRAC_1_SQRT_2;
-                    let distance = (normal - 2.0 * (normal / 2.0).round()).abs();
-                    expected = expected.map(|v| v * distance.min(1.0));
+                    let distance = (normal - 12.0 * (normal / 12.0).round()).abs();
+                    expected = expected.map(|v| v * (distance - 4.5).clamp(0.0, 1.0));
                 }
                 if params.kind == 0.0 {
                     let col = (f64::from(if params.fixed_axis == 0.0 {

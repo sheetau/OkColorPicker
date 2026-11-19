@@ -72,9 +72,10 @@ gamut chart and local-MINDE mapping for other previews. Working-gamut boundaries
 choice. Display changes do not create history entries or change saved colors.
 
 The slice, bars and recent samples use this preview policy. An out-of-sRGB slot
-on a bounded preview surface displays its mapped fill with a contrasting cross
-and offers mapped and clipped samples. Colors outside both P3 and Rec.2020 carry this indicator
-on every display. The code fields and Harmony use the mapped sample until the user
+on a bounded preview surface displays its mapped fill with a frame and cross in the outer
+gamut boundary color. The mapped and clipped samples each show their own HEX
+value on hover. Colors outside both P3 and Rec.2020 carry this indicator on every
+display. The code fields and Harmony use the mapped sample until the user
 selects a fallback. The numeric channels and serialized slots retain the source.
 Sample alpha is composited over a checkerboard. Bounded sRGB text output still
 uses its mapping policy even while the preview uses extended RGB.

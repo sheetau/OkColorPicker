@@ -146,15 +146,41 @@ fn color_at(uv: vec2<f32>, params: Params) -> vec3<f32> {
     return vec3<f32>(lch.x, lch.y * cos(radians), lch.y * sin(radians));
 }
 
+// Estimate signed perpendicular distance in device pixels to an RGB cube face.
+fn slice_distance(uv: vec2<f32>, pixel: vec2<f32>, lab: vec3<f32>, params: Params, gamut: f32) -> f32 {
+    let diagonal = vec2<f32>(pixel.x, -pixel.y);
+    let nw = gamut_margin(color_at(clamp(uv-pixel,vec2<f32>(0.0),vec2<f32>(1.0)),params),gamut);
+    let ne = gamut_margin(color_at(clamp(uv+diagonal,vec2<f32>(0.0),vec2<f32>(1.0)),params),gamut);
+    let sw = gamut_margin(color_at(clamp(uv-diagonal,vec2<f32>(0.0),vec2<f32>(1.0)),params),gamut);
+    let se = gamut_margin(color_at(clamp(uv+pixel,vec2<f32>(0.0),vec2<f32>(1.0)),params),gamut);
+    let margin = gamut_margin(lab, gamut);
+    if min(margin,min(min(nw,ne),min(sw,se))) >= 0.0 { return 2.0; }
+    if max(margin,max(max(nw,ne),max(sw,se))) < 0.0 { return -2.0; }
+    let gradient = 0.25 * vec2<f32>((ne-nw)+(se-sw), (sw-nw)+(se-ne));
+    let slope = length(gradient);
+    if slope < 0.0000001 { return select(-2.0, 2.0, margin >= 0.0); }
+    let distance = margin / slope;
+    // Refine the crossing along the normal: RGB varies cubically across an OKLab slice.
+    let crossing = clamp(uv - pixel * gradient * (distance / slope), vec2<f32>(0.0), vec2<f32>(1.0));
+    return distance + gamut_margin(color_at(crossing, params), gamut) / slope;
+}
+
 fn shade(input: ShaderInput, params: Params) -> vec4<f32> {
     let uv = clamp(input.local / max(input.size, vec2<f32>(1.0)), vec2<f32>(0.0), vec2<f32>(1.0));
     let lab = color_at(uv, params);
     // The difference strokes retain the reference chart ink.
     let paper = vec3<f32>(44.0,42.0,48.0) / 255.0;
+    let pixel = 1.0 / max(input.size, vec2<f32>(1.0));
     var rgb = vec3<f32>(9.0 / 255.0);
-    if params.kind >= 0.5 || in_gamut(lab, params.gamut) {
-        if params.wide > 0.5 { rgb = extended(lab); }
-        else { rgb = preview_rgb(lab, params.mapping); }
+    var fill_distance = 2.0;
+    if params.kind < 0.5 {
+        fill_distance = slice_distance(uv, pixel, lab, params, params.gamut);
+    }
+    if fill_distance > -0.5 {
+        var fill: vec3<f32>;
+        if params.wide > 0.5 { fill = extended(lab); }
+        else { fill = preview_rgb(lab, params.mapping); }
+        rgb = mix(rgb, fill, clamp(fill_distance + 0.5, 0.0, 1.0));
     }
     if params.kind > 3.5 {
         // Marker coordinates are relative to the bar's fixed checker origin.
@@ -167,35 +193,30 @@ fn shade(input: ShaderInput, params: Params) -> vec4<f32> {
         // A crossing in either axis marks the exact RGB-boundary neighborhood.
         if params.kind > 0.5 && !in_gamut(lab, params.gamut) {
             // Perpendicular distance to parallel 45-degree strokes, in device pixels.
-            let pitch = 2.0 * input.scale;
+            let pitch = 12.0 * input.scale;
             let normal = dot(input.local, vec2<f32>(0.70710678));
             let distance = abs(fract(normal / pitch + 0.5) - 0.5) * pitch;
-            rgb *= clamp(distance - 0.5 * input.scale + 0.5, 0.0, 1.0);
+            rgb *= clamp(distance - 5.0 * input.scale + 0.5, 0.0, 1.0);
         }
-        let step = vec2<f32>(select(0.5,1.0,params.kind<0.5)) / max(input.size, vec2<f32>(1.0));
         for (var g = 2; g >= 0; g -= 1) {
             if (g == 1 && params.show_p3 < 0.5) || (g == 2 && params.show_rec2020 < 0.5) { continue; }
             let gamut = f32(g);
-            let dx = vec2<f32>(step.x, 0.0);
-            let dy = vec2<f32>(0.0, step.y);
-            let left = gamut_margin(color_at(clamp(uv-dx,vec2<f32>(0.0),vec2<f32>(1.0)),params),gamut);
-            let right = gamut_margin(color_at(clamp(uv+dx,vec2<f32>(0.0),vec2<f32>(1.0)),params),gamut);
             if params.kind < 0.5 {
-                let above = gamut_margin(color_at(clamp(uv-dy,vec2<f32>(0.0),vec2<f32>(1.0)),params),gamut);
-                let below = gamut_margin(color_at(clamp(uv+dy,vec2<f32>(0.0),vec2<f32>(1.0)),params),gamut);
-                let slope = 0.5 * length(vec2<f32>(right-left,below-above));
-                let crossing = min(min(left,right),min(above,below)) <= 0.0 && max(max(left,right),max(above,below)) >= 0.0;
-                if crossing && slope > 0.0000001 {
-                    let distance = abs(gamut_margin(lab,gamut))/slope;
-                    let coverage = 1.0-smoothstep(0.2,1.0,distance);
-                    let inner = g == 0 && params.show_p3 > 0.5;
-                    let lch = select(vec3<f32>(0.198, 0.006, 301.0), vec3<f32>(0.235, 0.01, 304.0), inner);
-                    let angle = radians(lch.z);
-                    let ink = clipped(vec3<f32>(lch.x,lch.y*cos(angle),lch.y*sin(angle)));
-                    rgb = mix(rgb,ink,coverage);
+                var distance = fill_distance;
+                if gamut != params.gamut {
+                    distance = slice_distance(uv, pixel, lab, params, gamut);
                 }
-            } else if (left>=0.0)!=(right>=0.0) {
-                rgb = vec3<f32>(0.0);
+                // A one-device-pixel contour shares ink across neighboring pixels.
+                let coverage = max(1.0 - abs(distance), 0.0);
+                let inner = g == 0 && params.show_p3 > 0.5;
+                // The outer ink also strokes the frame and cross on unavailable slots.
+                let ink = select(vec3<f32>(22.0, 21.0, 24.0), vec3<f32>(31.0, 29.0, 34.0), inner) / 255.0;
+                rgb = mix(rgb, ink, coverage);
+            } else {
+                let dx = vec2<f32>(0.5 * pixel.x, 0.0);
+                let left = in_gamut(color_at(clamp(uv-dx,vec2<f32>(0.0),vec2<f32>(1.0)),params),gamut);
+                let right = in_gamut(color_at(clamp(uv+dx,vec2<f32>(0.0),vec2<f32>(1.0)),params),gamut);
+                if left != right { rgb = vec3<f32>(0.0); }
             }
         }
     }

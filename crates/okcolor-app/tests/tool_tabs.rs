@@ -156,6 +156,36 @@ fn mounted_tabs_edit_recall_adjust_and_restore() {
                     let wide = okcolor_core::Oklch::new(0.65,0.4,140.0,1.0).unwrap();
                     model.select(wide);
                     h.settle(32);
+                    // Verify both hover targets report the exact color the action will select.
+                    for (index, (name, method)) in [
+                        ("Mapped sRGB", okcolor_core::GamutMapping::LocalMinde),
+                        ("Clipped sRGB", okcolor_core::GamutMapping::Clip),
+                    ].into_iter().enumerate() {
+                        let b = refs.fallback_samples[index].window_bounds().unwrap();
+                        let hex = okcolor_core::format_color(wide, okcolor_core::ColorFormat::Hex, method).unwrap().text;
+                        for x in [b.origin.x.0 + 10.0, b.origin.x.0 - 15.0] {
+                            let point = Point::new(CssPx(x), CssPx(b.origin.y.0 + 10.0));
+                            tile_pointer(&mut h, PointerAction::Moved, PointerButton::Primary, point);
+                            h.run_for(Duration::from_secs(2), Duration::from_millis(20));
+                            h.settle(32);
+                            // The label and monospace HEX are separate nodes with a CSS gap.
+                            assert_eq!(refs.tooltip.text_content(), format!("{name}{hex}"));
+                        }
+                    }
+                    let b = refs.swatches[usize::from(slot)].window_bounds().unwrap();
+                    {
+                        let captured = frames.lock().unwrap();
+                        let image = captured.last().unwrap();
+                        let (x,y) = (b.origin.x.0 as i32, b.origin.y.0 as i32);
+                        for (dx,dy) in [(10,0),(0,10),(39,10),(10,39)] {
+                            assert_eq!(image.rgba(x+dx, y+dy), [22,21,24,255], "outer slot frame");
+                        }
+                        let fill = image.rgba(x+10, y+2)[1];
+                        for dx in [10,29] {
+                            let diagonal = image.rgba(x+dx,y+10)[1];
+                            assert!(diagonal.abs_diff(21) < fill.abs_diff(21)/2, "fixed-ink cross");
+                        }
+                    }
                     if slot==0 {click(&mut h,refs.fallback_samples[0]);}
                     else {
                         let b=refs.fallback_samples[1].window_bounds().unwrap();
@@ -182,6 +212,15 @@ fn mounted_tabs_edit_recall_adjust_and_restore() {
                 assert_eq!(model.tab.get_untracked(), Tab::Harmonies);
                 assert_eq!(refs.similar.focusables().len(), 6, "six mounted named-color tiles");
                 fit_page(&mut h,refs);
+                // Black in the variations uses the same inner edge as a dark swatch.
+                let shades = refs.tools[7].window_bounds().unwrap();
+                {
+                    let captured = frames.lock().unwrap();
+                    let image = captured.last().unwrap();
+                    let (x,y) = (shades.origin.x.0 as i32 + 5, shades.origin.y.0 as i32);
+                    assert_eq!(image.rgba(x,y), [40,40,40,255], "dark variation edge");
+                    assert!(image.rgba(x,y+2)[0] < 9, "dark variation fill");
+                }
                 let strip = refs.tools[5].window_bounds().unwrap();
                 let page_height = refs.page_content.window_bounds().unwrap().size.height.0;
                 click(&mut h,refs.library[1]);
@@ -268,14 +307,55 @@ fn mounted_tabs_edit_recall_adjust_and_restore() {
                     locked,
                     "drop on the trailing target appends"
                 );
+                let plus = refs.tools[2];
+                let center = Point::new(CssPx(tail.origin.x.0 + 10.5), CssPx(tail.origin.y.0 + 10.5));
+                tile_pointer(&mut h,PointerAction::Moved,primary,center);
+                tile_pointer(&mut h,PointerAction::Pressed,primary,center);
+                h.run_for(Duration::from_secs(1),Duration::from_millis(25));
+                assert!(plus.text_content().is_empty(), "a stationary press keeps the plus glyph");
+                for (up, expected) in [(120.0, "5"), (36.0, "3"), (12.0, "1"), (0.0, "")] {
+                    let point = Point::new(center.x, CssPx(center.y.0 - up));
+                    tile_pointer(&mut h,PointerAction::Moved,primary,point);
+                    assert_eq!(plus.text_content(), expected);
+                    if up == 36.0 {
+                        let captured = frames.lock().unwrap();
+                        let image = captured.last().unwrap();
+                        let mut ink = (21,21,-1,-1);
+                        for dy in 1..20 {
+                            for dx in 1..20 {
+                                if image.rgba(tail.origin.x.0.round() as i32+dx,tail.origin.y.0.round() as i32+dy)[0] > 100 {
+                                    ink = (ink.0.min(dx),ink.1.min(dy),ink.2.max(dx),ink.3.max(dy));
+                                }
+                            }
+                        }
+                        assert!(ink.0 <= ink.2 && ink.1 <= ink.3, "count must paint visible ink");
+                        assert!((ink.0+ink.2-20i32).abs()<=3 && (ink.1+ink.3-20i32).abs()<=3,
+                            "count must be centered in the 21px button: {ink:?}");
+                    }
+                }
+                tile_pointer(&mut h,PointerAction::Released,primary,center);
                 let between=Point::new(CssPx(strip.origin.x.0+strip.size.width.0/5.0+2.0),CssPx(strip.origin.y.0+20.0));
                 tile_pointer(&mut h,PointerAction::Moved,primary,between);
                 tile_pointer(&mut h,PointerAction::Pressed,primary,between);
                 h.run_for(Duration::from_millis(525),Duration::from_millis(25));
+                let raised = |pixels:f32| Point::new(between.x,CssPx(between.y.0-pixels));
+                tile_pointer(&mut h,PointerAction::Moved,primary,raised(36.0));
+                tile_pointer(&mut h,PointerAction::Moved,primary,between);
                 tile_pointer(&mut h,PointerAction::Released,primary,between);
+                assert!((refs.tools[6].window_bounds().unwrap().size.width.0-strip.size.width.0/5.0).abs()<2.0,
+                    "dragging back to zero cancels insertion");
+                tile_pointer(&mut h,PointerAction::Moved,primary,between);
+                tile_pointer(&mut h,PointerAction::Pressed,primary,between);
+                tile_pointer(&mut h,PointerAction::Moved,primary,raised(48.0));
+                tile_pointer(&mut h,PointerAction::Moved,primary,raised(24.0));
+                tile_pointer(&mut h,PointerAction::Released,primary,raised(24.0));
                 let lock=refs.tools[6].window_bounds().unwrap();
                 let cell_width=lock.size.width.0;
-                assert!((cell_width-strip.size.width.0/7.0).abs()<2.0,"holding + inserts two colors, got cell width {cell_width}");
+                assert!((cell_width-strip.size.width.0/7.0).abs()<2.0,"releasing at two upward steps inserts two colors, got cell width {cell_width}");
+                tile_pointer(&mut h,PointerAction::Moved,primary,center);
+                click(&mut h, plus);
+                assert!((refs.tools[6].window_bounds().unwrap().size.width.0-strip.size.width.0/8.0).abs()<2.0,
+                    "an ordinary plus click inserts one color");
                 model.select(original);
                 h.settle(32);
                 click(&mut h, refs.library[0]);

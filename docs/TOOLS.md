@@ -21,8 +21,8 @@ uncommitted field edit and releases text focus. The eyedropper
 A floating chip previews the sampled pixel and its six-digit HEX value.
 A left click selects the color and consumes the click. Right-click or Escape cancels sampling.
 
-An unavailable slot shows a grayscale cross over the mapped fill. The active slot offers
-mapped and clipped sRGB samples beside it. Click a sample to adopt that color
+An unavailable slot shows a fixed-color frame and cross over the mapped fill. The active
+slot offers mapped and clipped sRGB samples beside it. Click a sample to adopt that color
 as one undoable edit. Until then the code fields and Harmony use the mapped
 preview. Right-click the original slot to copy the stored color in the selected
 output format.
@@ -53,8 +53,10 @@ Click a sample to select it or drag it to the library.
 
 **Generate** or **Space** replaces unlocked palette colors using locked colors
 as anchors. Shift-click a palette tile to toggle its lock. A dot at the lower
-center marks a locked tile. Hold the insertion control between two colors to choose the number
-of intermediate samples. sRGB gradients interpolate the encoded RGB channels.
+center marks a locked tile. Click **+** to insert one color. Drag **+** upward
+to choose the number of intermediate colors, one per 12 CSS pixels. Drag back
+down to reduce the count. Returning to **+** cancels the insertion on release.
+sRGB gradients interpolate the encoded RGB channels.
 Drag to reorder, middle-click to remove and use the trailing **+** to append.
 Hover a palette color to see its HEX value and closest CSS color name.
 The generated palette stays in the current session.

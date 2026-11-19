@@ -372,33 +372,53 @@ pub(crate) fn SlotSwatch(model: PickerModel, refs: PickerRefs, index: usize) -> 
 fn Fallbacks(model: PickerModel, refs: PickerRefs) -> impl IntoView {
     let color = Memo::new(move |_| model.color());
     let unavailable = Memo::new(move |_| model.display.get().unavailable(color.get()).is_some());
-    let fallback = move |original: Oklch, method| {
+    view! {
+        if move ||unavailable.get() {
+            column(class="fallback-pair",class:sub-fallback=move ||model.selected.get()==1) {
+                FallbackSample(model=model,color=color,method=GamutMapping::LocalMinde,name="Mapped sRGB",
+                    icon=include_str!("../assets/monitor.svg"),node=refs.fallback_samples[0])
+                FallbackSample(model=model,color=color,method=GamutMapping::Clip,name="Clipped sRGB",
+                    icon=include_str!("../assets/cube.svg"),node=refs.fallback_samples[1])
+            }
+        }
+    }
+}
+
+#[component]
+fn FallbackSample(
+    model: PickerModel,
+    color: Memo<Oklch>,
+    method: GamutMapping,
+    name: &'static str,
+    icon: &'static str,
+    node: NodeRef,
+) -> impl IntoView {
+    let sample = Memo::new(move |_| {
+        let original = color.get();
         let [_, _, h, a] = original.components();
         original
             .mapped_rgb(Gamut::Srgb, method)
             .and_then(|rgb| Oklch::from_rgb(rgb, Gamut::Srgb, a, h))
             .unwrap_or(original)
+    });
+    let label = Memo::new(move |_| {
+        let hex = okcolor_core::format_color(sample.get(), ColorFormat::Hex, method)
+            .expect("valid sRGB fallback")
+            .text;
+        format!("{name} {hex}")
+    });
+    let button = NodeRef::new();
+    Tooltips::bind(button, move || label.get_untracked());
+    let select = move || {
+        model.select(sample.get_untracked());
     };
-    let icons = [NodeRef::new(), NodeRef::new()];
-    for (node, label) in icons.into_iter().zip(["Mapped sRGB", "Clipped sRGB"]) {
-        crate::tooltip::Tooltips::bind(node, move || label.into());
-    }
-    view! {
-        if move ||unavailable.get() {
-            column(class="fallback-pair",class:sub-fallback=move ||model.selected.get()==1) {
-                for entry in move ||[(GamutMapping::LocalMinde,"Mapped sRGB",include_str!("../assets/monitor.svg")),(GamutMapping::Clip,"Clipped sRGB",include_str!("../assets/cube.svg"))],key=|entry:&(GamutMapping,&str,&str)|entry.1 {
-                    row(class="fallback-row") {
-                        control(class="fallback-button",node_ref=icons[usize::from(entry.0==GamutMapping::Clip)],tabindex=Focus::Sequential,a11y:label=entry.1,on:click=move |_|{model.select(fallback(color.get_untracked(),entry.0));}) {
-                            {zgui::elements::vector().document(entry.2).class("fallback-icon")}
-                        }
-                        ColorTile(node=refs.fallback_samples[usize::from(entry.0==GamutMapping::Clip)],class="fallback-tile",source=Source::Sample,destination=None,
-                            color=Memo::new(move |_|fallback(color.get(),entry.0)),label=Memo::new(move |_|entry.1.into()),
-                            activate=UnsyncCallback::new(move |()|{model.select(fallback(color.get_untracked(),entry.0));}))
-                    }
-                }
-            }
+    view! {row(class="fallback-row") {
+        control(class="fallback-button",node_ref=button,tabindex=Focus::Sequential,a11y:label=move ||label.get(),on:click=move |_|select()) {
+            {zgui::elements::vector().document(icon).class("fallback-icon")}
         }
-    }
+        ColorTile(node=node,class="fallback-tile",source=Source::Sample,destination=None,
+            color=sample,label=label,activate=UnsyncCallback::new(move |()|select()))
+    }}
 }
 
 /// Close each popup on Escape or an outside press and restore keyboard focus.
