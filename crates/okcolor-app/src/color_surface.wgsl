@@ -130,7 +130,10 @@ fn color_at(uv: vec2<f32>, params: Params) -> vec3<f32> {
 fn shade(input: ShaderInput, params: Params) -> vec4<f32> {
     let uv = clamp(input.local / max(input.size, vec2<f32>(1.0)), vec2<f32>(0.0), vec2<f32>(1.0));
     let lab = color_at(uv, params);
-    var rgb = vec3<f32>(0.03529412);
+    // The reference chart canvas is transparent outside the selected gamut.
+    // Its dark card and the two CSS difference strokes share this surface color.
+    let paper = vec3<f32>(44.0,42.0,48.0) / 255.0;
+    var rgb = paper;
     if params.kind >= 0.5 || in_gamut(lab, params.gamut) {
         if params.wide > 0.5 { rgb = extended(lab); }
         else { rgb = preview_rgb(lab, params.mapping); }
@@ -146,7 +149,7 @@ fn shade(input: ShaderInput, params: Params) -> vec4<f32> {
         // A crossing in either axis marks the exact RGB-boundary neighborhood.
         if params.kind > 0.5 && !in_gamut(lab, params.gamut) {
             // Perpendicular distance to parallel 45-degree strokes, in device pixels.
-            let pitch = 3.0 * input.scale;
+            let pitch = 2.0 * input.scale;
             let normal = dot(input.local, vec2<f32>(0.70710678));
             let distance = abs(fract(normal / pitch + 0.5) - 0.5) * pitch;
             rgb *= clamp(distance - 0.5 * input.scale + 0.5, 0.0, 1.0);
@@ -175,13 +178,15 @@ fn shade(input: ShaderInput, params: Params) -> vec4<f32> {
     }
     if params.kind < 0.5 {
         let marker = vec2<f32>(params.channels.y / params.max_chroma, 1.0 - params.channels.x);
-        let delta = abs(input.local - clamp(marker, vec2<f32>(0.0), vec2<f32>(1.0)) * input.size);
-        let coverage = clamp(0.5 * input.scale + 0.5 - min(delta.x,delta.y), 0.0, 1.0);
-        // The reference dark theme uses OKLCH(0.29 0.01 300) as its difference ink.
-        let ink = clipped(vec3<f32>(0.29, 0.005, -0.008660254));
-        rgb = mix(rgb, abs(rgb - ink), 0.4 * coverage);
+        let stroke=max(1.0,round(input.scale));
+        let start=clamp(floor(marker * input.size + 0.5),vec2<f32>(0.0),input.size-vec2<f32>(stroke));
+        let line=input.local-start;
+        // Snap each CSS rectangle once. The axes blend separately at the intersection.
+        if line.y>=0.0 && line.y<stroke {rgb=mix(rgb,abs(rgb-paper),0.4);}
+        if line.x>=0.0 && line.x<stroke {rgb=mix(rgb,abs(rgb-paper),0.4);}
     }
-    if params.outline_dark > 0.5 && max(max(rgb.r, rgb.g), rgb.b) < 9.0 / 255.0 {
+    let bar=params.kind>0.5 && params.kind<4.5;
+    if params.outline_dark > 0.5 && (bar || max(max(rgb.r, rgb.g), rgb.b) < 9.0 / 255.0) {
         let edge = min(min(input.local.x,input.local.y),min(input.size.x-input.local.x,input.size.y-input.local.y));
         if edge < input.scale { rgb = vec3<f32>(40.0 / 255.0); }
     }

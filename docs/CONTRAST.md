@@ -20,7 +20,13 @@ coefficients published in [APCA-W3](https://github.com/Myndex/apca-w3/blob/maste
 The display's HDR mode does not enter the calculation. Candidate generation
 searches lighter colors for reference OKLCH lightness up to 0.6 and darker
 colors above that threshold. It keeps hue fixed, reduces chroma to fit the
-selected gamut and shows a dash for an unreachable target.
+selected gamut and displays the closest attainable Lc. Each reference color,
+text/background assignment and working gamut determines its own limit. For
+opaque sRGB black on white the signed result rounds to +106; for white on
+black it rounds to −108. Editing the current color also takes its alpha and
+gamut mapping into account. An explicit sign selects polarity in either Lc field. A bare
+magnitude follows the reference direction for a candidate and retains the
+current polarity when editing the source.
 
 These are experimental APCA Lc values, not WCAG compliance results or a
 typography recommendation. Font size, weight and viewing context still require

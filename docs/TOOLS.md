@@ -11,9 +11,11 @@ window sizes. Drag the title to move the window. The menu opens Settings.
 The crosshairs mark lightness and chroma. The hue bar hatches colors outside
 the working gamut. Settings controls the gamut boundaries, alpha slider,
 sRGB conversion and **Always on top**. Press **O** or **R** outside a text
-field to select the corresponding code for replacement. The eyedropper
-(**Ctrl+Shift+C**) samples a visible pixel inside the Windows application.
-Right-click or Escape cancels sampling.
+field to select the corresponding code for replacement. Escape discards an
+uncommitted field edit and releases text focus. The eyedropper
+(**Ctrl+Shift+C**) samples a visible SDR desktop pixel across Windows displays.
+A floating chip previews the sampled pixel and its six-digit HEX value.
+A left click selects the color and consumes the click. Right-click or Escape cancels sampling.
 
 In sRGB preview, an unrepresentable slot shows a cross. The active slot offers
 mapped and clipped sRGB samples beside it. Click a sample to adopt that color
@@ -38,7 +40,7 @@ section. Library changes save independently of color undo.
 
 Click a group heading to collapse or expand it. Each variation has thirteen samples with the source in the middle.
 The four rows vary lightness (shades through tints), chroma, hue and temperature.
-Similar shows up to four named sRGB colors from the bundled meodai/color-names
+Similar shows up to six named sRGB colors from the bundled meodai/color-names
 dictionary, ordered by CIEDE2000 distance in D50 Lab. It excludes the input
 HEX and distances of 30 or more. Harmony shows analogous, complementary, split
 complementary, triadic, tetradic and square combinations. Bounded sRGB
@@ -46,7 +48,8 @@ samples use the RGB color wheel. The wide-gamut tools work in OKLCH.
 Click a sample to select it or drag it to the library.
 
 **Generate** or **Space** replaces unlocked palette colors using locked colors
-as anchors. Hold the insertion control between two colors to choose the number
+as anchors. Shift-click a palette tile to toggle its lock. A dot at the lower
+center marks a locked tile. Hold the insertion control between two colors to choose the number
 of intermediate samples. sRGB gradients interpolate the encoded RGB channels.
 Drag to reorder, middle-click to remove and use the trailing **+** to append.
 Hover a palette color to see its HEX value and closest CSS color name.
@@ -60,7 +63,9 @@ generates text for the reference background. Choose sRGB or Display P3.
 **Current C** limits chroma to the selected color's chroma and **Max C**
 uses the available gamut at the generated lightness and hue.
 
-Use **+** between two levels to insert their midpoint. Middle-click a row to remove it. Target Lc values round to whole numbers and clamp to 0–110. Editing the
+Use **+** between two levels to insert their midpoint. Middle-click a row to remove it. Target Lc values round to whole numbers and clamp to the closest reachable score for that reference, polarity and gamut. The fields show
+magnitudes. Positive APCA denotes dark text on light and negative APCA denotes
+light text on dark. The sRGB extremes round to +106 and −108. Editing the
 current color's Lc adjusts its lightness against that reference. Ctrl+Z and
 Ctrl+Y navigate grid changes and color edits in the order they occurred. Drag the horizontal boundary to change the reference
 for adjacent levels. Drag it to an edge to remove that region. Its **+**

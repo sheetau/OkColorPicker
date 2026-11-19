@@ -16,7 +16,10 @@ pub use slice::{GamutProjection, GamutSlice};
 
 mod contrast;
 mod related;
-pub use contrast::{apca, apca_in, contrast_sample, lightness_for_contrast};
+pub use contrast::{
+    apca, apca_in, closest_current_contrast, closest_grid_sample, contrast_sample,
+    default_grid_target, lightness_for_contrast,
+};
 mod named;
 pub use named::{NamedColor, nearest_named};
 pub use related::{

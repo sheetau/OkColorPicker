@@ -109,6 +109,12 @@ fn mounted_tabs_edit_recall_adjust_and_restore() {
                 h.settle(64);
                 let (model, refs): (PickerModel, PickerRefs) = state.get().unwrap();
                 let original = model.current();
+                let eye=refs.eyedropper.window_bounds().unwrap();
+                let eye_center=Point::new(CssPx(eye.origin.x.0+8.0),CssPx(eye.origin.y.0+8.0));
+                tile_pointer(&mut h,PointerAction::Moved,PointerButton::Primary,eye_center);
+                h.run_for(Duration::from_secs(2),Duration::from_millis(20));h.settle(32);
+                assert!(refs.tooltip.window_bounds().is_some(),"eyedropper hover must mount a tooltip");
+                assert!(refs.tooltip.text_content().contains("Eyedropper"),"tooltip: {}",refs.tooltip.text_content());
                 // A fresh window routes a printable key to the document root.
                 key(&mut h,KeyEvent::character("r"),Modifiers::NONE);
                 assert!(model.editing_text.get_untracked(),"unfocused window shortcut");
@@ -157,6 +163,7 @@ fn mounted_tabs_edit_recall_adjust_and_restore() {
                 assert_eq!(model.tab.get_untracked(), Tab::Picker);
                 click(&mut h, refs.tabs[1]);
                 assert_eq!(model.tab.get_untracked(), Tab::Harmonies);
+                assert_eq!(refs.similar.focusables().len(), 6, "six mounted named-color tiles");
                 let rest = refs.tool_page;
                 rest.scroll_to(
                     ScrollTarget::By(Point::new(
@@ -172,6 +179,29 @@ fn mounted_tabs_edit_recall_adjust_and_restore() {
                 let folder = refs.folder_menu.window_bounds().expect("mounted swatch menu");
                 let anchor = refs.library[1].window_bounds().unwrap();
                 assert!(folder.size.height.0 >= 40.0 && folder.origin.y.0 + folder.size.height.0 <= anchor.origin.y.0+1.0,"folder {folder:?}, trigger {anchor:?}");
+                let mx=folder.origin.x.0.round() as i32;
+                let my=folder.origin.y.0.round() as i32;
+                tile_pointer(&mut h,PointerAction::Moved,PointerButton::Primary,Point::new(CssPx(mx as f32+8.0),CssPx(my as f32+37.0)));
+                {
+                    let captured=frames.lock().unwrap();
+                    let image=captured.last().unwrap();
+                    if let Ok(dir)=std::env::var("OKCOLOR_TOOLS_CAPTURE_DIR"){
+                        std::fs::write(std::path::Path::new(&dir).join("menu.rgba"),image.bytes()).unwrap();
+                    }
+                    for row in [0,27] {
+                        let (mut left,mut right,mut top,mut bottom)=(100,0,22,0);
+                        for y in 0..22 {
+                            assert_eq!(image.rgba(mx+1,my+row+y),[9,9,9,255],"selected and hovered rows share the panel background");
+                            for x in 2..98 {
+                                if image.rgba(mx+x,my+row+y)[0]>60 {
+                                    left=left.min(x);right=right.max(x);top=top.min(y);bottom=bottom.max(y);
+                                }
+                            }
+                        }
+                        assert!(left<=right && (left+right-99_i32).abs()<=4 && (top+bottom-21_i32).abs()<=4,
+                            "menu row {row} ink bounds {left}..{right}, {top}..{bottom}");
+                    }
+                }
                 assert_eq!(rest.scroll_position().content_size.height.0,page_height,"an open menu must not extend the page");
                 key(&mut h,KeyEvent::named(NamedKey::Escape,PhysicalKey::Unidentified(0)),Modifiers::NONE);
                 assert!(refs.folder_menu.get().is_none());
@@ -180,14 +210,22 @@ fn mounted_tabs_edit_recall_adjust_and_restore() {
                     CssPx(strip.origin.y.0 + 8.0),
                 );
                 let tail = refs.tools[2].window_bounds().unwrap();
-                let palette_end = Point::new(CssPx(tail.origin.x.0 + tail.size.width.0/2.0), CssPx(tail.origin.y.0 + tail.size.height.0/2.0));
+                let palette_end = Point::new(CssPx(strip.origin.x.0 + strip.size.width.0 - 2.0), CssPx(strip.origin.y.0 + 2.0));
                 let last_color = Point::new(CssPx(tail.origin.x.0 - 22.0), palette_start.y);
                 let primary = PointerButton::Primary;
                 tile_pointer(&mut h, PointerAction::Pressed, primary, palette_start);
                 tile_pointer(&mut h, PointerAction::Released, primary, palette_start);
                 let locked = model.current();
                 assert_ne!(locked, original);
-                click(&mut h, refs.tools[6]);
+                assert!(refs.palette_dot.window_bounds().is_none(),"hover alone must not show a lock");
+                for action in [PointerAction::Pressed,PointerAction::Released]{
+                    h.deliver_to_first(SurfaceEvent::Pointer{action,event:PointerEvent::mouse(palette_start).with_button(primary),modifiers:Modifiers::SHIFT,timestamp:Timestamp::ORIGIN});
+                    h.settle(32);
+                }
+                let dot=refs.palette_dot.window_bounds().expect("locked tile indicator");
+                let cell=refs.tools[6].window_bounds().unwrap();
+                assert!((dot.origin.x.0+2.5-cell.origin.x.0-cell.size.width.0*0.5).abs()<=1.0);
+                assert!((cell.origin.y.0+cell.size.height.0-dot.origin.y.0-dot.size.height.0-5.0).abs()<=1.0);
                 click(&mut h, refs.tools[0]);
                 for action in [PointerAction::Pressed,PointerAction::Released] {tile_pointer(&mut h,action,primary,last_color);}
                 let before_space = model.current();
@@ -219,7 +257,7 @@ fn mounted_tabs_edit_recall_adjust_and_restore() {
                 h.run_for(Duration::from_millis(525),Duration::from_millis(25));
                 tile_pointer(&mut h,PointerAction::Released,primary,between);
                 let lock=refs.tools[6].window_bounds().unwrap();
-                let cell_width=2.0*(lock.origin.x.0+lock.size.width.0*0.5-strip.origin.x.0);
+                let cell_width=lock.size.width.0;
                 assert!((cell_width-strip.size.width.0/7.0).abs()<2.0,"holding + inserts two colors, got cell width {cell_width}");
                 model.select(original);
                 h.settle(32);
@@ -328,7 +366,7 @@ fn mounted_tabs_edit_recall_adjust_and_restore() {
                 assert_eq!(model.tools.get_untracked().contrast_grid.levels[0], 65);
                 assert_eq!(model.current(), original);
                 let enter = || KeyEvent::named(NamedKey::Enter,PhysicalKey::Unidentified(0));
-                for (input,lc) in [("150",110),("-4",0),("65",65)] {
+                for (input,lc) in [("150",108),("0",0),("65",65)] {
                     assert!(!model.editing_text.get_untracked());
                     type_text(&mut h,refs.tools[3],input);
                     key(&mut h,enter(),Modifiers::NONE);
@@ -344,6 +382,37 @@ fn mounted_tabs_edit_recall_adjust_and_restore() {
                         assert_eq!(node.text_content().to_ascii_lowercase(),value);
                     }
                 }
+                // Changing the reference immediately recalculates both the visible target and its editable limit.
+                type_text(&mut h,refs.tools[3],"200");
+                key(&mut h,enter(),Modifiers::NONE);
+                type_text(&mut h,refs.tools[4],"#7e7799");
+                key(&mut h,enter(),Modifiers::NONE);
+                let mid=okcolor_core::parse_color("#7e7799",0.0).unwrap();
+                let white=okcolor_core::parse_color("#fff",0.0).unwrap();
+                let expected=okcolor_core::apca(white,mid,okcolor_core::GamutMapping::Clip).unwrap().abs().round() as u8;
+                assert_eq!(refs.tools[3].text_content(),expected.to_string());
+                type_text(&mut h,refs.tools[3],"200");
+                key(&mut h,enter(),Modifiers::NONE);
+                assert_eq!(model.tools.get_untracked().contrast_grid.levels[0],expected);
+                if let Ok(dir)=std::env::var("OKCOLOR_TOOLS_CAPTURE_DIR"){
+                    std::fs::write(std::path::Path::new(&dir).join("apca-colored.rgba"),frames.lock().unwrap().last().unwrap().bytes()).unwrap();
+                }
+                for signed in ["+20","-20"] {
+                    type_text(&mut h,refs.tools[3],signed);
+                    key(&mut h,enter(),Modifiers::NONE);
+                    let config=model.tools.get_untracked().contrast_grid;
+                    assert_eq!(config.signed_target(0,mid),signed.parse::<f64>().unwrap());
+                    assert_eq!(refs.tools[3].text_content(),"20");
+                    type_text(&mut h,refs.current_lc[0],signed);
+                    key(&mut h,enter(),Modifiers::NONE);
+                    let actual=okcolor_core::apca(model.current(),mid,model.mapping.get_untracked()).unwrap();
+                    assert_eq!(actual.round(),signed.parse::<f64>().unwrap());
+                }
+                model.select(original);
+                type_text(&mut h,refs.tools[4],"#000000");
+                key(&mut h,enter(),Modifiers::NONE);
+                type_text(&mut h,refs.tools[3],"65");
+                key(&mut h,enter(),Modifiers::NONE);
                 let source=model.current();
                 type_text(&mut h,refs.current_lc[0],"32");
                 key(&mut h,enter(),Modifiers::NONE);
@@ -456,6 +525,11 @@ fn mounted_tabs_edit_recall_adjust_and_restore() {
                 let edit = Point::new(CssPx(menu.origin.x.0+20.0),CssPx(menu.origin.y.0+menu.size.height.0-13.0));
                 for action in [PointerAction::Pressed,PointerAction::Released] {tile_pointer(&mut h,action,primary,edit);}
                 assert!(refs.library[2].window_bounds().is_some(),"the overlaid menu receives clicks");
+                let before=refs.library[2].text_content();
+                type_text(&mut h,refs.library[2],"Discarded draft");
+                key(&mut h,KeyEvent::named(NamedKey::Escape,PhysicalKey::Unidentified(0)),Modifiers::NONE);
+                assert_eq!(refs.library[2].text_content(),before);
+                assert!(!model.editing_text.get_untracked());
                 type_text(&mut h,refs.library[2],"Sample group");
                 key(&mut h,enter(),Modifiers::NONE);
                 assert!(!model.editing_text.get_untracked());

@@ -31,10 +31,97 @@ fn signed_apca_reference_values_and_alpha() {
     // Color.js 0.0.98G reference results, encoded sRGB endpoints.
     assert!((apca(color("#000"), color("#fff"), M).unwrap() - 106.04067321268862).abs() < 1e-5);
     assert!((apca(color("#fff"), color("#000"), M).unwrap() + 107.88473318309848).abs() < 1e-5);
+    for (text, bg, expected) in [
+        ("#000", "#777", 32.97144384869363),
+        ("#fff", "#777", -76.58194638938959),
+        ("#000", "#7e7799", 35.01773764193256),
+        ("#fff", "#7e7799", -74.55931728541906),
+    ] {
+        assert!((apca(color(text), color(bg), M).unwrap() - expected).abs() < 0.0001);
+    }
     assert_eq!(apca(color("#777"), color("#777"), M).unwrap(), 0.0);
     assert_eq!(apca(color("#ff000000"), color("#fff"), M).unwrap(), 0.0);
     assert!(apca(color("#000"), color("#ffffff80"), M).is_err());
 }
+#[test]
+fn colored_references_determine_the_attainable_lc_in_each_role() {
+    use okcolor_core::{closest_current_contrast, closest_grid_sample};
+    let source = color("#6389ab");
+    for reference in ["#000", "#fff", "#123456", "#777", "#7e7799", "#fedcba"].map(color) {
+        for gamut in [Gamut::Srgb, Gamut::DisplayP3] {
+            for to_text in [false, true] {
+                let score = |c| {
+                    if to_text {
+                        apca_in(reference, c, M, gamut)
+                    } else {
+                        apca_in(c, reference, M, gamut)
+                    }
+                    .unwrap()
+                };
+                let endpoints = [score(color("#000")), score(color("#fff"))];
+                let expected = if reference.components()[0] <= 0.6 {
+                    endpoints[1]
+                } else {
+                    endpoints[0]
+                };
+                for max_chroma in [false, true] {
+                    let (candidate, actual) = closest_grid_sample(
+                        source,
+                        reference,
+                        200.0_f64.copysign(expected),
+                        gamut,
+                        to_text,
+                        max_chroma,
+                    )
+                    .unwrap();
+                    assert!((actual - expected).abs() < 0.01);
+                    assert!((score(candidate) - actual).abs() < 0.01);
+                }
+                for target in [-200.0_f64, 200.0] {
+                    let (_, actual) =
+                        closest_current_contrast(source, reference, target, gamut, to_text, M)
+                            .unwrap();
+                    let expected = if target.is_sign_positive() {
+                        endpoints[0].max(endpoints[1])
+                    } else {
+                        endpoints[0].min(endpoints[1])
+                    };
+                    assert!((actual - expected).abs() < 0.01);
+                }
+            }
+        }
+    }
+    let source = color("#00000080");
+    let reference = color("#fedcba");
+    let (result, actual) =
+        closest_current_contrast(source, reference, 200.0, Gamut::Srgb, false, M).unwrap();
+    assert_eq!(result.components()[3], source.components()[3]);
+    assert!((actual - apca(source, reference, M).unwrap()).abs() < 0.01);
+    assert!(actual < apca(color("#000"), reference, M).unwrap());
+}
+
+#[test]
+fn clipped_high_chroma_can_reach_its_strongest_contrast_inside_the_lightness_range() {
+    let source = Oklch::new(0.4, 0.5, 90.0, 1.0).unwrap();
+    let reference = color("#7e7799");
+    let mapping = GamutMapping::Clip;
+    let (best, score) = okcolor_core::closest_current_contrast(
+        source,
+        reference,
+        200.0,
+        Gamut::Srgb,
+        false,
+        mapping,
+    )
+    .unwrap();
+    assert!(best.components()[0] > 0.0 && best.components()[0] < 1.0);
+    for i in 0..=1000 {
+        let probe = Oklch::new(f64::from(i) / 1000.0, 0.5, 90.0, 1.0).unwrap();
+        assert!(apca(probe, reference, mapping).unwrap() <= score + 0.001);
+    }
+    assert!((apca(best, reference, mapping).unwrap() - score).abs() < 1e-6);
+}
+
 #[test]
 fn contrast_solver_preserves_components_and_rejects_unreachable_targets() {
     let original = Oklch::new(0.6, 0.13, 272.123, 0.9).unwrap();

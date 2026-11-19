@@ -1,4 +1,6 @@
+use crate::eyedropper::EyedropperProps;
 use crate::tiles::{ColorTileProps, Source, TileGestures};
+use crate::tooltip::Tooltips;
 use crate::{
     model::{PickerModel, stepped_channel},
     surface::{ColorControlProps, SurfaceKind},
@@ -19,6 +21,10 @@ pub(crate) struct InputExit(pub NodeRef);
 #[derive(Clone, Copy)]
 pub struct PickerRefs {
     pub tool_page: NodeRef,
+    pub eyedropper: NodeRef,
+    pub tooltip: NodeRef,
+    pub palette_dot: NodeRef,
+    pub similar: NodeRef,
     pub title: NodeRef,
     pub tabs: [NodeRef; 3],
     pub library: [NodeRef; 8],
@@ -49,6 +55,10 @@ impl Default for PickerRefs {
     fn default() -> Self {
         Self {
             tool_page: NodeRef::new(),
+            eyedropper: NodeRef::new(),
+            tooltip: NodeRef::new(),
+            palette_dot: NodeRef::new(),
+            similar: NodeRef::new(),
             title: NodeRef::new(),
             tabs: std::array::from_fn(|_| NodeRef::new()),
             folder_menu: NodeRef::new(),
@@ -235,8 +245,8 @@ pub fn Picker(model: PickerModel, refs: PickerRefs) -> impl IntoView {
                 }
             }
             Statusbar(model=model,refs=refs,settings=settings)
-            if move ||!tips.text.get().is_empty() {
-                row(class="tooltip",style:left=move ||Some(format!("{}px",tips.position.get().0)),style:top=move ||Some(format!("{}px",tips.position.get().1))) {
+            if move ||!refs.sampling.get() && !tips.text.get().is_empty() {
+                row(class="tooltip",node_ref=refs.tooltip,style:left=move ||Some(format!("{}px",tips.position.get().0)),style:top=move ||Some(format!("{}px",tips.position.get().1))) {
                     for part in move ||crate::tooltip::segments(&tips.text.get()),key=|part:&(bool,String)|part.clone() {
                         text(class:tooltip-hex=part.0) {{part.1.clone()}}
                     }
@@ -244,16 +254,7 @@ pub fn Picker(model: PickerModel, refs: PickerRefs) -> impl IntoView {
             }
             ResizeEdges()
             if move ||refs.sampling.get() {
-                box(class="eyedropper-overlay",a11y:label="Select a color in this window. Escape cancels.",
-                    on:pointer_down=move |cx|{
-                        if cx.button==Some(PointerButton::Primary) {
-                            if let Some(color)=screen_color(model.h.get_untracked()) {model.select(color);}
-                            else {model.message.set("Could not sample the screen pixel".into());}
-                        }
-                        refs.sampling.set(false);
-                        cx.stop_propagation();
-                        cx.prevent_default();
-                    }) {}
+                Eyedropper(model=model,refs=refs)
             }
         }
     }
@@ -292,7 +293,7 @@ pub(crate) fn RecentColors(model: PickerModel, node: NodeRef) -> impl IntoView {
         row(class="recent-strip") {
             box(class="recent-gutter") {
                 if move ||position.get().offset.x.0>0.0 {
-                    control(class="recent-nav",tabindex=Focus::Sequential,a11y:label="Newer recent colors",
+                    control(class="recent-nav",node_ref=Tooltips::button(NodeRef::new(),"Newer recent colors"),tabindex=Focus::Sequential,a11y:label="Newer recent colors",
                         on:click=move |_|shift(-1.0)) {box(class="history-arrow") {}}
                 }
             }
@@ -312,7 +313,7 @@ pub(crate) fn RecentColors(model: PickerModel, node: NodeRef) -> impl IntoView {
             }
             box(class="recent-gutter") {
                 if move ||position.get().content_size.width.0>position.get().scrollport.width.0 && !position.get().is_at_end_horizontally() {
-                    control(class="recent-nav",tabindex=Focus::Sequential,a11y:label="Older recent colors",
+                    control(class="recent-nav",node_ref=Tooltips::button(NodeRef::new(),"Older recent colors"),tabindex=Focus::Sequential,a11y:label="Older recent colors",
                         on:click=move |_|shift(1.0)) {box(class="history-arrow redo") {}}
                 }
             }
@@ -377,45 +378,6 @@ fn Fallbacks(model: PickerModel, refs: PickerRefs) -> impl IntoView {
     }
 }
 
-#[cfg(target_os = "windows")]
-fn screen_color(hue: f64) -> Option<Oklch> {
-    use std::ptr::null_mut;
-    use windows_sys::Win32::{
-        Foundation::POINT,
-        Graphics::Gdi::{GetDC, GetPixel, ReleaseDC},
-        UI::WindowsAndMessaging::GetCursorPos,
-    };
-    let mut point = POINT::default();
-    // The picker window is per-monitor DPI aware, so these desktop coordinates match the DC.
-    unsafe {
-        if GetCursorPos(&mut point) == 0 {
-            return None;
-        }
-        let dc = GetDC(null_mut());
-        if dc.is_null() {
-            return None;
-        }
-        let pixel = GetPixel(dc, point.x, point.y);
-        ReleaseDC(null_mut(), dc);
-        if pixel == u32::MAX {
-            return None;
-        }
-        let rgb = [pixel & 255, (pixel >> 8) & 255, (pixel >> 16) & 255];
-        Oklch::from_rgb(
-            rgb.map(|channel| f64::from(channel) / 255.0),
-            Gamut::Srgb,
-            1.0,
-            hue,
-        )
-        .ok()
-    }
-}
-
-#[cfg(not(target_os = "windows"))]
-fn screen_color(_: f64) -> Option<Oklch> {
-    None
-}
-
 /// These two small menus share dismissal and focus behavior, without owning application state.
 pub(crate) fn dismiss_menu(open: RwSignal<bool>, popup: NodeRef, trigger: NodeRef) {
     let effect = RenderEffect::new(move |_| {
@@ -473,7 +435,7 @@ fn GamutPanel(model: PickerModel, refs: PickerRefs) -> impl IntoView {
 
 #[component]
 fn ColorPanel(model: PickerModel, refs: PickerRefs) -> impl IntoView {
-    let eyedropper = NodeRef::new();
+    let eyedropper = refs.eyedropper;
     crate::tooltip::Tooltips::bind(eyedropper, || "Eyedropper · Ctrl+Shift+C".into());
     view! {
                 row(class="adjustments") {
@@ -487,7 +449,7 @@ fn ColorPanel(model: PickerModel, refs: PickerRefs) -> impl IntoView {
                                 SlotSwatch(model=model,refs=refs,index=1)
                             }
                             Fallbacks(model=model,refs=refs)
-                            control(class="eyedropper",node_ref=eyedropper,tabindex=Focus::Sequential,a11y:label="Sample a window color (Ctrl+Shift+C)",
+                            control(class="eyedropper",node_ref=eyedropper,tabindex=Focus::Sequential,a11y:label="Sample a screen color (Ctrl+Shift+C)",
                                 on:click=move |_|refs.sampling.set(true)) {
                                 {zgui::elements::vector().document(include_str!("../assets/eyedropper.svg")).class("eyedropper-icon")}
                             }
@@ -555,7 +517,7 @@ fn Settings(model: PickerModel, refs: PickerRefs) -> impl IntoView {
                     level_window.with_value(|window|window.set_level(model.tools.get_untracked().window_level()));
                 }))
             column(class="settings-group") {
-                control(class="setting-row",tabindex=Focus::Sequential,a11y:label="Toggle sRGB fallback mapping",
+                control(class="setting-row",node_ref=Tooltips::button(NodeRef::new(),"Switch between mapped and clipped sRGB"),tabindex=Focus::Sequential,a11y:label="Toggle sRGB fallback mapping",
                     on:click=move |_|model.mapping.update(|m|*m=if *m==GamutMapping::Clip {GamutMapping::LocalMinde}else{GamutMapping::Clip})) {
                     text {"sRGB replacement"} spacer()
                     text {{move ||if model.mapping.get()==GamutMapping::Clip {"Clipped"} else {"Mapped"}}}
@@ -578,7 +540,7 @@ fn SettingToggle(
     checked: Memo<bool>,
     toggle: UnsyncCallback<()>,
 ) -> impl IntoView {
-    view! {control(class="setting-row",node_ref=node,tabindex=Focus::Sequential,a11y:label=label,on:click=move |_|toggle.run(())) {
+    view! {control(class="setting-row",node_ref=Tooltips::button(node,label),tabindex=Focus::Sequential,a11y:label=label,on:click=move |_|toggle.run(())) {
         text {{label}} spacer()
         box(class="setting-check",class:checked=move ||checked.get()) {{zgui::elements::vector().document(include_str!("../assets/check.svg")).class("check-icon")}}
     }}
@@ -623,14 +585,14 @@ fn Statusbar(model: PickerModel, refs: PickerRefs, settings: RwSignal<bool>) -> 
         }
         if move ||model.companion.can_resolve.get() {
             row(class="status-center") {
-                control(node_ref=refs.csp_pull,tabindex=Focus::Sequential,on:click=move |_|model.companion.use_csp()) {"Use CSP color"}
-                control(node_ref=refs.csp_send,tabindex=Focus::Sequential,on:click=move |_|model.companion.send_current()) {"Send this color"}
+                control(node_ref=Tooltips::button(refs.csp_pull,"Use CSP color"),tabindex=Focus::Sequential,on:click=move |_|model.companion.use_csp()) {"Use CSP color"}
+                control(node_ref=Tooltips::button(refs.csp_send,"Send current color to CSP"),tabindex=Focus::Sequential,on:click=move |_|model.companion.send_current()) {"Send this color"}
             }
         } else {
             text(class="status-center",node_ref=notification) {{move ||status_message(model)}}
         }
         if move ||!model.storage_message.get().is_empty() && model.can_save.get() {
-            control(tabindex=Focus::Sequential,on:click=move |_|model.save_request.update(|r|*r=r.wrapping_add(1))) {"Retry"}
+            control(node_ref=Tooltips::button(NodeRef::new(),"Retry saving"),tabindex=Focus::Sequential,on:click=move |_|model.save_request.update(|r|*r=r.wrapping_add(1))) {"Retry"}
         }
         control(class="csp-connect",node_ref=refs.companion,tabindex=Focus::Sequential,
             class:warning=move ||matches!(model.companion.state.get(),okcolor_csp::worker::State::Failed(_)),
@@ -878,7 +840,7 @@ fn Channel(
                         draft.set(text.clone());
                         number.set_value(&text);
                         model.message.set(String::new());
-                        cx.prevent_default();
+                        exit.focus();cx.stop_propagation();cx.prevent_default();
                     }
                 }) {{draft.get_untracked()}}
         }
@@ -914,7 +876,7 @@ pub(crate) fn CopyButton(
     } else {
         include_str!("../assets/copy.svg")
     };
-    view! {control(class="copy",class:compact=compact,tabindex=Focus::Sequential,a11y:label=label,
+    view! {control(class="copy",node_ref=Tooltips::button(NodeRef::new(),label),class:compact=compact,tabindex=Focus::Sequential,a11y:label=label,
         on:click=move |_|{
             clipboard.set_text(ClipboardKind::Standard,text.run(()));
             copied.set(true);
@@ -989,11 +951,11 @@ fn CodeField(model: PickerModel, node: NodeRef, primary: bool) -> impl IntoView 
                             draft.set(text.clone());
                             node.set_value(&text);
                             model.message.set(String::new());
-                            cx.prevent_default();
+                            exit.focus();cx.stop_propagation();cx.prevent_default();
                         }}) {{draft.get_untracked()}}
                 if move || !primary {
                     control(class="format-trigger",
-                        node_ref=trigger,
+                        node_ref=Tooltips::button(trigger,"Choose output format"),
                         tabindex=Focus::Sequential,
                         a11y:label="Choose output format",
                         on:click=move |_|menu.update(|v|*v = !*v)) {box(class="chevron") {}}
@@ -1008,7 +970,7 @@ fn CodeField(model: PickerModel, node: NodeRef, primary: bool) -> impl IntoView 
                     for option in move || FORMATS.into_iter().enumerate(), key=|option:&(usize,(ColorFormat,&str))|option.0 {
                         control(tabindex=Focus::Sequential,
                             class:selected=move ||model.format.get()==option.1.0,
-                            on:click=move |_|{model.format.set(option.1.0);menu.set(false);trigger.focus();}) {{option.1.1}}
+                            on:click=move |_|{model.format.set(option.1.0);menu.set(false);trigger.focus();}) {text {{option.1.1}}}
                     }
                 }
             }

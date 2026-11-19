@@ -98,7 +98,16 @@ impl SurfaceKind {
                 Gamut::Rec2020 => 2.0,
             },
             kind: self as u8 as f32,
-            outline_dark: if self == Self::Slice { 0.0 } else { 1.0 },
+            outline_dark: if self != Self::Slice
+                && model
+                    .color()
+                    .mapped_rgb(Gamut::Srgb, model.mapping.get())
+                    .is_ok_and(|rgb| rgb.into_iter().all(|v| v < 9.0 / 255.0))
+            {
+                1.0
+            } else {
+                0.0
+            },
             mapping: if model.mapping.get() == GamutMapping::Clip {
                 1.0
             } else {

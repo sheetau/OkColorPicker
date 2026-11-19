@@ -23,6 +23,21 @@ fn contrast_css_suffixes_renumber_after_every_structural_edit() {
 }
 
 #[test]
+fn signed_grid_edits_survive_insertion_removal_and_profile_reload() {
+    let mut state = SavedState::default();
+    let grid = &mut state.tools.contrast_grid;
+    grid.set_target(1, -25.0, Some(false));
+    grid.insert(0);
+    assert_eq!(grid.positive_polarities[2], Some(false));
+    grid.remove(1);
+    assert_eq!(grid.positive_polarities[1], Some(false));
+    let mut restored = SavedState::decode(&state.encode().unwrap()).unwrap();
+    assert_eq!(restored, state);
+    restored.tools.contrast_grid.set_target(1, 20.0, None);
+    assert!(restored.tools.contrast_grid.positive_polarities.is_empty());
+}
+
+#[test]
 fn library_edits_keep_originals_and_folder_removal_keeps_colors() {
     let color = Oklch::new(0.6543210987, 0.42, 312.123456, 0.65).unwrap();
     let mut library = Library::default();

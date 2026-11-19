@@ -64,11 +64,24 @@ impl TileGestures {
                 .rev()
                 .filter_map(|(node, dest)| {
                     let b = node.window_bounds()?;
+                    let mut destination = *dest;
+                    if let Destination::Palette(i) = destination
+                        && i != usize::MAX
+                        && x >= b.origin.x.0 + b.size.width.0 * 0.5
+                    {
+                        destination = Destination::Palette(
+                            if i + 1 == self.palette.with_untracked(Vec::len) {
+                                usize::MAX
+                            } else {
+                                i + 1
+                            },
+                        );
+                    }
                     (x >= b.origin.x.0 - 1.0
                         && y >= b.origin.y.0
                         && x < b.origin.x.0 + b.size.width.0 + 1.0
                         && y < b.origin.y.0 + b.size.height.0)
-                        .then_some((b.size.width.0 * b.size.height.0, *dest))
+                        .then_some((b.size.width.0 * b.size.height.0, destination))
                 })
                 .min_by(|a, b| a.0.total_cmp(&b.0))
                 .map(|(_, dest)| dest)
@@ -177,7 +190,14 @@ pub(crate) fn ColorTile(
     let origin = RwSignal::new(None::<(f32, f32)>);
     let suppress_click = RwSignal::new(false);
     let copied = RwSignal::new(false);
-    crate::tooltip::Tooltips::bind(node, move || label.get_untracked());
+    crate::tooltip::Tooltips::bind(node, move || {
+        let text = label.get_untracked();
+        if matches!(source, Source::Palette(_)) {
+            format!("{text} · Shift-click to lock or unlock")
+        } else {
+            text
+        }
+    });
     let timers = StoredValue::new_local(zgui::view::Timers::current().expect("picker window"));
     let copy_timer = StoredValue::new_local(None::<zgui::view::TimeoutHandle>);
     let scroll_timer = StoredValue::new_local(None::<zgui::view::IntervalHandle>);
@@ -299,7 +319,14 @@ pub(crate) fn ColorTile(
         on:pointer_move=drag,
         on:pointer_up=release,
         on:pointer_cancel=move |_|cancel(),
-        on:click=move |_|{if !suppress_click.get_untracked(){activate.run(());}suppress_click.set(false);}) {
+        on:click=move |cx|{
+            if !suppress_click.get_untracked(){
+                if let Source::Palette(index)=source && cx.modifiers.contains(Modifiers::SHIFT) {
+                    shared.palette.update(|colors|{if let Some(entry)=colors.get_mut(index){entry.1 = !entry.1;}});
+                }else{activate.run(());}
+            }
+            suppress_click.set(false);
+        }) {
             ColorSwatch(model=model,color=color,outline_dark=class!="transparent-color" && class!="preset-color" && class!="generated-color")
             if move ||destination.is_some() && shared.hovering.get()==destination {box(class="insertion-line") {}}
             if move ||class=="slot-tile" && !model.display.get().wide_output && !color.get().in_gamut(okcolor_core::Gamut::Srgb) {

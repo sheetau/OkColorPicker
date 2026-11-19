@@ -62,9 +62,9 @@ field:focus { color: var(--bright); }
 .format-trigger { width: var(--small-tile); min-width: var(--small-tile); height: var(--button); position: relative; }
 .chevron { position: absolute; width: 6px; height: 6px; border-right: 1px solid var(--text); border-bottom: 1px solid var(--text); transform: rotate(45deg); top: 7px; left: 6px; }
 .copy { position: relative; width: var(--button); min-width: var(--button); height: var(--button); }
-.format-menu, .folder-menu { position: absolute; background-color: #090909; padding: 0; gap: 5px; overflow-y: auto; box-sizing: border-box; }
+.format-menu, .folder-menu { position: absolute; background-color: var(--surface); padding: 0; gap: var(--gap); overflow-y: auto; box-sizing: border-box; }
 .format-menu { bottom: 28px; right: 28px; width: 100px; z-index: 20; }
-.format-menu control, .folder-menu control { height: var(--tile); min-height: var(--tile); padding: 0 7px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; justify-content: center; color: var(--text); }
+.format-menu control, .folder-menu control { height: var(--tile); min-height: var(--tile); padding: 0 7px; display: flex; align-items: center; justify-content: center; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
 .csp-connect { padding: 0 var(--gap); display: flex; flex-direction: row; align-items: center; color: var(--text); }
 .csp-connect:hover { color: var(--bright); }
 .csp-connect:focus-visible { outline: 1px solid var(--text); }
@@ -134,13 +134,12 @@ field:focus { color: var(--bright); }
 
 .eyedropper { cursor: default; position: absolute; bottom: 0; left: 0; width: var(--icon); height: var(--icon); color: var(--muted); }
 .eyedropper-icon { width: var(--icon); height: var(--icon); --zgui-stroke: currentColor; pointer-events: none; }
-.eyedropper-overlay { position: absolute; inset: 0; z-index: 50; cursor: default; }
 
 .folder-anchor { position: relative; height: var(--icon); z-index: 8; }
 .folder-menu { top: 100%; right: 0; width: 100px; }
 .folder-menu.above { top: auto; bottom: 100%; }
-.format-menu control.selected, .folder-menu control.selected { color: var(--bright); background-color: var(--surface); }
-.format-menu control:hover, .folder-menu control:hover { color: var(--bright); background-color: var(--raised); }
+.format-menu control, .folder-menu control { background-color: transparent; }
+.format-menu control.selected, .folder-menu control.selected, .format-menu control:hover, .folder-menu control:hover { color: var(--bright); background-color: transparent; }
 .recent, .library-tile, .generated-color, .add-tile { position: relative; }
 .dragged { cursor: grabbing; outline: 1px solid var(--bright); outline-offset: -1px; }
 .insertion-line { position: absolute; top: 0; left: -2px; width: var(--tile-gap); height: 100%; background-color: var(--bright); pointer-events: none; }
@@ -150,8 +149,8 @@ field:focus { color: var(--bright); }
 .palette-strip { position: relative; width: 100%; height: var(--sample); min-height: var(--sample); }
 .palette-cell { position: relative; flex: 1; min-width: 0; }
 .palette-color { position: relative; width: 100%; height: 100%; }
-.palette-insert, .palette-lock { position: absolute; opacity: 0; font-size: var(--text-sm); color: var(--bright); background-color: var(--black); }
-.palette-cell:hover .palette-lock, .palette-insert:hover, .palette-lock.locked, .palette-cell control:focus-visible { opacity: 1; }
+.palette-insert { position: absolute; opacity: 0; font-size: var(--text-sm); color: var(--bright); background-color: var(--black); }
+.palette-insert:hover, .palette-cell control:focus-visible { opacity: 1; }
 .palette-tail { opacity: 0; }
 .palette-tail:hover, .palette-tail:focus-visible { opacity: 1; }
 
@@ -198,10 +197,10 @@ field:focus { color: var(--bright); }
 .contrast-heading > .tool-action { padding: 0; font-size: var(--text-md); flex-shrink: 0; }
 .contrast-current, .lc-badge { text-align: center; font-family: var(--mono); box-sizing: border-box; border: 1px solid transparent; }
 .contrast-current { position: absolute; left: 0; width: var(--sample); height: var(--sample); font-size: var(--text-lg); display: flex; align-items: center; justify-content: center; }
-.lc-badge { width: 26px; min-width: 26px; height: 20px; align-items: center; justify-content: center; }
+.lc-badge { display: flex; width: 26px; min-width: 26px; height: 20px; align-items: center; justify-content: center; }
 .contrast-current:not(.outline), .lc-badge:not(.outline) { border-width: 0; }
-.contrast-current .grid-field { width: 100%; height: 14px; text-align: center; font-size: var(--text-lg); }
-.lc-badge .grid-field { width: 24px; height: 12px; text-align: center; }
+.contrast-current .grid-field { width: 100%; height: 18px; text-align: center; font-size: var(--text-lg); }
+.lc-badge .grid-field { width: 24px; height: 14px; text-align: center; }
 .harmony-combinations { flex-wrap: wrap; gap: var(--gap); }
 .combination { flex-shrink: 0; }
 
@@ -218,7 +217,7 @@ field:focus { color: var(--bright); }
 .code:focus, .number:focus { color: var(--bright); outline: 0; }
 .copy, .folder-chevron, .format-trigger, .recent-nav, .contrast-heading > .tool-action, .palette-section .generate-button { color: #424242; }
 .copy:hover, .folder-heading:hover .folder-chevron, .contrast-heading > .tool-action:hover, .palette-section .generate-button:hover { color: var(--bright); }
-.palette-section .section-heading { gap: var(--gap); }
+.palette-section .section-heading { gap: var(--space-y); }
 .copy-icon { width: 100%; height: 100%; --zgui-stroke: currentColor; pointer-events: none; }
 .copy.compact { width: var(--icon); min-width: var(--icon); height: var(--icon); }
 .menu-button.open, .disconnect { color: var(--bright); }
@@ -240,13 +239,15 @@ field:focus { color: var(--bright); }
 .add-icon { width: var(--tile); height: var(--tile); --zgui-stroke: currentColor; pointer-events: none; }
 .add-tile { width: var(--tile); height: var(--tile); outline: 1px solid var(--muted); outline-offset: -1px; }
 .palette-strip .palette-cell { min-width: 0; flex-grow: 1; flex-basis: 0; }
-.palette-tail, .palette-insert { position: absolute; height: var(--tile); width: var(--tile); top: 9px; background-color: var(--black); color: var(--bright); }
+.palette-tail, .palette-insert { position: absolute; height: 21px; width: 21px; top: 9.5px; background-color: var(--black); color: var(--bright); }
 .palette-tail { right: 0; }
 .palette-cell { overflow: visible; }
-.palette-insert { left: -11px; z-index: 2; }
-.palette-lock { bottom: 0; left: 50%; margin-left: -9px; width: 18px; height: 15px; background-color: transparent; align-items: center; justify-content: center; }
+.palette-insert { left: -10.5px; z-index: 2; }
+.palette-cell:first-child .palette-insert { left: 0; }
+.palette-tail .add-icon, .palette-insert .add-icon { width: 21px; height: 21px; }
+.palette-lock { position: absolute; bottom: var(--gap); left: 50%; margin-left: -2.5px; width: 5px; height: 5px; border-radius: 50%; pointer-events: none; }
+.palette-end-line { position: absolute; right: 0; top: 0; height: 100%; width: var(--tile-gap); background-color: var(--bright); pointer-events: none; }
 .insert-count { text-align: center; font-family: var(--mono); font-size: var(--text-md); pointer-events: none; }
-.lock-dot { width: 5px; height: 5px; border-radius: 50%; background-color: currentColor; pointer-events: none; }
 .generate-button, .generate-icon { height: 16px; width: 16px; }
 .generate-icon { --zgui-stroke: currentColor; pointer-events: none; }
 

@@ -74,41 +74,169 @@ pub fn contrast_sample(
     if !(0.0..=110.0).contains(&target) {
         return None;
     }
+    let signed = default_grid_target(reference, to_text, target);
+    let (color, actual) =
+        closest_grid_sample(source, reference, signed, gamut, to_text, max_chroma)?;
+    ((actual.abs() - target).abs() < 0.05).then_some(color)
+}
+
+/// Default grid direction: lighter candidates for a dark reference, darker for a light one.
+pub fn default_grid_target(reference: Oklch, to_text: bool, magnitude: f64) -> f64 {
+    if (reference.components()[0] <= 0.6) == to_text {
+        magnitude
+    } else {
+        -magnitude
+    }
+}
+
+/// Return the nearest reachable color and its actual signed APCA score.
+/// Each reference, polarity and gamut has its own endpoints and low-contrast dead zone.
+pub fn closest_grid_sample(
+    source: Oklch,
+    reference: Oklch,
+    target: f64,
+    gamut: Gamut,
+    to_text: bool,
+    max_chroma: bool,
+) -> Option<(Oklch, f64)> {
     let [original, c, h, _] = source.components();
     let at = |l| {
-        Oklch::new(l, if max_chroma { 1.0 } else { c }, h, 1.0)
-            .ok()
-            .map(|v| v.reduce_chroma(gamut))
-    };
-    let score = |v| {
-        if to_text {
-            apca_in(reference, v, GamutMapping::Clip, gamut)
+        let color = Oklch::new(l, if max_chroma { 1.0 } else { c }, h, 1.0)
+            .ok()?
+            .reduce_chroma(gamut);
+        let score = if to_text {
+            apca_in(reference, color, GamutMapping::Clip, gamut)
         } else {
-            apca_in(v, reference, GamutMapping::Clip, gamut)
+            apca_in(color, reference, GamutMapping::Clip, gamut)
         }
+        .ok()?;
+        Some((color, score))
     };
-    let lighter = reference.components()[0] <= 0.6;
-    let signed = if lighter == to_text { target } else { -target };
-    let current = at(original)?;
-    if (score(current).ok()? - signed).abs() < 0.05 {
-        return Some(current);
+    nearest_lightness(original, target, at)
+}
+
+pub fn closest_current_contrast(
+    source: Oklch,
+    reference: Oklch,
+    target: f64,
+    gamut: Gamut,
+    to_text: bool,
+    mapping: GamutMapping,
+) -> Option<(Oklch, f64)> {
+    let [original, c, h, a] = source.components();
+    let at = |l| {
+        let color = Oklch::new(l, c, h, a).ok()?;
+        let score = if to_text {
+            apca_in(reference, color, mapping, gamut)
+        } else {
+            apca_in(color, reference, mapping, gamut)
+        }
+        .ok()?;
+        Some((color, score))
+    };
+    if mapping == GamutMapping::Clip {
+        nearest_clipped_lightness(original, target, at)
+    } else {
+        nearest_lightness(original, target, at)
     }
-    let (mut lo, mut hi) = (0.0, 1.0);
-    let start = score(at(lo)?).ok()?;
-    let end = score(at(hi)?).ok()?;
-    if signed < start.min(end) || signed > start.max(end) {
+}
+
+type Sample = (Oklch, f64);
+
+fn nearer(a: Sample, b: Sample, target: f64, original: f64) -> Sample {
+    let key = |s: Sample| ((s.1 - target).abs(), (s.0.components()[0] - original).abs());
+    if key(a) <= key(b) { a } else { b }
+}
+
+// Clipping RGB channels at fixed, high chroma can create interior extrema.
+// Search each crossing before refining the closest sampled extremum.
+fn nearest_clipped_lightness(
+    original: f64,
+    target: f64,
+    at: impl Fn(f64) -> Option<Sample>,
+) -> Option<Sample> {
+    if !target.is_finite() {
         return None;
     }
-    for _ in 0..24 {
-        let mid = (lo + hi) * 0.5;
-        if (score(at(mid)?).ok()? < signed) == (end > start) {
-            lo = mid;
+    const STEPS: u32 = 256;
+    let mut best = at(original)?;
+    let mut previous = at(0.0)?;
+    best = nearer(best, previous, target, original);
+    for i in 1..=STEPS {
+        let current = at(f64::from(i) / f64::from(STEPS))?;
+        best = nearer(best, current, target, original);
+        if (previous.1 < target && current.1 > target)
+            || (previous.1 > target && current.1 < target)
+        {
+            best = nearer(
+                best,
+                bisect_score(previous, current, target, original, &at)?,
+                target,
+                original,
+            );
+        }
+        previous = current;
+    }
+    let center = best.0.components()[0];
+    let step = 1.0 / f64::from(STEPS);
+    let (mut left, mut right) = ((center - step).max(0.0), (center + step).min(1.0));
+    for _ in 0..28 {
+        let third = (right - left) / 3.0;
+        let a = at(left + third)?;
+        let b = at(right - third)?;
+        best = nearer(best, nearer(a, b, target, original), target, original);
+        if (a.1 - target).abs() <= (b.1 - target).abs() {
+            right -= third;
         } else {
-            hi = mid;
+            left += third;
         }
     }
-    let color = at((lo + hi) * 0.5)?;
-    ((score(color).ok()? - signed).abs() < 0.05).then_some(color)
+    Some(best)
+}
+
+fn nearest_lightness(
+    original: f64,
+    target: f64,
+    at: impl Fn(f64) -> Option<(Oklch, f64)>,
+) -> Option<(Oklch, f64)> {
+    if !target.is_finite() {
+        return None;
+    }
+    let current = at(original)?;
+    if (current.1 - target).abs() < 0.00001 {
+        return Some(current);
+    }
+    let lower = at(0.0)?;
+    let upper = at(1.0)?;
+    let increasing = upper.1 > lower.1;
+    let direction = if increasing { 1.0 } else { -1.0 };
+    if (target - lower.1) * direction <= 0.0 {
+        return Some(nearer(current, lower, target, original));
+    }
+    if (target - upper.1) * direction >= 0.0 {
+        return Some(nearer(current, upper, target, original));
+    }
+    let sample = bisect_score(lower, upper, target, original, &at)?;
+    Some(nearer(current, sample, target, original))
+}
+
+fn bisect_score(
+    mut lower: Sample,
+    mut upper: Sample,
+    target: f64,
+    original: f64,
+    at: &impl Fn(f64) -> Option<Sample>,
+) -> Option<Sample> {
+    let increasing = upper.1 > lower.1;
+    for _ in 0..28 {
+        let mid = at((lower.0.components()[0] + upper.0.components()[0]) * 0.5)?;
+        if (mid.1 < target) == increasing {
+            lower = mid
+        } else {
+            upper = mid
+        }
+    }
+    Some(nearer(lower, upper, target, original))
 }
 
 /// Find the closest lightness achieving a signed Lc target. Chroma, hue and

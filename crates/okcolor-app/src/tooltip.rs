@@ -29,48 +29,65 @@ impl Tooltips {
         tips
     }
 
+    pub fn button(node: NodeRef, label: &'static str) -> NodeRef {
+        Self::bind(node, move || label.into());
+        node
+    }
+
     pub fn bind(node: NodeRef, label: impl Fn() -> String + Copy + 'static) {
         let tips = use_context::<Self>().expect("mounted picker");
         let scale = use_window().scale();
         let effect = RenderEffect::new(move |_| {
             node.get()?;
+            let hover = move || {
+                if tips.active.get_untracked() == Some(node) {
+                    return;
+                }
+
+                tips.active.set(Some(node));
+                tips.text.set(String::new());
+                tips.timer.set_value(Some(tips.clock.with_value(|clock| {
+                    clock.set_timeout(tips.delay, move || {
+                        if tips.active.get_untracked() != Some(node) {
+                            return;
+                        }
+                        let Some(b) = node.window_bounds() else {
+                            return;
+                        };
+                        let Some(window) = node.window_root().and_then(|r| r.window_bounds())
+                        else {
+                            return;
+                        };
+                        let zoom = scale.get_untracked();
+                        let width = window.size.width.0 / zoom;
+                        let text = label();
+                        let x = (b.origin.x.0 / zoom).clamp(
+                            2.0,
+                            (width - (text.chars().count() as f32 * 5.0 + 12.0)).max(2.0),
+                        );
+                        let lines = ((text.chars().count() as f32 * 5.0) / (width - 16.0).max(1.0))
+                            .ceil()
+                            .max(1.0);
+                        let height = 10.0 + lines * 12.0;
+                        let y = if b.origin.y.0 / zoom > height {
+                            b.origin.y.0 / zoom - height
+                        } else {
+                            (b.origin.y.0 + b.size.height.0) / zoom + 3.0
+                        };
+                        tips.position.set((x, y));
+                        tips.text.set(text);
+                    })
+                })));
+            };
             let enter = node.listen(
                 events::POINTER_ENTER,
                 ListenerOptions::default(),
-                move |_| {
-                    tips.active.set(Some(node));
-                    tips.text.set(String::new());
-                    tips.timer.set_value(Some(tips.clock.with_value(|clock| {
-                        clock.set_timeout(tips.delay, move || {
-                            let Some(b) = node.window_bounds() else {
-                                return;
-                            };
-                            let Some(window) = node.window_root().and_then(|r| r.window_bounds())
-                            else {
-                                return;
-                            };
-                            let zoom = scale.get_untracked();
-                            let width = window.size.width.0 / zoom;
-                            let text = label();
-                            let x = (b.origin.x.0 / zoom).clamp(
-                                2.0,
-                                (width - (text.chars().count() as f32 * 5.0 + 12.0)).max(2.0),
-                            );
-                            let lines = ((text.chars().count() as f32 * 5.0)
-                                / (width - 16.0).max(1.0))
-                            .ceil()
-                            .max(1.0);
-                            let height = 10.0 + lines * 12.0;
-                            let y = if b.origin.y.0 / zoom > height {
-                                b.origin.y.0 / zoom - height
-                            } else {
-                                (b.origin.y.0 + b.size.height.0) / zoom + 3.0
-                            };
-                            tips.position.set((x, y));
-                            tips.text.set(text);
-                        })
-                    })));
-                },
+                move |_| hover(),
+            );
+            let moved = node.listen(
+                events::POINTER_MOVE,
+                ListenerOptions::default(),
+                move |_| hover(),
             );
             let leave = node.listen(
                 events::POINTER_LEAVE,
@@ -82,7 +99,7 @@ impl Tooltips {
                 ListenerOptions::default(),
                 move |_| tips.dismiss(node),
             );
-            Some((enter, leave, press))
+            Some((enter, moved, leave, press))
         });
         on_cleanup_local(move || {
             drop(effect);

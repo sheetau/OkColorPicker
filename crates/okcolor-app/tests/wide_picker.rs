@@ -244,7 +244,7 @@ fn mounted_picker_preserves_wide_color_and_repaints_every_sample_on_display_tran
                                 let mut rgb = if kind == SurfaceKind::Slice
                                     && !color.in_gamut(Gamut::Rec2020)
                                 {
-                                    [9.0 / 255.0; 3]
+                                    [44.0 / 255.0, 42.0 / 255.0, 48.0 / 255.0]
                                 } else {
                                     preview(color, status.wide_output, mapping)
                                 };
@@ -262,7 +262,7 @@ fn mounted_picker_preserves_wide_color_and_repaints_every_sample_on_display_tran
                                     let normal = (f64::from(x + y + 1)
                                         - f64::from(bounds.origin.x.0 + bounds.origin.y.0))
                                         * std::f64::consts::FRAC_1_SQRT_2;
-                                    let distance = (normal - 3.0 * (normal / 3.0).round()).abs();
+                                    let distance = (normal - 2.0 * (normal / 2.0).round()).abs();
                                     rgb = rgb.map(|v| v * distance.min(1.0));
                                 }
                                 expect_pixel(&pixels, x, y, rgb, white, "surface");

@@ -62,6 +62,19 @@ impl CaptionBridge {
         }))
     }
 
+    /// Make this window's native surface available to the desktop sampling tool.
+    pub fn provide_window(&self) {
+        zgui::prelude::provide_context(zgui::prelude::StoredValue::new_local(self.clone()));
+    }
+
+    pub(crate) fn hwnd(&self) -> Option<HWND> {
+        self.0
+            .native
+            .borrow()
+            .as_ref()
+            .map(|native| native.hook.hwnd)
+    }
+
     pub fn bind_controls(&self, buttons: [NodeRef; 3], visual: RwSignal<CaptionVisual>) {
         self.0.buttons.set(Some(buttons));
         self.0.visual.set(Some(visual));

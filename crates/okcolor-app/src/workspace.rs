@@ -218,6 +218,9 @@ impl ToolSettings {
 pub struct ContrastGrid {
     pub dark_reference: [f64; 4],
     pub levels: Vec<u8>,
+    /// Optional explicit APCA polarities, in row order. Bare edits use the reference again.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub positive_polarities: Vec<Option<bool>>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub level_names: Vec<u32>,
     pub split: usize,
@@ -230,6 +233,7 @@ impl Default for ContrastGrid {
         Self {
             dark_reference: [0.0, 0.0, 0.0, 1.0],
             levels: vec![70, 50, 50, 70],
+            positive_polarities: Vec::new(),
             level_names: Vec::new(),
             split: 2,
             to_text: true,
@@ -242,6 +246,30 @@ impl ContrastGrid {
     pub fn level_name(&self, index: usize) -> u32 {
         let step = if self.levels.len() <= 9 { 100 } else { 50 };
         (index as u32 + 1) * step
+    }
+
+    pub fn signed_target(&self, index: usize, reference: Oklch) -> f64 {
+        let magnitude = f64::from(self.levels[index]);
+        match self.positive_polarities.get(index).copied().flatten() {
+            Some(true) => magnitude,
+            Some(false) => -magnitude,
+            None => okcolor_core::default_grid_target(reference, self.to_text, magnitude),
+        }
+    }
+
+    pub fn set_target(&mut self, index: usize, score: f64, positive: Option<bool>) {
+        self.levels[index] = score.abs().round() as u8;
+        if positive.is_some() || !self.positive_polarities.is_empty() {
+            self.positive_polarities.resize(self.levels.len(), None);
+            self.positive_polarities[index] = positive;
+            self.trim_polarities();
+        }
+    }
+
+    fn trim_polarities(&mut self) {
+        if self.positive_polarities.iter().all(Option::is_none) {
+            self.positive_polarities.clear();
+        }
     }
 
     pub fn insert(&mut self, index: usize) {
@@ -267,6 +295,9 @@ impl ContrastGrid {
             (None, Some(b)) => 2 * b - self.levels.get(1).map_or(b + 5, |v| i16::from(*v)),
             _ => 60,
         };
+        if !self.positive_polarities.is_empty() {
+            self.positive_polarities.insert(i, None);
+        }
         self.levels.insert(i, target.clamp(0, 110) as u8);
         if i < self.split || (i == self.split && self.split == self.levels.len() - 1) {
             self.split += 1;
@@ -278,6 +309,10 @@ impl ContrastGrid {
             return;
         }
         self.levels.remove(index);
+        if !self.positive_polarities.is_empty() {
+            self.positive_polarities.remove(index);
+            self.trim_polarities();
+        }
         self.level_names.clear();
         self.split -= usize::from(index < self.split);
     }
@@ -285,6 +320,8 @@ impl ContrastGrid {
     fn validate(&self) -> Result<(), &'static str> {
         let [l, c, h, a] = self.dark_reference;
         if self.levels.is_empty()
+            || (!self.positive_polarities.is_empty()
+                && self.positive_polarities.len() != self.levels.len())
             || (!self.level_names.is_empty()
                 && (self.level_names.len() != self.levels.len()
                     || self.level_names.windows(2).any(|p| p[0] >= p[1])))

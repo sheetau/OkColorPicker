@@ -110,6 +110,9 @@ fn check_numeric_adjustments(
     }
     harness.deliver_to_first(key(NamedKey::Escape, Modifiers::NONE));
     harness.settle(32);
+    assert!(!model.editing_text.get_untracked());
+    refs.numbers[0].focus();
+    harness.settle(32);
     type_draft(harness, "0.999");
     harness.deliver_to_first(key(NamedKey::ArrowUp, Modifiers::NONE));
     harness.settle(32);

@@ -9,9 +9,12 @@ use raw_window_handle::RawWindowHandle;
 use std::{cell::Cell, rc::Rc, time::Duration};
 use windows_sys::Win32::{
     Foundation::{HWND, LPARAM, POINT, RECT},
-    Graphics::Gdi::ClientToScreen,
+    Graphics::Gdi::{
+        ClientToScreen, DC_BRUSH, FillRect, GetDC, GetPixel, GetStockObject, ReleaseDC,
+        ScreenToClient, SetDCBrushColor, UpdateWindow,
+    },
     UI::{
-        Input::KeyboardAndMouse::{MAPVK_VK_TO_VSC, MapVirtualKeyW, VK_UP},
+        Input::KeyboardAndMouse::{GetCapture, MAPVK_VK_TO_VSC, MapVirtualKeyW, VK_ESCAPE, VK_UP},
         WindowsAndMessaging::*,
     },
 };
@@ -58,6 +61,7 @@ fn click(hwnd: HWND, node: NodeRef) {
 struct Probe {
     state: Rc<Cell<Option<(PickerModel, PickerRefs)>>>,
     stage: Cell<u8>,
+    sample_window: Cell<HWND>,
     frames: Cell<usize>,
     base: Cell<Option<okcolor_core::Oklch>>,
     recent: Cell<usize>,
@@ -208,6 +212,168 @@ impl FrameProbe for Probe {
                     0
                 );
                 self.stage.set(11);
+                click(hwnd, refs.menu);
+            }
+            11 if refs.eyedropper.window_bounds().is_some() => {
+                // An independent, test-owned surface beside the picker provides a known desktop pixel.
+                let x = if rect.right + 110 < unsafe { GetSystemMetrics(SM_CXSCREEN) } {
+                    rect.right + 5
+                } else {
+                    rect.left - 110
+                };
+                let external = unsafe {
+                    CreateWindowExW(
+                        WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
+                        windows_sys::w!("STATIC"),
+                        windows_sys::w!("OkColorPicker desktop test patch"),
+                        WS_POPUP | WS_VISIBLE,
+                        x,
+                        rect.top + 40,
+                        104,
+                        70,
+                        std::ptr::null_mut(),
+                        std::ptr::null_mut(),
+                        std::ptr::null_mut(),
+                        std::ptr::null_mut(),
+                    )
+                };
+                assert!(!external.is_null());
+                unsafe {
+                    UpdateWindow(external);
+                    let dc = GetDC(external);
+                    SetDCBrushColor(dc, 0x95c73a);
+                    FillRect(
+                        dc,
+                        &RECT {
+                            left: 0,
+                            top: 0,
+                            right: 104,
+                            bottom: 70,
+                        },
+                        GetStockObject(DC_BRUSH),
+                    );
+                    ReleaseDC(external, dc);
+                    windows_sys::Win32::Graphics::Dwm::DwmFlush();
+                }
+                self.sample_window.set(external);
+                self.stage.set(12);
+                click(hwnd, refs.eyedropper);
+            }
+            12 if refs.sampling.get_untracked() => {
+                let mut ext = RECT::default();
+                unsafe {
+                    GetWindowRect(self.sample_window.get(), &mut ext);
+                }
+                let mut point = POINT {
+                    x: ext.left + 3,
+                    y: ext.top + 3,
+                };
+                let screen = point;
+                unsafe {
+                    ScreenToClient(hwnd, &mut point);
+                }
+                mouse(hwnd, WM_MOUSEMOVE, point);
+                let preview = unsafe {
+                    FindWindowW(
+                        windows_sys::w!("STATIC"),
+                        windows_sys::w!("OkColorPicker eyedropper"),
+                    )
+                };
+                assert!(!preview.is_null());
+                assert_eq!(unsafe { GetWindow(preview, GW_OWNER) }, hwnd);
+                let mut chip = RECT::default();
+                unsafe {
+                    GetWindowRect(preview, &mut chip);
+                    UpdateWindow(preview);
+                }
+                let factor = (chip.right - chip.left) as f64 / 82.0;
+                assert!(((chip.top - screen.y) as f64 - 10.0 * factor).abs() <= 1.0);
+                assert!(
+                    ((chip.left - screen.x) as f64 - 5.0 * factor).abs() <= 1.0
+                        || ((screen.x - chip.right) as f64 - 5.0 * factor).abs() <= 1.0
+                );
+                let dc = unsafe { GetDC(preview) };
+                let color = unsafe { GetPixel(dc, (12.0 * factor) as i32, (12.0 * factor) as i32) };
+                assert_eq!(unsafe { GetPixel(dc, 0, 0) }, 0x424242, "preview frame");
+                assert_eq!(
+                    unsafe { GetPixel(dc, (30.0 * factor) as i32, (16.0 * factor) as i32) },
+                    0,
+                    "gap between swatch and HEX"
+                );
+                if let Ok(dir) = std::env::var("OKCOLOR_TOOLS_CAPTURE_DIR") {
+                    let (width, height) = (chip.right - chip.left, chip.bottom - chip.top);
+                    let mut pixels = Vec::with_capacity((width * height * 4) as usize);
+                    let mut text_ink = 0;
+                    for y in 0..height {
+                        for x in 0..width {
+                            let pixel = unsafe { GetPixel(dc, x, y) };
+                            pixels.extend_from_slice(&[
+                                pixel as u8,
+                                (pixel >> 8) as u8,
+                                (pixel >> 16) as u8,
+                                255,
+                            ]);
+                            if f64::from(x) > 32.0 * factor
+                                && x < width - 2
+                                && y > 2
+                                && y < height - 2
+                                && pixel as u8 > 100
+                            {
+                                text_ink += 1;
+                            }
+                        }
+                    }
+                    assert!(text_ink > 24, "the HEX label must be painted");
+                    std::fs::write(
+                        std::path::Path::new(&dir)
+                            .join(format!("eyedropper-{width}x{height}.rgba")),
+                        pixels,
+                    )
+                    .unwrap();
+                }
+                unsafe {
+                    ReleaseDC(preview, dc);
+                }
+                assert_eq!(
+                    color, 0x95c73a,
+                    "preview shows the external test window's pixel"
+                );
+                // Feed the preview's queued hook messages without injecting OS mouse clicks.
+                unsafe {
+                    SendMessageW(preview, WM_APP + 2, screen.x as usize, screen.y as isize);
+                    assert!(
+                        refs.sampling.get_untracked(),
+                        "sampling stays active through button-up"
+                    );
+                    SendMessageW(preview, WM_APP + 3, screen.x as usize, screen.y as isize);
+                }
+                self.stage.set(13);
+            }
+            13 if !refs.sampling.get_untracked() => {
+                assert!(unsafe { GetCapture() }.is_null());
+                assert_eq!(
+                    model.output_untracked(okcolor_core::ColorFormat::Hex),
+                    "#3ac795"
+                );
+                unsafe {
+                    DestroyWindow(self.sample_window.replace(std::ptr::null_mut()));
+                }
+                self.stage.set(14);
+                click(hwnd, refs.eyedropper);
+            }
+            14 if refs.sampling.get_untracked() => {
+                self.stage.set(15);
+                unsafe {
+                    SendMessageW(hwnd, WM_KEYDOWN, VK_ESCAPE as usize, 0);
+                }
+            }
+            15 if !refs.sampling.get_untracked() => {
+                assert!(unsafe { GetCapture() }.is_null());
+                assert_eq!(
+                    model.output_untracked(okcolor_core::ColorFormat::Hex),
+                    "#3ac795"
+                );
+                self.stage.set(16);
                 // SAFETY: exercise the normal close-request path on this owned window.
                 unsafe {
                     assert_ne!(PostMessageW(hwnd, WM_SYSCOMMAND, SC_CLOSE as usize, 0), 0);
@@ -215,7 +381,7 @@ impl FrameProbe for Probe {
             }
             _ => {}
         }
-        if self.stage.get() < 8 {
+        if self.stage.get() < 8 || (11..16).contains(&self.stage.get()) {
             window.request_frame();
         }
     }
@@ -241,6 +407,7 @@ fn native_pointer_wheel_key_and_resize_reach_the_picker() {
     let probe = Rc::new(Probe {
         state,
         stage: Cell::new(0),
+        sample_window: Cell::new(std::ptr::null_mut()),
         frames: Cell::new(0),
         base: Cell::new(None),
         recent: Cell::new(0),
@@ -248,7 +415,8 @@ fn native_pointer_wheel_key_and_resize_reach_the_picker() {
         location: Cell::new([0; 2]),
         presented: presented.clone(),
     });
-    let mut renderer = graphics::factory();
+    let caption = okcolor_app::windows_caption::CaptionBridge::new(false);
+    let mut renderer = caption.wrap_renderer(graphics::factory());
     let renderer: zgui::runtime::RendererFactory = Box::new(move |surface, target| {
         Ok(Box::new(ObservePresentation {
             inner: renderer(surface, target)?,
@@ -285,6 +453,7 @@ fn native_pointer_wheel_key_and_resize_reach_the_picker() {
             move || {
                 let model = PickerModel::default();
                 let refs = PickerRefs::default();
+                caption.provide_window();
                 mounted.set(Some((model, refs)));
                 view! { Picker(model=model,refs=refs) }
             },
@@ -292,7 +461,7 @@ fn native_pointer_wheel_key_and_resize_reach_the_picker() {
         .unwrap();
     assert_eq!(
         probe.stage.get(),
-        11,
+        16,
         "all native input and resize stages must complete"
     );
     finish.send(()).unwrap();

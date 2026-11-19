@@ -17,7 +17,8 @@ The optional boolean `tools.always_on_top` defaults to false. When enabled,
 the next session opens at the same window level.
 
 The optional `tools.show_alpha_slider` defaults to false. The optional
-`tools.contrast_grid` stores 1–16 target magnitudes (integer Lc 0–110),
+`tools.contrast_grid` stores 1–16 target magnitudes (integer Lc magnitudes, stored range 0–110),
+an optional row-aligned `positive_polarities` array (true, false or null for automatic),
 the split index, an opaque second reference, contrast direction, gamut and
 chroma policy. CSS suffixes follow row order in steps of 100 for up to nine levels
 and 50 for larger grids. Legacy `level_names` can still be read. Profiles without a grid

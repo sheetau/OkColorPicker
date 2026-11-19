@@ -30,6 +30,7 @@ mod windows_display_watch;
 #[cfg(target_os = "windows")]
 mod windows_qr;
 
+mod eyedropper;
 mod tiles;
 mod tools_ui;
 mod tooltip;

@@ -191,6 +191,7 @@ cargo test -p okcolor-app --test color_surface --locked -- --ignored
 cargo test -p okcolor-app --test picker --locked -- --ignored
 cargo test -p okcolor-app --test native_caption --locked -- --ignored
 cargo test -p okcolor-app --test native_input --locked -- --ignored
+cargo test -p okcolor-app --lib desktop_pick --locked -- --ignored
 cargo test -p okcolor-app --test native_recovery --locked -- --ignored
 cargo test -p okcolor-app --test wide_pipeline --locked -- --ignored
 cargo test -p okcolor-app --test wide_picker --locked -- --ignored
@@ -229,6 +230,10 @@ f64 core, including texture growth/shrink and both SDR output byte orders.
 conversion while simulating SDR/WCG/HDR, unknown displays and an SDR fallback.
 It also checks checkerboard alpha and finite output for extreme input. Simulated
 display policies do not establish the behavior of an actual monitor transition.
+The desktop eyedropper check routes both halves of a click through the temporary
+Windows hook and checks its return value without injecting global input. The
+native input test compares an independent test window pixel to the preview
+and the committed color, then cancels a second session with Escape.
 `native_display` uses its own hidden window to read the current display
 configuration without changing OS settings. It requires local display access;
 remote sessions or mirrored displays may prevent an unambiguous query.
