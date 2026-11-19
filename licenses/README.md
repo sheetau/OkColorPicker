@@ -1,7 +1,7 @@
 # Distribution license materials
 
 `NOTICE` at the repository root introduces the embedded components. This folder
-keeps upstream notices for zgui, Martian Mono, the CSP protocol reference,
+keeps upstream notices for zgui, Martian Grotesk and Mono, the CSP protocol reference,
 the Color.js APCA implementation and
 [static DXC](dxc/README.md). Local zgui patches retain their own LICENSE/NOTICE
 files. Preserve upstream text, copyright lines and the marked modifications.
@@ -87,7 +87,7 @@ the final distribution font decision.
 Keep the project license and NOTICE, this folder's upstream notices, local patch
 notices, and the notices for native libraries such as DXC. Fonts and binaries
 downloaded by build scripts are not fully described by Cargo package metadata.
-Martian Grotesk is a user-installed development font and is not bundled.
+The application NOTICE identifies the upstream revisions of both embedded fonts.
 
 Follow [MPL 2.0 section 3.2](https://www.mozilla.org/en-US/MPL/2.0/#distribution-of-executable-form)
 when providing the corresponding source for MPL-covered code, including zgui-style's

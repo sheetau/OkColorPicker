@@ -42,4 +42,4 @@ Open THIRD_PARTY_NOTICES.html for license terms and attributions. SOURCES.zip
 contains the application and Rust dependency source; SOURCE_INDEX.json identifies
 the exact source archives. DXC_SOURCES.json identifies the native compiler source.
 BUNDLE.json and PACKAGE.json contain file hashes and source/build identifiers.
-Martian Mono is embedded under OFL. Martian Grotesk is not bundled.
+Martian Grotesk and Martian Mono are embedded under the SIL Open Font License 1.1.

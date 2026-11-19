@@ -27,17 +27,6 @@ Run this from the repository root. Cargo rebuilds changed source and launches
 the development executable directly. Omit `--release` for a debug build; add
 `--locked` when checking that dependency resolution leaves Cargo.lock unchanged.
 
-To keep a local Grotesk font configured across terminal sessions, create the
-ignored `.cargo/config.toml` with your licensed font's absolute path:
-
-```toml
-[env]
-OKCOLOR_GROTESK_FONT = { value = 'C:\Fonts\MartianGrotesk.ttf', force = false }
-```
-
-Cargo passes this setting to the launched application. An existing environment
-variable takes precedence. The font is read at runtime, not embedded in the
-executable. Without this setting the system sans-serif fallback is used.
 The normal application profile persists between runs; `OKCOLOR_STATE_DIR` can
 select a separate profile as described in [Saved state](STATE_FORMAT.md).
 
@@ -173,12 +162,8 @@ ink on hover and #ba0e1a with #cccccc ink when pressed. No replacement symbols a
 and no Windows font files are distributed.
 The MSVC build embeds a Common Controls v6 manifest for the subclassing APIs.
 
-Martian Mono is embedded under OFL. Martian Grotesk is an optional user-installed
-font; set `OKCOLOR_GROTESK_FONT` to a licensed local TTF file to register it under
-the application's family name. Keep machine-specific values outside the repository.
-The supplied Grotesk EULA requires a separate license for creative-software
-embedding, so it is not included in source or binaries. Label typography must
-include a system sans-serif fallback.
+The executable embeds the upstream Martian Grotesk and Martian Mono variable
+TTFs. No local font installation or configuration is required.
 
 ## Product checks
 

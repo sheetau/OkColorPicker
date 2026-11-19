@@ -11,10 +11,12 @@ see vendor/zgui-wgsl/README.md. Its upstream Apache-2.0 and MIT notices are reta
 The vendored zgui-render-wgpu backend exposes its offscreen texture for GPU-only
 output conversion; see vendor/zgui-render-wgpu/README.md.
 
-Martian Mono font, version 1.100
-Copyright 2020 The Martian Mono Project Authors (https://github.com/evilmartians/mono)
-Licensed under SIL Open Font License 1.1; see licenses/MartianMono-OFL.txt.
-The font file is distributed unchanged. Martian Grotesk is not distributed.
+Martian Grotesk and Martian Mono variable TrueType fonts
+Copyright 2021 The Martian Grotesk Project Authors and The Martian Mono Project Authors,
+respectively. Each font is distributed unchanged under the SIL Open Font License 1.1.
+See licenses/MartianGrotesk-OFL.txt and licenses/MartianMono-OFL.txt.
+Grotesk: https://github.com/evilmartians/grotesk/tree/52964df415f6bbff50ddb6f524c94432c1034544/fonts/variable
+Mono: https://github.com/evilmartians/mono/tree/8babba8a76cabf54543dca3a994d7af85e425f98/fonts/variable
 
 The CSP companion protocol implementation uses the framing, QR/authentication
 constants and command schemas documented by chocolatkey/clipremote,

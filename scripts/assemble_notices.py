@@ -83,7 +83,8 @@ def notice_sections(report, root=ROOT):
 
 def supplemental_sections(root=ROOT):
     paths = [root / 'LICENSE-APACHE', root / 'NOTICE', root / 'licenses/zgui-NOTICE',
-             root / 'licenses/MartianMono-OFL.txt', root / 'licenses/clipremote-MIT.txt', root / 'licenses/Colorjs-MIT.txt', root / 'licenses/color-names-MIT.txt', root / 'licenses/Chromium-cursor.txt']
+             root / 'licenses/MartianGrotesk-OFL.txt', root / 'licenses/MartianMono-OFL.txt',
+             root / 'licenses/clipremote-MIT.txt', root / 'licenses/Colorjs-MIT.txt', root / 'licenses/color-names-MIT.txt', root / 'licenses/Chromium-cursor.txt']
     dxc = root / 'licenses/dxc'
     provenance = json.loads((dxc / 'sources.json').read_text(encoding='utf-8'))
     for record in provenance['files']:
@@ -113,7 +114,7 @@ def render_html(sections):
              'License texts below and source-file notices retain their original terms.</p>',
              '<p>Build dependencies are included. Native DXC notices are reproduced separately below; '
              'its pinned source locations are recorded in <a href="DXC_SOURCES.json">DXC_SOURCES.json</a>. '
-             'Martian Grotesk is not included.</p>']
+             'The two embedded Martian fonts are licensed under OFL-1.1.</p>']
     for title, packages, text, origin in sections:
         parts.append('<section><h2>' + escape(title) + '</h2>')
         if packages:

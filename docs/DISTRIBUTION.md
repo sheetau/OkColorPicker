@@ -37,9 +37,8 @@ Set `OKCOLOR_STATE_DIR` to a separate temporary profile to preserve existing
 saved colors. Explicit stdout/stderr redirection plus `OKCOLOR_TRACE_FRAMES=1`
 allows startup and presentation checks without a console window.
 
-Test without `OKCOLOR_GROTESK_FONT` to check the bundled/system fallback. A local
-licensed Grotesk font can be used during development; choose its distribution
-arrangement before release. It is not included in the package.
+The executable embeds Martian Grotesk and Martian Mono. Both OFL notices are
+included in the generated third-party notices.
 
 A successful launch on a development computer does not prove clean-machine
 installation or hardware compatibility. Before publication, separately verify
