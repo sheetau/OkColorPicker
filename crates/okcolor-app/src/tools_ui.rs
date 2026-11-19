@@ -95,10 +95,10 @@ pub(crate) fn Swatches(model: PickerModel, refs: PickerRefs) -> impl IntoView {
     view! {
         column(class="swatch-library") {
             box(class="folder-anchor") {
-                control(class="folder-heading",class:open=move ||menu.get(),node_ref=Tooltips::button(refs.library[1],"Choose swatch folder"),tabindex=Focus::Sequential,
+                control(class="folder-heading",class:up=move ||menu.get() && placement.get().0,class:open=move ||menu.get(),node_ref=Tooltips::button(refs.library[1],"Choose swatch folder"),tabindex=Focus::Sequential,
                     a11y:label="Choose swatch folder",on:click=move |_|menu.update(|v|*v = !*v)) {
                     text {{move ||model.library.get().folders.iter().find(|f|Some(f.id)==destination.get()).map(|f|f.name.clone()).unwrap_or_else(||"Swatch Tiles".into())}}
-                    spacer() box(class="folder-chevron") {box(class="chevron") {}}
+                    box(class="folder-chevron") {{zgui::elements::vector().document(include_str!("../assets/chevron.svg")).class("chevron")}}
                 }
                 if move ||menu.get() {
                     column(class="folder-menu",node_ref=popup,class:above=move ||placement.get().0,style:max-height=move ||Some(format!("{}px",placement.get().1))) {
@@ -298,12 +298,12 @@ fn HoverLabel(heading: crate::tiles::TileHeading) -> impl IntoView {
 
 #[component]
 fn RelatedGroup(model: PickerModel, refs: PickerRefs, group: usize) -> impl IntoView {
-    let open = RwSignal::new(true);
+    let open = Memo::new(move |_| !model.tools.get().folded_groups[group]);
     let title = ["Variations", "Similar", "Harmony"][group];
     let heading = crate::tiles::TileHeading::mount();
     view! {column(class="tool-section") {
         row(class="section-heading variation-heading") {
-            control(node_ref=Tooltips::button(NodeRef::new(),title),tabindex=Focus::Sequential,on:click=move |_|open.update(|v|*v = !*v)) {
+            control(node_ref=Tooltips::button(NodeRef::new(),title),tabindex=Focus::Sequential,on:click=move |_|model.tools.update(|t|t.folded_groups[group] = !t.folded_groups[group])) {
                 if move ||open.get() {{zgui::elements::vector().document(include_str!("../assets/minus.svg")).class("fold-icon")}}
                 else {{zgui::elements::vector().document(include_str!("../assets/add.svg")).class("fold-icon")}}
                 text {{title}}
@@ -923,7 +923,7 @@ pub(crate) fn Contrast(model: PickerModel, refs: PickerRefs) -> impl IntoView {
                 }
             }
             if move ||dragging.get() || (grid.get().split>0 && grid.get().split<grid.get().levels.len()) {
-                box(class="contrast-boundary",class:active=move ||dragging.get(),style:top=move ||Some(format!("{}px",20+40*grid.get().split)),
+                box(class="contrast-boundary",style:color=move ||{let t=model.tools.get();Some(crate::tiles::boundary_ink(grid_reference(&t,true),grid_reference(&t,false)))},class:active=move ||dragging.get(),style:top=move ||Some(format!("{}px",20+40*grid.get().split)),
                     on:pointer_down=move |cx|{if cx.button==Some(PointerButton::Primary){dragging.set(true);cx.capture_pointer();}},
                     on:pointer_move=move |cx|{if dragging.get_untracked(){boundary(cx.position.y.0);}},
                     on:pointer_up=move |cx|{if dragging.get_untracked(){boundary(cx.position.y.0);cx.release_pointer();if let Some(split)=preview_split.get_untracked(){model.edit_contrast(|t|t.contrast_grid.split=split);}preview_split.set(None);dragging.set(false);}},

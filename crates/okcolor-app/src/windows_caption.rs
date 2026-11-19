@@ -1,4 +1,5 @@
 //! Win32 owns caption gestures; zgui paints the same Segoe controls as towavue.
+use crate::workspace::WindowGeometry;
 use crate::{model::PickerModel, ui::PickerRefs, window_frame::CaptionVisual};
 use raw_window_handle::RawWindowHandle;
 use std::{
@@ -14,7 +15,9 @@ use windows_sys::Win32::{
             DWMWA_CAPTION_COLOR, DWMWA_USE_IMMERSIVE_DARK_MODE, DWMWA_WINDOW_CORNER_PREFERENCE,
             DWMWCP_ROUND, DwmExtendFrameIntoClientArea, DwmSetWindowAttribute,
         },
-        Gdi::ScreenToClient,
+        Gdi::{
+            GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromRect, ScreenToClient,
+        },
     },
     System::Threading::GetCurrentThreadId,
     UI::{
@@ -148,7 +151,23 @@ impl FrameProbe for CaptionBridge {
             native.hook.state.visual.set(self.0.visual.get());
             native.hook.update(rects);
             if let Some((refs, model)) = self.0.content.get() {
-                native.hook.fit_content(refs, model);
+                let state = &native.hook.state;
+                if state.model.get().is_none() {
+                    state.model.set(Some(model));
+                    state.restore.set(model.window_geometry.get_untracked());
+                    if state.restore.get().is_some() {
+                        unsafe {
+                            PostMessageW(native.hook.hwnd, RESTORE_PLACEMENT, 0, 0);
+                        }
+                    } else {
+                        unsafe {
+                            state.remember(native.hook.hwnd);
+                        }
+                    }
+                }
+                if state.restore.get().is_none() {
+                    native.hook.fit_content(refs, model);
+                }
             }
         }
         if self.0.trace {
@@ -174,9 +193,57 @@ struct State {
     pressed: Cell<Option<usize>>,
     visual: Cell<Option<RwSignal<CaptionVisual>>>,
     alive: Cell<bool>,
+    model: Cell<Option<PickerModel>>,
+    restore: Cell<Option<WindowGeometry>>,
     desired_client: Cell<i32>,
     resizing: Cell<bool>,
     plot_resize: Cell<Option<(PickerModel, i32)>>,
+}
+
+impl State {
+    unsafe fn remember(&self, hwnd: HWND) {
+        let Some(model) = self.model.get() else {
+            return;
+        };
+        if self.restore.get().is_some() {
+            return;
+        }
+        unsafe {
+            if IsIconic(hwnd) != 0 {
+                return;
+            }
+            let Some(previous) = model.window_geometry.try_get_untracked() else {
+                return;
+            };
+            let next = if IsZoomed(hwnd) != 0 {
+                previous.map(|g| WindowGeometry {
+                    maximized: true,
+                    ..g
+                })
+            } else {
+                let mut outer = RECT::default();
+                let mut client = RECT::default();
+                if GetWindowRect(hwnd, &mut outer) == 0
+                    || GetClientRect(hwnd, &mut client) == 0
+                    || client.right <= 0
+                    || client.bottom <= 0
+                {
+                    return;
+                }
+                let scale = GetDpiForWindow(hwnd).max(1) as f32 / 96.0;
+                Some(WindowGeometry {
+                    x: outer.left,
+                    y: outer.top,
+                    width: client.right as f32 / scale,
+                    height: client.bottom as f32 / scale,
+                    maximized: false,
+                })
+            };
+            if next != previous {
+                model.window_geometry.try_set(next);
+            }
+        }
+    }
 }
 
 struct Hook {
@@ -186,14 +253,16 @@ struct Hook {
 
 const SUBCLASS_ID: usize = 1;
 const FIT_CONTENT: u32 = WM_APP + 0x3a2;
+const RESTORE_PLACEMENT: u32 = WM_APP + 0x3a3;
 
 impl Hook {
     fn fit_content(&self, refs: PickerRefs, model: PickerModel) {
-        let Some(body) = refs
-            .settings_content
-            .window_bounds()
-            .or_else(|| refs.page_content.window_bounds())
-        else {
+        if refs.settings_content.window_bounds().is_some() {
+            self.state.desired_client.set(0);
+            self.state.plot_resize.set(None);
+            return;
+        }
+        let Some(body) = refs.page_content.window_bounds() else {
             return;
         };
         let hwnd = self.hwnd;
@@ -438,6 +507,62 @@ unsafe extern "system" fn caption_proc(
     unsafe {
         let state = &*(data as *const State);
         match message {
+            RESTORE_PLACEMENT => {
+                if let Some(g) = state.restore.get() {
+                    let mut monitor = MONITORINFO {
+                        cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+                        ..Default::default()
+                    };
+                    // Select the screen under the saved title bar, including windows
+                    // whose top-left corner was intentionally placed off screen.
+                    let title = RECT {
+                        left: g.x,
+                        top: g.y,
+                        right: g.x.saturating_add(g.width.ceil() as i32),
+                        bottom: g.y.saturating_add(32),
+                    };
+                    let handle = MonitorFromRect(&title, MONITOR_DEFAULTTONEAREST);
+                    if GetMonitorInfoW(handle, &mut monitor) != 0 {
+                        let work = monitor.rcWork;
+                        let x = if title.right < work.left.saturating_add(48) {
+                            work.left
+                        } else {
+                            g.x.min(work.right.saturating_sub(48).max(work.left))
+                        };
+                        let y = g.y.clamp(
+                            work.top.saturating_sub(8),
+                            work.bottom.saturating_sub(32).max(work.top),
+                        );
+                        let flags = SWP_NOACTIVATE | SWP_NOZORDER;
+                        SetWindowPos(hwnd, std::ptr::null_mut(), x, y, 0, 0, flags | SWP_NOSIZE);
+                        let scale = GetDpiForWindow(hwnd) as f32 / 96.0;
+                        let mut outer = RECT::default();
+                        let mut client = RECT::default();
+                        GetWindowRect(hwnd, &mut outer);
+                        GetClientRect(hwnd, &mut client);
+                        SetWindowPos(
+                            hwnd,
+                            std::ptr::null_mut(),
+                            x,
+                            y,
+                            (g.width * scale).round() as i32 + outer.right
+                                - outer.left
+                                - client.right,
+                            (g.height * scale).round() as i32 + outer.bottom
+                                - outer.top
+                                - client.bottom,
+                            flags,
+                        );
+                        if g.maximized {
+                            ShowWindow(hwnd, SW_MAXIMIZE);
+                        }
+                    }
+                    state.restore.set(None);
+                    state.remember(hwnd);
+                }
+                return 0;
+            }
+            WM_WINDOWPOSCHANGED => state.remember(hwnd),
             WM_ENTERSIZEMOVE => state.resizing.set(true),
             WM_EXITSIZEMOVE => {
                 state.resizing.set(false);

@@ -34,7 +34,7 @@ The UTF-8 JSON object contains:
 | `recent` | Up to 24 color arrays, newest first |
 | `show_p3`, `show_rec2020` | Independent visibility toggles; sRGB is always visible |
 | `gamut` | `srgb`, `display-p3`, or `rec2020` |
-| `mapping` | `local-minde` or `clip` |
+| `mapping` | Legacy mapping preference. Both `local-minde` and `clip` are accepted on load. New saves use `local-minde`. |
 | `format` | `hex`, `hex8`, `rgb`, `hsl`, `oklab`, `oklch`, `lab`, `lch`, or a gamut name for `color(...)` |
 | `max_chroma` | Finite display extent from `0.01` through `1.0`; this does not cap the original color's chroma |
 
@@ -49,8 +49,9 @@ there are at most 256 swatches and 32 folders. IDs are unique and below the
 monotonic `next_id`. Removing a folder moves its colors to the unfiled section.
 
 The `tools` object stores an opaque `background` color, signed `target_lc`
-from -110 through 110, and a `harmony` index from 0 through 4. Tool selection,
-field drafts and the active tab are transient; startup opens the picker.
+from -110 through 110, and a `harmony` index from 0 through 4. Field drafts and
+the Settings overlay are transient. Startup restores the last tool tab, folded
+Harmony sections, window position, client dimensions and maximized state.
 The chart stores its fixed axis, snapping preference and height in CSS pixels
 as `fixed_axis`, `always_snap` and `plot_height`. Older profiles default to Hue,
 Shift-only snapping and 152 pixels. Library edits are independent of the session

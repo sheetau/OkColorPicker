@@ -43,3 +43,31 @@ fn display_transitions_update_only_preview_and_cleanup_detaches_the_signal() {
         "A dropped view must not receive signal writes"
     );
 }
+
+#[test]
+fn availability_checks_each_supported_gamut_before_marking_a_color_unavailable() {
+    let sdr = DisplayStatus::default();
+    let wide = DisplayStatus {
+        mode: DisplayMode::WideColor,
+        wide_output: true,
+    };
+    let p3_red = Oklch::from_rgb([1.0, 0.0, 0.0], Gamut::DisplayP3, 1.0, 0.0).unwrap();
+    let rec_green = Oklch::from_rgb([0.0, 1.0, 0.0], Gamut::Rec2020, 1.0, 0.0).unwrap();
+    let outside = Oklch::new(0.5, 0.8, 285.0, 1.0).unwrap();
+    assert_eq!(wide.unavailable(p3_red), None);
+    assert_eq!(wide.unavailable(rec_green), None);
+    assert_eq!(
+        sdr.unavailable(p3_red),
+        Some("P3 is unavailable on this monitor")
+    );
+    assert_eq!(
+        sdr.unavailable(rec_green),
+        Some("Rec.2020 is unavailable on this monitor")
+    );
+    for display in [sdr, wide] {
+        assert_eq!(
+            display.unavailable(outside),
+            Some("unavailable on any device")
+        );
+    }
+}

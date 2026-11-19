@@ -118,7 +118,7 @@ impl SurfaceKind {
             } else {
                 0.0
             },
-            mapping: if model.mapping.get() == GamutMapping::Clip {
+            mapping: if self == Self::Slice || model.mapping.get() == GamutMapping::Clip {
                 1.0
             } else {
                 0.0
@@ -433,7 +433,7 @@ pub fn ColorControl(model: PickerModel, kind: SurfaceKind, node: NodeRef) -> imp
             on:pointer_cancel=move |_| { if dragging.get_untracked() {dragging.set(false);model.cancel();} }) {
             {surface.class("color-surface").into_view()}
             if move ||kind==SurfaceKind::Slice {
-                text(class="axis-l",style:top=move ||{
+                text(class="axis-l",class:left=move || extent.get().is_some_and(|size|(1.0-kind.marker(model)[0])*f64::from(size.width.0)<14.0*f64::from(scale.get())),style:top=move ||{
                     let height = extent.get().map_or(152.0,|s|s.height.0/scale.get());
                     Some(format!("{}px",(kind.marker(model)[1]*f64::from(height)-5.0).clamp(0.0,f64::from((height-10.0).max(0.0)))))
                 }) {{move ||if model.tools.get().fixed_axis==FixedAxis::Lightness {"C"} else {"L"}}}

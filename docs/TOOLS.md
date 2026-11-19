@@ -4,21 +4,24 @@ Use the three buttons in the status bar or **Ctrl+1/2/3** to select Picker,
 Harmony or APCA. **Ctrl+Tab** and **Ctrl+Shift+Tab** cycle through them. Every
 page includes recent colors, main/sub slots, L/C/H/alpha fields, editable color
 codes and the swatch library. The window fits the active page. Resize the Picker
-vertically to change the chart height. Returning to Picker restores that height. Drag the title to move the window. The menu opens Settings.
+vertically to change the chart height. Returning to Picker restores that height.
+Drag the title to move the window. Settings covers the current page and scrolls
+when its controls exceed the available height.
 
 ## Picker
 
 The chart holds one component constant. Choose L, C or H in Settings to change
 the fixed component and its slider. Hold Shift to snap to a visible gamut boundary
-on the chart or slider. **Always snap to gamut boundaries** reverses the Shift behavior. Settings controls the gamut boundaries, alpha slider,
-sRGB conversion and **Always on top**. Press **O** or **R** outside a text
+on the chart or slider. **Always snap to gamut boundaries** reverses the Shift
+behavior. Settings controls the gamut boundaries, the alpha slider and
+**Always on top**. Press **O** or **R** outside a text
 field to select the corresponding code for replacement. Escape discards an
 uncommitted field edit and releases text focus. The eyedropper
 (**Ctrl+Shift+C**) samples a visible SDR desktop pixel across Windows displays.
 A floating chip previews the sampled pixel and its six-digit HEX value.
 A left click selects the color and consumes the click. Right-click or Escape cancels sampling.
 
-In sRGB preview, an unrepresentable slot shows a cross. The active slot offers
+An unavailable slot shows a grayscale cross over the mapped fill. The active slot offers
 mapped and clipped sRGB samples beside it. Click a sample to adopt that color
 as one undoable edit. Until then the code fields and Harmony use the mapped
 preview. Right-click the original slot to copy the stored color in the selected

@@ -67,13 +67,14 @@ the original color. Numeric gamut support does not establish monitor support.
 
 Preview policy is runtime state. Active Windows WCG/HDR, a known reference white
 and an FP16 presentation surface together enable extended RGB paint. SDR,
-unknown display capabilities and 8-bit fallback surfaces use the selected sRGB
-`LocalMinde` or `Clip` policy. Working-gamut boundaries remain independent of this
+unknown display capabilities and 8-bit fallback surfaces use clipped sRGB for the
+gamut chart and local-MINDE mapping for other previews. Working-gamut boundaries remain independent of this
 choice. Display changes do not create history entries or change saved colors.
 
 The slice, bars and recent samples use this preview policy. An out-of-sRGB slot
-on a bounded preview surface shows a cross and offers mapped and clipped
-samples. The code fields and Harmony use the mapped sample until the user
+on a bounded preview surface displays its mapped fill with a contrasting cross
+and offers mapped and clipped samples. Colors outside both P3 and Rec.2020 carry this indicator
+on every display. The code fields and Harmony use the mapped sample until the user
 selects a fallback. The numeric channels and serialized slots retain the source.
 Sample alpha is composited over a checkerboard. Bounded sRGB text output still
 uses its mapping policy even while the preview uses extended RGB.

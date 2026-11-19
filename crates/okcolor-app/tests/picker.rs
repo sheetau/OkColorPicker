@@ -330,6 +330,11 @@ fn mounted_picker_draws_and_drag_is_one_undo() {
                 harness.deliver_to_first(SurfaceEvent::Pointer {action:PointerAction::Moved,event:PointerEvent::mouse(Point::new(CssPx(329.0),CssPx(559.0))),modifiers:Modifiers::NONE,timestamp:Timestamp::ORIGIN});
                 harness.settle(32);
                 let before = model.current();
+                model.companion.state.set(okcolor_csp::worker::State::Failed("Show the CSP companion QR code".into()));
+                harness.settle(32);
+                assert_eq!(refs.status_notice.text_content(),"Show the CSP companion QR code");
+                harness.run_for(Duration::from_secs(5),Duration::from_millis(100));
+                assert_eq!(refs.status_notice.text_content(),model.display.get_untracked().label());
                 let saved_before_status = model.saved_state_untracked();
                 for status in [
                     okcolor_csp::worker::State::Scanning,
@@ -463,6 +468,23 @@ fn mounted_picker_draws_and_drag_is_one_undo() {
                 let original_color=model.current();
                 click(&mut harness,refs.menu);
                 assert!(refs.gamut_toggles[0].window_bounds().is_some(),"Settings did not open after cancelling a captured scrub");
+                assert!(refs.settings_thumb.window_bounds().is_none());
+                harness.deliver_to_first(SurfaceEvent::Resized(Size::new(DevicePx(330.0),DevicePx(150.0))));
+                harness.settle(64);
+                let thumb=refs.settings_thumb.window_bounds().expect("short settings page scrollbar");
+                assert_eq!((thumb.origin.x.0,thumb.origin.y.0,thumb.size.width.0),(320.0,32.0,10.0));
+                let pixel=|x,y|frames.lock().unwrap().last().unwrap().rgba(x,y)[0];
+                assert_eq!(pixel(324,35),22);
+                let mouse=|action,y|SurfaceEvent::Pointer {action,event:PointerEvent::mouse(Point::new(CssPx(325.0),CssPx(y))).with_button(PointerButton::Primary),modifiers:Modifiers::NONE,timestamp:Timestamp::ORIGIN};
+                for action in [PointerAction::Moved,PointerAction::Pressed] { harness.deliver_to_first(mouse(action,36.0));harness.settle(32); }
+                assert_eq!(pixel(324,35),66);
+                harness.deliver_to_first(mouse(PointerAction::Moved,115.0));harness.settle(32);
+                harness.deliver_to_first(mouse(PointerAction::Released,115.0));harness.settle(32);
+                assert!(refs.settings_viewport.scroll_position().is_at_end_vertically());
+                let thumb=refs.settings_thumb.window_bounds().unwrap();
+                assert!((thumb.origin.y.0+thumb.size.height.0-118.0).abs()<=1.0);
+                harness.deliver_to_first(SurfaceEvent::Resized(Size::new(DevicePx(330.0),DevicePx(560.0))));
+                harness.settle(64);
                 click(&mut harness,refs.axis_trigger);
                 harness.deliver_to_first(key(KeyEvent::named(NamedKey::Escape,PhysicalKey::Unidentified(0)),Modifiers::NONE));
                 harness.settle(32);

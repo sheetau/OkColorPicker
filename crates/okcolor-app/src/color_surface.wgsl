@@ -46,6 +46,13 @@ fn linear_rgb(lab: vec3<f32>, gamut: f32) -> vec3<f32> {
         dot(vec3<f32>(0.0176398574, -0.0427706133, 0.9421031212), xyz));
 }
 
+// Signed distance to the nearest face of the linear RGB cube, in channel units.
+fn gamut_margin(lab: vec3<f32>, gamut: f32) -> f32 {
+    let rgb=linear_rgb(lab,gamut);
+    let faces=min(rgb,vec3<f32>(1.0)-rgb);
+    return min(min(faces.r,faces.g),faces.b)+0.0000001;
+}
+
 fn in_gamut(lab: vec3<f32>, gamut: f32) -> bool {
     let rgb = linear_rgb(lab, gamut);
     return all(rgb >= vec3<f32>(-0.0000001)) && all(rgb <= vec3<f32>(1.0000001));
@@ -165,28 +172,30 @@ fn shade(input: ShaderInput, params: Params) -> vec4<f32> {
             let distance = abs(fract(normal / pitch + 0.5) - 0.5) * pitch;
             rgb *= clamp(distance - 0.5 * input.scale + 0.5, 0.0, 1.0);
         }
-        let step = vec2<f32>(0.5) / max(input.size, vec2<f32>(1.0));
+        let step = vec2<f32>(select(0.5,1.0,params.kind<0.5)) / max(input.size, vec2<f32>(1.0));
         for (var g = 2; g >= 0; g -= 1) {
             if (g == 1 && params.show_p3 < 0.5) || (g == 2 && params.show_rec2020 < 0.5) { continue; }
             let gamut = f32(g);
-            let left = in_gamut(color_at(clamp(uv - vec2<f32>(step.x, 0.0), vec2<f32>(0.0), vec2<f32>(1.0)), params), gamut);
-            let right = in_gamut(color_at(clamp(uv + vec2<f32>(step.x, 0.0), vec2<f32>(0.0), vec2<f32>(1.0)), params), gamut);
-            var boundary = left != right;
+            let dx = vec2<f32>(step.x, 0.0);
+            let dy = vec2<f32>(0.0, step.y);
+            let left = gamut_margin(color_at(clamp(uv-dx,vec2<f32>(0.0),vec2<f32>(1.0)),params),gamut);
+            let right = gamut_margin(color_at(clamp(uv+dx,vec2<f32>(0.0),vec2<f32>(1.0)),params),gamut);
             if params.kind < 0.5 {
-                let above = in_gamut(color_at(clamp(uv - vec2<f32>(0.0, step.y), vec2<f32>(0.0), vec2<f32>(1.0)), params), gamut);
-                let below = in_gamut(color_at(clamp(uv + vec2<f32>(0.0, step.y), vec2<f32>(0.0), vec2<f32>(1.0)), params), gamut);
-                boundary = boundary || above != below;
-            }
-            if boundary {
-                if params.kind > 0.5 {
-                    rgb = vec3<f32>(0.0);
-                } else {
-                    // Reference dark-theme gamut separators, expressed in OKLCH.
+                let above = gamut_margin(color_at(clamp(uv-dy,vec2<f32>(0.0),vec2<f32>(1.0)),params),gamut);
+                let below = gamut_margin(color_at(clamp(uv+dy,vec2<f32>(0.0),vec2<f32>(1.0)),params),gamut);
+                let slope = 0.5 * length(vec2<f32>(right-left,below-above));
+                let crossing = min(min(left,right),min(above,below)) <= 0.0 && max(max(left,right),max(above,below)) >= 0.0;
+                if crossing && slope > 0.0000001 {
+                    let distance = abs(gamut_margin(lab,gamut))/slope;
+                    let coverage = 1.0-smoothstep(0.2,1.0,distance);
                     let inner = g == 0 && params.show_p3 > 0.5;
                     let lch = select(vec3<f32>(0.198, 0.006, 301.0), vec3<f32>(0.235, 0.01, 304.0), inner);
                     let angle = radians(lch.z);
-                    rgb = clipped(vec3<f32>(lch.x, lch.y * cos(angle), lch.y * sin(angle)));
+                    let ink = clipped(vec3<f32>(lch.x,lch.y*cos(angle),lch.y*sin(angle)));
+                    rgb = mix(rgb,ink,coverage);
                 }
+            } else if (left>=0.0)!=(right>=0.0) {
+                rgb = vec3<f32>(0.0);
             }
         }
     }

@@ -175,16 +175,24 @@ pub(crate) fn contrast_ink(color: Oklch) -> &'static str {
     }
 }
 
-/// Maximize the weaker of the contrast ratios against the swatch and black.
-fn drag_ink(color: Oklch, mapping: okcolor_core::GamutMapping) -> String {
-    let tile = relative_luminance(
-        color
-            .mapped_rgb(okcolor_core::Gamut::Srgb, mapping)
-            .unwrap_or([0.0; 3]),
-    ) + 0.05;
+/// Choose the neutral ink with the largest minimum contrast to both adjacent fills.
+pub(crate) fn boundary_ink(first: Oklch, second: Oklch) -> String {
+    let surfaces = [first, second].map(|color| {
+        relative_luminance(
+            color
+                .mapped_rgb(
+                    okcolor_core::Gamut::Srgb,
+                    okcolor_core::GamutMapping::LocalMinde,
+                )
+                .unwrap_or([0.0; 3]),
+        ) + 0.05
+    });
     let contrast = |v: u8| {
         let gray = linear_channel(f64::from(v) / 255.0) + 0.05;
-        (gray / 0.05).min(gray.max(tile) / gray.min(tile))
+        surfaces
+            .into_iter()
+            .map(|y| gray.max(y) / gray.min(y))
+            .fold(f64::INFINITY, f64::min)
     };
     let gray = (0..=255)
         .max_by(|a, b| contrast(*a).total_cmp(&contrast(*b)))
@@ -298,10 +306,21 @@ pub(crate) fn ColorTile(
             shared.drop_at(model, source, color.get_untracked(), dest);
         }
     };
+    let unavailable = Memo::new(move |_| {
+        class == "slot-tile" && model.display.get().unavailable(color.get()).is_some()
+    });
+    let ink = move || boundary_ink(color.get(), Oklch::new(0.0, 0.0, 0.0, 1.0).expect("black"));
+    let fill = Memo::new(move |_| {
+        if class == "slot-tile" {
+            PickerModel::preview_source(color.get(), model.display.get())
+        } else {
+            color.get()
+        }
+    });
     view! {control(class=class,node_ref=node,tabindex=Focus::Sequential,a11y:label=move ||label.get(),
         class:dark=move ||class=="preset-color" && color.get().components()[0]<0.5,
         class:dragged=move ||shared.dragging.get()==Some(node),
-        style:outline-color=move ||(shared.dragging.get()==Some(node)).then(||drag_ink(color.get(),model.mapping.get())),
+        style:outline-color=move ||(shared.dragging.get()==Some(node)).then(&ink),
         on:pointer_enter=move |_|{
             if let Some(heading)=heading{heading.0.set(label.get_untracked());}
         },
@@ -318,10 +337,10 @@ pub(crate) fn ColorTile(
             }
             suppress_click.set(false);
         }) {
-            ColorSwatch(model=model,color=color,outline_dark=class!="transparent-color" && class!="preset-color" && class!="generated-color")
+            ColorSwatch(model=model,color=fill,outline_dark=class!="transparent-color" && class!="preset-color" && class!="generated-color")
             if move ||destination.is_some() && shared.hovering.get()==destination {box(class="insertion-line") {}}
-            if move ||class=="slot-tile" && !model.display.get().wide_output && !color.get().in_gamut(okcolor_core::Gamut::Srgb) {
-                {zgui::elements::vector().document(include_str!("../assets/unavailable.svg")).class("unavailable-slot")}
+            if move ||unavailable.get() {
+                box(class="unavailable-slot",style:color=move ||Some(ink())) {{zgui::elements::vector().document(include_str!("../assets/unavailable.svg")).class("unavailable-cross")}}
             }
             if move ||class=="transparent-color" {
                 {zgui::elements::vector().document(include_str!("../assets/transparent.svg")).class("transparent-mark")}

@@ -23,6 +23,9 @@ pub struct PickerRefs {
     pub tool_page: NodeRef,
     pub page_content: NodeRef,
     pub settings_content: NodeRef,
+    pub settings_viewport: NodeRef,
+    pub settings_thumb: NodeRef,
+    pub status_notice: NodeRef,
     pub eyedropper: NodeRef,
     pub tooltip: NodeRef,
     pub palette_dot: NodeRef,
@@ -62,6 +65,9 @@ impl Default for PickerRefs {
             tool_page: NodeRef::new(),
             page_content: NodeRef::new(),
             settings_content: NodeRef::new(),
+            settings_viewport: NodeRef::new(),
+            settings_thumb: NodeRef::new(),
+            status_notice: NodeRef::new(),
             eyedropper: NodeRef::new(),
             tooltip: NodeRef::new(),
             palette_dot: NodeRef::new(),
@@ -116,16 +122,6 @@ pub fn Picker(model: PickerModel, refs: PickerRefs) -> impl IntoView {
     ] {
         crate::tooltip::Tooltips::bind(node, move || label.into());
     }
-    crate::tooltip::Tooltips::bind(refs.companion, move || {
-        let hint = model.companion.hint.get_untracked();
-        if model.companion.active() && !hint.is_empty() {
-            format!("Disconnect CSP · {hint}")
-        } else if model.companion.active() {
-            "Disconnect CSP".into()
-        } else {
-            model.companion.label().into()
-        }
-    });
     let clipboard = use_clipboard();
     let settings = RwSignal::new(false);
     Tooltips::bind(refs.menu, move || {
@@ -274,7 +270,7 @@ pub fn Picker(model: PickerModel, refs: PickerRefs) -> impl IntoView {
                 }
             }
             Statusbar(model=model,refs=refs,settings=settings)
-            if move ||!refs.sampling.get() && !tips.text.get().is_empty() {
+            if move ||!refs.sampling.get() && gestures.dragging.get().is_none() && !tips.text.get().is_empty() {
                 row(class="tooltip",node_ref=refs.tooltip,style:left=move ||Some(format!("{}px",tips.position.get().0)),style:top=move ||Some(format!("{}px",tips.position.get().1))) {
                     for part in move ||crate::tooltip::segments(&tips.text.get()),key=|part:&(bool,String)|part.clone() {
                         text(class:tooltip-hex=part.0) {{part.1.clone()}}
@@ -362,10 +358,9 @@ pub(crate) fn SlotSwatch(model: PickerModel, refs: PickerRefs, index: usize) -> 
                 label=Memo::new(move |_|{
                     let c=color.get();let label=if index==0 {"Main color"}else{"Sub color"};
                     let hex=okcolor_core::format_color(c,ColorFormat::Hex,model.mapping.get()).expect("validated color").text;
-                    if !model.display.get().wide_output && !c.in_gamut(Gamut::Srgb) {
-                        let gamut=if c.in_gamut(Gamut::DisplayP3) {"P3"} else {"Wide gamut"};
-                        format!("{label} {hex} · {gamut} is unavailable on this monitor")
-                    }else{format!("{label} {hex}")}
+                    match model.display.get().unavailable(c) {
+                        Some(reason)=>format!("{label} {hex} · {reason}"),None=>format!("{label} {hex}")
+                    }
                 }),
                 activate=UnsyncCallback::new(move |()|model.select_slot(index as u8)))
 
@@ -376,8 +371,7 @@ pub(crate) fn SlotSwatch(model: PickerModel, refs: PickerRefs, index: usize) -> 
 #[component]
 fn Fallbacks(model: PickerModel, refs: PickerRefs) -> impl IntoView {
     let color = Memo::new(move |_| model.color());
-    let unavailable =
-        Memo::new(move |_| !model.display.get().wide_output && !color.get().in_gamut(Gamut::Srgb));
+    let unavailable = Memo::new(move |_| model.display.get().unavailable(color.get()).is_some());
     let fallback = move |original: Oklch, method| {
         let [_, _, h, a] = original.components();
         original
@@ -547,32 +541,69 @@ fn Settings(model: PickerModel, refs: PickerRefs) -> impl IntoView {
     let popup = NodeRef::new();
     let trigger = refs.axis_trigger;
     dismiss_menu(menu, popup, trigger);
+    let viewport = refs.settings_viewport;
+    let scroll = viewport.observe_scroll();
+    let scale = use_window().scale();
+    let above = move || {
+        scroll.get();
+        let Some((row, page)) = trigger.window_bounds().zip(viewport.window_bounds()) else {
+            return false;
+        };
+        let before = row.origin.y.0 - page.origin.y.0;
+        let after = page.size.height.0 - before - row.size.height.0;
+        after < 66.0 * scale.get() && before > after
+    };
+    let thumb = move || {
+        let pos = scroll.get();
+        let page = pos.scrollport.height.0;
+        let total = pos.content_size.height.0;
+        if page <= 0.0 || total <= page + 0.5 {
+            return None;
+        }
+        let size = (page * page / total).max(10.0 * scale.get()).min(page);
+        Some((
+            (page - size) * pos.offset.y.0 / (total - page) / scale.get(),
+            size / scale.get(),
+        ))
+    };
+    let grab = RwSignal::new(None::<(f32, f32)>);
+    let set_offset = move |y: f32| {
+        viewport.scroll_to(
+            ScrollTarget::Offset(zgui::geom::Point::new(
+                zgui::geom::DevicePx(0.0),
+                zgui::geom::DevicePx(y),
+            )),
+            ScrollBehavior::Instant,
+        )
+    };
     view! {
-        column(class="body settings",node_ref=refs.settings_content) {
+        column(class="settings-overlay",node_ref=refs.settings_content) {
+        column(class="settings-viewport",node_ref=viewport,on:wheel=move |cx|{
+            let dy=cx.delta.to_pixels(CssPx(22.0)).height.0;
+            set_offset(scroll.get_untracked().offset.y.0+dy*scale.get_untracked());
+            cx.stop_propagation();cx.prevent_default();
+        }) {
+        column(class="body settings") {
             SettingToggle(label="Always on top",node=refs.topmost,checked=Memo::new(move |_|model.tools.get().always_on_top),
                 toggle=UnsyncCallback::new(move |()|{
                     model.tools.update(|tools|tools.always_on_top = !tools.always_on_top);
                     level_window.with_value(|window|window.set_level(model.tools.get_untracked().window_level()));
                 }))
             column(class="settings-group") {
-                control(class="setting-row",node_ref=Tooltips::button(NodeRef::new(),"Switch between mapped and clipped sRGB"),tabindex=Focus::Sequential,a11y:label="Toggle sRGB fallback mapping",
-                    on:click=move |_|model.mapping.update(|m|*m=if *m==GamutMapping::Clip {GamutMapping::LocalMinde}else{GamutMapping::Clip})) {
-                    text {"sRGB replacement"} spacer()
-                    text {{move ||if model.mapping.get()==GamutMapping::Clip {"Clipped"} else {"Mapped"}}}
-                }
                 SettingToggle(label="Show Rec.2020",node=refs.gamut_toggles[1],checked=Memo::new(move |_|model.show_rec2020.get()),
                     toggle=UnsyncCallback::new(move |()|model.toggle_gamut(Gamut::Rec2020)))
                 SettingToggle(label="Show P3",node=refs.gamut_toggles[0],checked=Memo::new(move |_|model.show_p3.get()),
                     toggle=UnsyncCallback::new(move |()|model.toggle_gamut(Gamut::DisplayP3)))
             }
+            column(class="settings-group") {
             column(class="folder-anchor") {
-                control(class="setting-row folder-heading",class:open=move ||menu.get(),node_ref=trigger,tabindex=Focus::Sequential,
+                control(class="setting-row folder-heading",class:up=move ||menu.get() && above(),class:open=move ||menu.get(),node_ref=trigger,tabindex=Focus::Sequential,
                     a11y:label="Gamut chart fixed axis",on:click=move |_|menu.update(|v| *v = !*v)) {
-                    text {"Gamut chart"} spacer() text {{move ||model.tools.get().fixed_axis.label()}}
-                    box(class="folder-chevron") {box(class="chevron") {}}
+                    text {"Gamut"} spacer() text {{move ||model.tools.get().fixed_axis.label()}}
+                    box(class="folder-chevron") {{zgui::elements::vector().document(include_str!("../assets/chevron.svg")).class("chevron")}}
                 }
                 if move ||menu.get() {
-                    column(class="folder-menu",node_ref=popup) {
+                    column(class="folder-menu",class:above=above,node_ref=popup) {
                         for axis in move ||[FixedAxis::Lightness,FixedAxis::Chroma,FixedAxis::Hue],key=|axis:&FixedAxis|axis.label() {
                             control(node_ref=refs.axis_options[axis.bar() as usize-1],class:selected=move ||model.tools.get().fixed_axis==axis,tabindex=Focus::Sequential,
                                 on:click=move |_|{model.tools.update(|t|t.fixed_axis=axis);menu.set(false);trigger.focus();}) {text {{axis.label()}}}
@@ -584,6 +615,22 @@ fn Settings(model: PickerModel, refs: PickerRefs) -> impl IntoView {
                 toggle=UnsyncCallback::new(move |()|model.tools.update(|t|t.always_snap = !t.always_snap)))
             SettingToggle(label="Show alpha slider",node=NodeRef::new(),checked=Memo::new(move |_|model.tools.get().show_alpha_slider),
                 toggle=UnsyncCallback::new(move |()|model.tools.update(|t|t.show_alpha_slider = !t.show_alpha_slider)))
+            }
+        }
+        }
+        if move ||thumb().is_some() {
+            control(class="settings-thumb",node_ref=refs.settings_thumb,class:held=move ||grab.get().is_some(),a11y:label="Scroll settings",
+                style:top=move ||thumb().map(|(y,_)|format!("{y}px")),
+                style:height=move ||thumb().map(|(_,h)|format!("{h}px")),
+                on:pointer_down=move |cx|{if cx.button==Some(PointerButton::Primary){
+                    grab.set(Some((cx.position.y.0,scroll.get_untracked().offset.y.0)));cx.capture_pointer();}},
+                on:pointer_move=move |cx|{if let Some((start,offset))=grab.get_untracked() && let Some((_,height))=thumb(){
+                    let pos=scroll.get_untracked();let page=pos.scrollport.height.0;
+                    let travel=page/scale.get_untracked()-height;
+                    if travel>0.0 {set_offset(offset+(cx.position.y.0-start)*(pos.content_size.height.0-page)/travel);}
+                }},
+                on:pointer_up=move |cx|{grab.set(None);cx.release_pointer();},on:pointer_cancel=move |_|grab.set(None)) {}
+        }
         }
     }
 }
@@ -601,26 +648,54 @@ fn SettingToggle(
     }}
 }
 
-fn status_message(model: PickerModel) -> String {
-    for message in [model.storage_message.get(), model.message.get()] {
-        if !message.is_empty() {
-            return message;
-        }
-    }
-    if let okcolor_csp::worker::State::Failed(error) = model.companion.state.get() {
-        return error;
-    }
-    let hint = model.companion.hint.get();
-    if model.companion.active() && (hint.starts_with("Cannot") || hint.contains("exhausted")) {
-        return hint;
-    }
-    model.display.get().label().into()
+fn transient_message(source: impl Fn() -> String + 'static) -> RwSignal<String> {
+    let text = RwSignal::new(String::new());
+    let timers = zgui::view::Timers::current().expect("picker window");
+    let effect = RenderEffect::new(move |_| {
+        let message = source();
+        let visible = !message.is_empty();
+        text.set(message);
+        visible.then(|| {
+            timers.set_timeout(std::time::Duration::from_secs(4), move || {
+                text.set(String::new())
+            })
+        })
+    });
+    on_cleanup_local(move || drop(effect));
+    text
 }
 
 #[component]
 fn Statusbar(model: PickerModel, refs: PickerRefs, settings: RwSignal<bool>) -> impl IntoView {
-    let notification = NodeRef::new();
-    crate::tooltip::Tooltips::bind(notification, move || status_message(model));
+    let notification = refs.status_notice;
+    use okcolor_csp::worker::State;
+    let failure = transient_message(move || match model.companion.state.get() {
+        State::Failed(error) => error,
+        _ => String::new(),
+    });
+    let hint = transient_message(move || model.companion.hint.get());
+    let message = transient_message(move || model.message.get());
+    let storage = transient_message(move || model.storage_message.get());
+    let status = move || {
+        [storage.get(), message.get(), failure.get(), hint.get()]
+            .into_iter()
+            .find(|s| !s.is_empty())
+            .unwrap_or_else(|| model.display.get().label().into())
+    };
+    let failed = move || !failure.get().is_empty();
+    crate::tooltip::Tooltips::bind(refs.companion, move || {
+        let hint = model.companion.hint.get_untracked();
+        if failed() {
+            "Dismiss connection error".into()
+        } else if model.companion.active() && !hint.is_empty() {
+            format!("Disconnect CSP · {hint}")
+        } else if model.companion.active() {
+            "Disconnect CSP".into()
+        } else {
+            model.companion.label().into()
+        }
+    });
+    crate::tooltip::Tooltips::bind(notification, status);
     let tabs = [
         (Tab::Picker, "Picker", include_str!("../assets/picker.svg")),
         (
@@ -633,7 +708,7 @@ fn Statusbar(model: PickerModel, refs: PickerRefs, settings: RwSignal<bool>) -> 
     view! {row(class="status") {
         for entry in move ||tabs.into_iter().enumerate(),key=|entry:&(usize,(Tab,&str,&str))|entry.0 {
             control(class="tab-button",node_ref=refs.tabs[entry.0],tabindex=Focus::Sequential,a11y:label=entry.1.1,
-                class:active=move ||model.tab.get()==entry.1.0 && !settings.get(),
+                class:active=move ||model.tab.get()==entry.1.0,
                 on:click=move |_|{settings.set(false);switch_tab(model,refs,entry.1.0);}) {
                 {zgui::elements::vector().document(entry.1.2).class("status-icon")}
             }
@@ -644,20 +719,22 @@ fn Statusbar(model: PickerModel, refs: PickerRefs, settings: RwSignal<bool>) -> 
                 control(node_ref=Tooltips::button(refs.csp_send,"Send current color to CSP"),tabindex=Focus::Sequential,on:click=move |_|model.companion.send_current()) {"Send this color"}
             }
         } else {
-            text(class="status-center",node_ref=notification) {{move ||status_message(model)}}
+            text(class="status-center",node_ref=notification) {{status}}
         }
         if move ||!model.storage_message.get().is_empty() && model.can_save.get() {
             control(node_ref=Tooltips::button(NodeRef::new(),"Retry saving"),tabindex=Focus::Sequential,on:click=move |_|model.save_request.update(|r|*r=r.wrapping_add(1))) {"Retry"}
         }
         control(class="csp-connect",node_ref=refs.companion,tabindex=Focus::Sequential,
-            class:warning=move ||matches!(model.companion.state.get(),okcolor_csp::worker::State::Failed(_)),
-            a11y:label=move ||if model.companion.active() {"Disconnect CSP"} else {model.companion.label()},
-            on:click=move |_|{if model.companion.active(){model.companion.disconnect();}else{model.companion.scan();}}) {
-            if move ||model.companion.active() {
-                box(class="disconnect open") {box(class="menu-line first") {} box(class="menu-line second") {}}
-            } else {
+            class:warning=failed,class:linked=move ||model.companion.state.get()==State::Connected,
+            a11y:label=move ||if failed() {"Dismiss connection error"} else if model.companion.active() {"Disconnect CSP"} else {model.companion.label()},
+            on:click=move |_|{if failed() || model.companion.active(){model.companion.disconnect();}else{model.companion.scan();}}) {
+            if move ||failed() || matches!(model.companion.state.get(),State::Scanning|State::Connecting|State::Reconnecting) {
+                {zgui::elements::vector().document(include_str!("../assets/menu-close.svg")).class("status-icon")}
+            } else { if move ||model.companion.state.get()==State::Connected {
                 {zgui::elements::vector().document(include_str!("../assets/link.svg")).class("status-icon")}
-            }
+            } else {
+                {zgui::elements::vector().document(include_str!("../assets/unlinked.svg")).class("status-icon")}
+            }}
             text {"CSP"}
         }
     }}
@@ -1013,7 +1090,7 @@ fn CodeField(model: PickerModel, node: NodeRef, primary: bool) -> impl IntoView 
                         node_ref=Tooltips::button(trigger,"Choose output format"),
                         tabindex=Focus::Sequential,
                         a11y:label="Choose output format",
-                        on:click=move |_|menu.update(|v|*v = !*v)) {box(class="chevron") {}}
+                        on:click=move |_|menu.update(|v|*v = !*v)) {{zgui::elements::vector().document(include_str!("../assets/chevron.svg")).class("chevron")}}
                 }
             }
             CopyButton(text=UnsyncCallback::new(move |()|model.output_untracked(selected_format())),compact=false,label="Copy color")

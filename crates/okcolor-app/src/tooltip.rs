@@ -37,7 +37,12 @@ impl Tooltips {
     pub fn bind(node: NodeRef, label: impl Fn() -> String + Copy + 'static) {
         let tips = use_context::<Self>().expect("mounted picker");
         let scale = use_window().scale();
+        let dragging = crate::tiles::TileGestures::current().dragging;
         let effect = RenderEffect::new(move |_| {
+            if dragging.get().is_some() {
+                tips.dismiss(node);
+                return None;
+            }
             node.get()?;
             let hover = move || {
                 if tips.active.get_untracked() == Some(node) {

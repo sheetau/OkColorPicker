@@ -3,7 +3,7 @@ use okcolor_core::Oklch;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Tab {
     #[default]
     Picker,
@@ -172,9 +172,9 @@ pub enum FixedAxis {
 impl FixedAxis {
     pub(crate) fn label(self) -> &'static str {
         match self {
-            Self::Lightness => "L",
-            Self::Chroma => "C",
-            Self::Hue => "H",
+            Self::Lightness => "Lightness",
+            Self::Chroma => "Chroma",
+            Self::Hue => "Hue",
         }
     }
 }
@@ -186,6 +186,12 @@ pub(crate) fn default_plot_height() -> f32 {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ToolSettings {
+    #[serde(default)]
+    pub last_tab: Tab,
+    #[serde(default)]
+    pub window: Option<WindowGeometry>,
+    #[serde(default)]
+    pub folded_groups: [bool; 3],
     #[serde(default)]
     pub contrast_grid: ContrastGrid,
     #[serde(default)]
@@ -202,9 +208,22 @@ pub struct ToolSettings {
     pub target_lc: f64,
     pub harmony: usize,
 }
+/// Screen coordinates are physical. Client dimensions are logical pixels.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct WindowGeometry {
+    pub x: i32,
+    pub y: i32,
+    pub width: f32,
+    pub height: f32,
+    pub maximized: bool,
+}
+
 impl Default for ToolSettings {
     fn default() -> Self {
         Self {
+            last_tab: Tab::Picker,
+            window: None,
+            folded_groups: [false; 3],
             always_on_top: false,
             show_alpha_slider: false,
             always_snap: false,
@@ -227,6 +246,16 @@ impl ToolSettings {
     }
 
     pub fn validate(&self) -> Result<(), &'static str> {
+        if self.window.is_some_and(|g| {
+            !g.width.is_finite()
+                || !g.height.is_finite()
+                || g.width <= 0.0
+                || g.height <= 0.0
+                || g.width > 65535.0
+                || g.height > 65535.0
+        }) {
+            return Err("Invalid saved window dimensions");
+        }
         self.contrast_grid.validate()?;
         let [l, c, h, a] = self.background;
         if Oklch::new(l, c, h, a).is_err()

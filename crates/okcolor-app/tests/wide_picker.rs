@@ -182,11 +182,8 @@ fn mounted_picker_preserves_wide_color_and_repaints_every_sample_on_display_tran
                                 &pixels,
                                 (bounds.origin.x.0 + offset) as i32,
                                 (bounds.origin.y.0 + offset - 4.0) as i32,
-                                if node != refs.recents
-                                    && !status.wide_output
-                                    && !color.in_gamut(Gamut::Srgb)
-                                {
-                                    [0.0; 3]
+                                if node != refs.recents && status.unavailable(color).is_some() {
+                                    preview(color, false, GamutMapping::LocalMinde)
                                 } else {
                                     preview(color, status.wide_output, mapping)
                                 },
@@ -246,7 +243,15 @@ fn mounted_picker_preserves_wide_color_and_repaints_every_sample_on_display_tran
                                 {
                                     [9.0 / 255.0; 3]
                                 } else {
-                                    preview(color, status.wide_output, mapping)
+                                    preview(
+                                        color,
+                                        status.wide_output,
+                                        if kind == SurfaceKind::Slice {
+                                            GamutMapping::Clip
+                                        } else {
+                                            mapping
+                                        },
+                                    )
                                 };
                                 if kind == SurfaceKind::Alpha {
                                     let lx = (x as f32 + 0.5 - bounds.origin.x.0) / 5.0;

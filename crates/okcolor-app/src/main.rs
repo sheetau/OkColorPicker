@@ -65,11 +65,17 @@ fn run() -> Result<(), zgui::Error> {
     let caption = okcolor_app::windows_caption::CaptionBridge::new(trace);
     #[cfg(target_os = "windows")]
     let renderer = caption.wrap_renderer(renderer);
+    let (width, height) = startup
+        .state
+        .tools
+        .window
+        .map(|w| (w.width, w.height))
+        .unwrap_or((330.0, 582.0));
     let mut application = app()
         .with_application_id("io.github.sheetau.OkColorPicker")
         .with_title("OkColorPicker")
         .with_level(startup.state.tools.window_level())
-        .with_size(330.0, 582.0)
+        .with_size(width, height)
         .with_min_size(330.0, 64.0)
         .with_decorations(if cfg!(target_os = "windows") {
             Decorations::Full

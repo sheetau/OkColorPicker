@@ -46,6 +46,7 @@ struct Snapshot {
 /// Each display dependency has its own signal; history is read only on commands.
 #[derive(Clone, Copy)]
 pub struct PickerModel {
+    pub window_geometry: RwSignal<Option<crate::workspace::WindowGeometry>>,
     pub tab: RwSignal<crate::workspace::Tab>,
     pub library: RwSignal<crate::workspace::Library>,
     pub tools: RwSignal<crate::workspace::ToolSettings>,
@@ -113,7 +114,8 @@ impl PickerModel {
         );
         let [l, c, h, alpha] = initial.components();
         Self {
-            tab: RwSignal::new(crate::workspace::Tab::Picker),
+            tab: RwSignal::new(saved.tools.last_tab),
+            window_geometry: RwSignal::new(saved.tools.window),
             library: RwSignal::new(saved.library),
             tools: RwSignal::new(saved.tools),
             companion: crate::companion::Companion::default(),
@@ -133,7 +135,7 @@ impl PickerModel {
             gamut: RwSignal::new(saved.gamut),
             show_p3: RwSignal::new(saved.show_p3),
             show_rec2020: RwSignal::new(saved.show_rec2020),
-            mapping: RwSignal::new(saved.mapping),
+            mapping: RwSignal::new(GamutMapping::LocalMinde),
             format: RwSignal::new(saved.format),
             max_chroma: RwSignal::new(saved.max_chroma),
             recent: RwSignal::new(recent),
@@ -202,7 +204,11 @@ impl PickerModel {
             format: self.format.get(),
             max_chroma: self.max_chroma.get(),
             library: self.library.get(),
-            tools: self.tools.get(),
+            tools: crate::workspace::ToolSettings {
+                last_tab: self.tab.get(),
+                window: self.window_geometry.get(),
+                ..self.tools.get()
+            },
         }
     }
 
@@ -221,7 +227,11 @@ impl PickerModel {
             format: self.format.get_untracked(),
             max_chroma: self.max_chroma.get_untracked(),
             library: self.library.get_untracked(),
-            tools: self.tools.get_untracked(),
+            tools: crate::workspace::ToolSettings {
+                last_tab: self.tab.get_untracked(),
+                window: self.window_geometry.get_untracked(),
+                ..self.tools.get_untracked()
+            },
         }
     }
 
@@ -508,15 +518,15 @@ impl PickerModel {
 
     /// Reference for derived palettes when the monitor uses the bounded preview path.
     pub fn palette_source(self) -> Oklch {
-        Self::preview_source(self.color(), self.display.get().wide_output)
+        Self::preview_source(self.color(), self.display.get())
     }
 
     pub fn palette_source_untracked(self) -> Oklch {
-        Self::preview_source(self.current(), self.display.get_untracked().wide_output)
+        Self::preview_source(self.current(), self.display.get_untracked())
     }
 
-    fn preview_source(color: Oklch, wide_output: bool) -> Oklch {
-        if !wide_output && !color.in_gamut(Gamut::Srgb) {
+    pub(crate) fn preview_source(color: Oklch, display: crate::display::DisplayStatus) -> Oklch {
+        if display.unavailable(color).is_some() {
             let [_, _, h, a] = color.components();
             if let Ok(mapped) = color
                 .mapped_rgb(Gamut::Srgb, GamutMapping::LocalMinde)

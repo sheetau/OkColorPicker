@@ -396,6 +396,11 @@ impl FrameProbe for Probe {
                 click(hwnd, refs.menu);
             }
             8 if fitted && refs.topmost.window_bounds().is_some() => {
+                assert_eq!(
+                    client.bottom,
+                    self.extent.get()[1] + 30,
+                    "Settings covers the existing client area"
+                );
                 self.stage.set(9);
                 click(hwnd, refs.topmost);
             }

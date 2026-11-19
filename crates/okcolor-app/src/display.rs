@@ -18,6 +18,19 @@ pub struct DisplayStatus {
 }
 
 impl DisplayStatus {
+    pub fn unavailable(self, color: okcolor_core::Oklch) -> Option<&'static str> {
+        use okcolor_core::Gamut;
+        if !color.in_gamut(Gamut::Rec2020) && !color.in_gamut(Gamut::DisplayP3) {
+            Some("unavailable on any device")
+        } else if self.wide_output || color.in_gamut(Gamut::Srgb) {
+            None
+        } else if color.in_gamut(Gamut::DisplayP3) {
+            Some("P3 is unavailable on this monitor")
+        } else {
+            Some("Rec.2020 is unavailable on this monitor")
+        }
+    }
+
     pub fn label(self) -> &'static str {
         match (self.mode, self.wide_output) {
             (DisplayMode::WideColor, true) => "Wide gamut · WCG",

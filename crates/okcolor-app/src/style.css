@@ -63,7 +63,7 @@ field:focus { color: var(--bright); }
 .code-box { flex: 1; min-width: 0; height: var(--tile); align-items: center; }
 .code { flex: 1; min-width: 0; height: var(--tile); padding: 4px var(--gap); box-sizing: border-box; font-family: var(--mono); color: var(--text); white-space: nowrap; overflow-x: hidden; overflow-y: auto; }
 .format-trigger { width: var(--small-tile); min-width: var(--small-tile); height: var(--button); position: relative; }
-.chevron { position: absolute; width: 6px; height: 6px; border-right: 1px solid var(--text); border-bottom: 1px solid var(--text); transform: rotate(45deg); top: 7px; left: 6px; }
+.chevron { width: var(--icon); height: var(--icon); --zgui-stroke: currentColor; pointer-events: none; }
 .copy { position: relative; width: var(--button); min-width: var(--button); height: var(--button); }
 .format-menu, .folder-menu { min-width: var(--menu-width); width: max-content; position: absolute; background-color: var(--surface); padding: 0; gap: 0; overflow-y: auto; box-sizing: border-box; }
 .format-menu { bottom: 28px; right: 28px; z-index: 20; }
@@ -86,7 +86,7 @@ field:focus { color: var(--bright); }
 .menu-button:hover, .swap-colors:hover, .format-trigger:hover, .recent-nav:hover { color: var(--bright); background-color: transparent; }
 .copy:hover { color: var(--bright); }
 .swap-icon { --zgui-fill: currentColor; }
-.chevron, .history-arrow { border-color: currentColor; pointer-events: none; }
+.history-arrow { border-color: currentColor; pointer-events: none; }
 .number:hover { color: var(--bright); }
 .caption-control.caption_hover { background-color: var(--raised); }
 .caption-control.caption_hover.caption_pressed { background-color: #1f1f1f; }
@@ -123,7 +123,11 @@ field:focus { color: var(--bright); }
 .status { min-height: var(--chrome); height: var(--chrome); align-items: center; padding: 0 4px; }
 .status-center { padding: 0 var(--gap); flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; text-align: center; color: var(--text); font-size: var(--text-sm); justify-content: center; }
 .status-icon { width: var(--button); height: var(--button); pointer-events: none; --zgui-stroke: currentColor; }
-.settings control { height: var(--tile); color: var(--text); }
+.settings-overlay { position: relative; flex: 1; min-height: 0; background-color: var(--black); }
+.settings-viewport { flex: 1; min-height: 0; overflow-y: hidden; overflow-x: auto; }
+.settings-thumb { position: absolute; right: 0; width: 10px; background-color: var(--raised); border-radius: 0; }
+.settings-thumb:hover, .settings-thumb.held { background-color: var(--muted); }
+.settings control { height: var(--icon); color: var(--text); }
 .settings control:hover, .settings control.selected { color: var(--bright); background-color: transparent; }
 .menu-line { position: absolute; left: 6px; height: 1px; background-color: currentColor; pointer-events: none; transition: transform 220ms ease, opacity 220ms ease; }
 .menu-line.first { width: 12px; top: 9px; }
@@ -133,12 +137,13 @@ field:focus { color: var(--bright); }
 .menu-button.open .menu-close { opacity: 1; transform: scale(1); }
 .menu-close { opacity: 0; transform: scale(0.7); transition: opacity 220ms ease, transform 220ms ease; position: absolute; width: var(--button); height: var(--button); left: 0; top: 0; pointer-events: none; --zgui-stroke: currentColor; }
 
-.eyedropper { cursor: default; position: absolute; bottom: 0; left: 0; width: var(--icon); height: var(--icon); color: var(--muted); }
+.eyedropper { cursor: pointer; position: absolute; bottom: 0; left: 0; width: var(--icon); height: var(--icon); color: var(--muted); }
 .eyedropper-icon { width: var(--icon); height: var(--icon); --zgui-stroke: currentColor; pointer-events: none; }
 
 .folder-anchor { position: relative; height: var(--icon); z-index: 8; }
 .folder-menu { top: 100%; right: 0; }
-.settings .folder-anchor { height: var(--tile); }
+.settings .folder-anchor { height: var(--icon); }
+.settings .folder-menu control { height: var(--tile); }
 .folder-menu.above { top: auto; bottom: 100%; }
 
 .format-menu control.selected, .folder-menu control.selected, .format-menu control:hover, .folder-menu control:hover { color: var(--bright); background-color: transparent; }
@@ -170,13 +175,14 @@ field:focus { color: var(--bright); }
 .contrast-insert.visible, .contrast-insert:focus-visible { opacity: 1; pointer-events: auto; }
 .contrast-boundary { height: 8px; left: 0; width: 100%; margin-top: -4px; cursor: ns-resize; }
 .divider-line { position: absolute; top: 3px; width: 100%; height: 2px; pointer-events: none; }
-.contrast-boundary:hover .divider-line, .contrast-boundary.active .divider-line { background-color: var(--text); }
+.contrast-boundary:hover .divider-line, .contrast-boundary.active .divider-line { background-color: currentColor; }
 .restore-reference { right: 10px; bottom: 10px; width: var(--tile); height: var(--tile); }
 .restore-reference.at-top { bottom: auto; top: 10px; }
 
 .slot-layer { position: absolute; width: var(--sample); height: var(--sample); }
 .slot-tile { width: 100%; height: 100%; position: relative; }
 .unavailable-slot { position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; }
+.unavailable-cross { width: 100%; height: 100%; --zgui-stroke: currentColor; pointer-events: none; }
 .fallback-pair { position: absolute; left: 74px; top: -1px; width: 45px; gap: 2px; }
 .sub-fallback { top: 23px; }
 .fallback-row { gap: var(--gap); align-items: center; }
@@ -211,6 +217,7 @@ field:focus { color: var(--bright); }
 .page-content { flex-shrink: 0; margin-left: var(--space-x); padding: var(--space-y) 0; gap: var(--group-gap); }
 
 .disconnect { position: relative; width: var(--button); height: var(--button); pointer-events: none; }
+.csp-connect.linked { color: var(--bright); }
 .csp-connect.warning { color: #e4bc8b; }
 
 .number.editing { cursor: text; }
@@ -232,7 +239,12 @@ field:focus { color: var(--bright); }
 .hover-label { gap: 3px; color: var(--muted); font-size: var(--text-sm); }
 .hover-value { font-size: var(--text-sm); font-family: var(--mono); color: var(--muted); }
 
-.folder-chevron { position: relative; width: var(--button); height: var(--tile); }
+.folder-chevron, .format-trigger { position: relative; width: var(--icon); min-width: var(--icon); height: var(--icon); }
+.folder-heading { gap: var(--gap); }
+.format-trigger.open .chevron, .folder-heading.up .chevron { transform: scaleY(-1); }
+.folder-heading.open, .settings .folder-heading.open { color: var(--bright); }
+
+.axis-l.left { right: auto; left: 2px; }
 .add-icon { width: var(--tile); height: var(--tile); --zgui-stroke: currentColor; pointer-events: none; }
 .add-tile { width: var(--tile); height: var(--tile); outline: 1px solid var(--muted); outline-offset: -1px; }
 
