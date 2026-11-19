@@ -7,8 +7,13 @@
     --mono: "Martian Mono", monospace;
     background-color: var(--black); color: var(--text); font-family: "Martian Grotesk", "Martian Grotesk VF", "Segoe UI", sans-serif; font-size: var(--text-md); }
 .app { position: relative; width: 100%; height: 100%; background-color: var(--black); box-sizing: border-box; }
-.update-prompt { width: 100%; height: 100%; align-items: center; justify-content: center; gap: var(--space-y); background-color: var(--black); }
-.update-prompt control { background-color: transparent; }
+.update-prompt { width: 100%; height: 100%; align-items: center; justify-content: center; gap: var(--group-gap); background-color: var(--black); }
+.update-title, .update-actions control { height: var(--icon); min-height: var(--icon); font-size: var(--text-md); line-height: var(--icon); padding: 0; }
+.update-title { color: var(--muted); }
+.update-actions control { width: max-content; display: flex; align-items: center; justify-content: center; }
+.update-actions { align-items: center; gap: var(--gap); }
+.update-actions control, .update-actions control:focus-visible { color: var(--text); border: 0; outline: none; background-color: transparent; }
+.update-actions control:hover, .update-actions control:focus-visible { color: var(--bright); }
 .body { flex-shrink: 0; min-width: 0; padding: var(--space-y) var(--space-x); gap: var(--group-gap); }
 control { cursor: pointer; }
 control:hover { color: var(--bright); }

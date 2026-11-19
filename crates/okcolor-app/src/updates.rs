@@ -58,17 +58,19 @@ impl Updates {
 
 #[component]
 pub(crate) fn UpdatePrompt(state: Updates, model: PickerModel) -> impl IntoView {
-    let first = NodeRef::new();
+    let prompt = NodeRef::new();
     let focus = zgui::reactive::RenderEffect::new(move |_| {
-        first.get()?;
-        first.focus();
+        prompt.get()?;
+        prompt.focus();
         Some(())
     });
     on_cleanup_local(move || drop(focus));
-    view! {column(class="update-prompt") {
-        text {"An update is ready to install"}
-        control(node_ref=first,a11y:label="Install now",tabindex=Focus::Sequential,on:click=move |_|state.choose(true,model)) {"Install now"}
+    view! {column(class="update-prompt",node_ref=prompt,tabindex=Focus::Programmatic) {
+        text(class="update-title") {"An update is ready to install"}
+        column(class="update-actions") {
+        control(a11y:label="Install now",tabindex=Focus::Sequential,on:click=move |_|state.choose(true,model)) {"Install now"}
         control(a11y:label="Install on next launch",tabindex=Focus::Sequential,on:click=move |_|state.choose(false,model)) {"Install on next launch"}
+        }
     }}
 }
 
