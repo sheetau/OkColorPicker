@@ -491,6 +491,7 @@ fn mounted_picker_draws_and_drag_is_one_undo() {
                 assert!(refs.axis_options[0].window_bounds().is_none() && refs.axis_trigger.window_bounds().is_some(),"Escape closes the chart menu first");
                 for (index,axis) in [okcolor_app::workspace::FixedAxis::Lightness,okcolor_app::workspace::FixedAxis::Chroma,okcolor_app::workspace::FixedAxis::Hue].into_iter().enumerate() {
                     click(&mut harness,refs.axis_trigger);
+                    assert_eq!(refs.axis_options[index].text_content(), ["Chroma","Hue","Lightness"][index]);
                     click(&mut harness,refs.axis_options[index]);
                     assert_eq!(model.tools.get_untracked().fixed_axis,axis);
                     click(&mut harness,refs.menu);

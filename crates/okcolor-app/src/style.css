@@ -170,20 +170,22 @@ field:focus { color: var(--bright); }
 .reference-field { position: absolute; right: var(--space-y); width: 60px; height: 16px; }
 .reference-field .grid-field { width: 100%; height: 100%; text-align: right; }
 .contrast-insert, .contrast-boundary, .restore-reference { position: absolute; z-index: 2; }
-.contrast-insert { pointer-events: none; left: 155px; top: -11px; width: var(--tile); height: var(--tile); opacity: 0; background-color: var(--black); color: var(--bright); }
+.contrast-insert { pointer-events: none; left: 155px; top: -11px; width: var(--palette-add); height: var(--palette-add); opacity: 0; background-color: var(--black); color: var(--bright); }
 .contrast-insert.visible, .contrast-insert:focus-visible { opacity: 1; pointer-events: auto; }
 .contrast-boundary { height: 8px; left: 0; width: 100%; margin-top: -4px; cursor: ns-resize; }
 .divider-line { position: absolute; top: 3px; width: 100%; height: 2px; pointer-events: none; }
 .contrast-boundary:hover .divider-line, .contrast-boundary.active .divider-line { background-color: currentColor; }
-.restore-reference { right: 10px; bottom: 10px; width: var(--tile); height: var(--tile); }
+.restore-reference { right: 10px; bottom: 10px; width: var(--palette-add); height: var(--palette-add); }
 .restore-reference.at-top { bottom: auto; top: 10px; }
 
 .slot-layer { position: absolute; width: var(--sample); height: var(--sample); }
 .slot-tile { width: 100%; height: 100%; position: relative; }
-.unavailable-slot { color: #161518; position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; }
-.unavailable-cross { width: 100%; height: 100%; --zgui-stroke: currentColor; pointer-events: none; }
+.unavailable-slot { position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; }
+.unavailable-cross { width: 100%; height: 100%; pointer-events: none; }
 .fallback-pair { position: absolute; left: 74px; top: -1px; width: 45px; gap: 2px; }
 .sub-fallback { top: 23px; }
+.fallback-pair.single { top: 10px; }
+.sub-fallback.single { top: 34px; }
 .fallback-row { gap: var(--gap); align-items: center; }
 .fallback-icon { width: var(--small-tile); height: var(--small-tile); --zgui-stroke: currentColor; pointer-events: none; }
 .fallback-button { color: var(--muted); }
@@ -199,6 +201,9 @@ field:focus { color: var(--bright); }
 .tile-check.visible { opacity: 1; transform: scale(1); }
 
 .contrast-heading { height: var(--icon); min-height: var(--icon); gap: var(--space-y); }
+.contrast-actions { align-items: center; gap: var(--gap); }
+.contrast-actions .generate-button { color: var(--muted); }
+.contrast-actions .generate-button:hover { color: var(--bright); }
 .contrast-heading > .tool-action { padding: 0; font-size: var(--text-md); flex-shrink: 0; }
 .contrast-current, .lc-badge { text-align: center; font-family: var(--mono); box-sizing: border-box; border: 1px solid transparent; }
 .contrast-current { position: absolute; left: 0; width: var(--sample); height: var(--sample); font-size: var(--text-lg); display: flex; align-items: center; justify-content: center; }
@@ -231,15 +236,17 @@ field:focus { color: var(--bright); }
 
 .generated-colors.similar { gap: var(--tile-gap); }
 .variation-heading { height: 10px; min-height: 10px; font-size: var(--text-sm); }
+.fold-dot { width: 2px; height: 2px; background-color: currentColor; }
 .variation-heading control { font-size: var(--text-sm); display: flex; flex-direction: row; align-items: center; gap: var(--gap); }
-.fold-icon { width: 10px; height: 10px; --zgui-stroke: currentColor; pointer-events: none; }
+.fold-icon { display: flex; align-items: center; justify-content: center; width: 10px; height: 10px; --zgui-stroke: currentColor; pointer-events: none; }
 .palette-section { margin-top: var(--space-y); }
 
 .hover-label { gap: 3px; color: var(--muted); font-size: var(--text-sm); }
 .hover-value { font-size: var(--text-sm); font-family: var(--mono); color: var(--muted); }
 
 .folder-chevron, .format-trigger { position: relative; width: var(--icon); min-width: var(--icon); height: var(--icon); }
-.folder-heading { gap: var(--gap); }
+.swatch-library .folder-heading { justify-content: space-between; }
+.settings .folder-heading { gap: var(--gap); }
 .format-trigger.open .chevron, .folder-heading.up .chevron { transform: scaleY(-1); }
 .folder-heading.open, .settings .folder-heading.open { color: var(--bright); }
 
@@ -251,7 +258,7 @@ field:focus { color: var(--bright); }
 .palette-tail { right: 0; }
 
 .palette-insert.interior { margin-left: -10.5px; }
-.palette-tail .add-icon, .palette-insert .add-icon { width: var(--palette-add); height: var(--palette-add); }
+.contrast-insert .add-icon, .restore-reference .add-icon, .palette-tail .add-icon, .palette-insert .add-icon { width: var(--palette-add); height: var(--palette-add); }
 .palette-lock { position: absolute; bottom: var(--gap); left: 50%; margin-left: -2.5px; width: 5px; height: 5px; border-radius: 50%; pointer-events: none; }
 .palette-end-line { position: absolute; right: 0; top: 0; height: 100%; width: var(--tile-gap); background-color: var(--bright); pointer-events: none; }
 .insert-count { text-align: center; font-family: var(--mono); font-size: var(--text-md); pointer-events: none; }

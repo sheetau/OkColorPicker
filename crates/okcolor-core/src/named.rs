@@ -51,7 +51,11 @@ pub(crate) fn palette_anchor(band: usize, entry: usize) -> Oklch {
     DICTIONARY[choices[entry % choices.len()]].sample.color
 }
 
-// CIEDE2000 with the standard unit weighting factors.
+/// Perceptual distance using CIEDE2000 with unit weighting factors.
+pub fn delta_e_2000(first: Oklch, second: Oklch) -> f64 {
+    delta_e(first.lab_d50(), second.lab_d50())
+}
+
 fn delta_e(a: [f64; 3], b: [f64; 3]) -> f64 {
     let [l1, a1, b1] = a;
     let [l2, a2, b2] = b;

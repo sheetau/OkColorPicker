@@ -170,11 +170,12 @@ pub enum FixedAxis {
 }
 
 impl FixedAxis {
-    pub(crate) fn label(self) -> &'static str {
+    /// The menu names the plane by its plotted color distribution.
+    pub(crate) fn view_name(self) -> &'static str {
         match self {
-            Self::Lightness => "Lightness",
-            Self::Chroma => "Chroma",
-            Self::Hue => "Hue",
+            Self::Hue => "Lightness",
+            Self::Lightness => "Chroma",
+            Self::Chroma => "Hue",
         }
     }
 }

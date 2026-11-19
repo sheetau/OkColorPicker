@@ -183,7 +183,7 @@ fn mounted_picker_preserves_wide_color_and_repaints_every_sample_on_display_tran
                                 (bounds.origin.x.0 + offset) as i32,
                                 (bounds.origin.y.0 + offset - 4.0) as i32,
                                 if node != refs.recents && status.unavailable(color).is_some() {
-                                    preview(color, false, GamutMapping::LocalMinde)
+                                    [0.0; 3]
                                 } else {
                                     preview(color, status.wide_output, mapping)
                                 },
@@ -267,8 +267,8 @@ fn mounted_picker_preserves_wide_color_and_repaints_every_sample_on_display_tran
                                     let normal = (f64::from(x + y + 1)
                                         - f64::from(bounds.origin.x.0 + bounds.origin.y.0))
                                         * std::f64::consts::FRAC_1_SQRT_2;
-                                    let distance = (normal - 12.0 * (normal / 12.0).round()).abs();
-                                    rgb = rgb.map(|v| v * (distance - 4.5).clamp(0.0, 1.0));
+                                    let distance = (normal - 11.0 * (normal / 11.0).round()).abs();
+                                    rgb = rgb.map(|v| v * (distance - 3.5).clamp(0.0, 1.0));
                                 }
                                 expect_pixel(&pixels, x, y, rgb, white, "surface");
                                 checked += 1;

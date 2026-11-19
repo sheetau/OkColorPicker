@@ -153,7 +153,14 @@ fn mounted_tabs_edit_recall_adjust_and_restore() {
                 for slot in 0..2 {
                     model.select_slot(slot);
                     let old = model.current();
-                    let wide = okcolor_core::Oklch::new(0.65,0.4,140.0,1.0).unwrap();
+                    let near = okcolor_core::Oklch::new(0.65,0.4,140.0,1.0).unwrap();
+                    model.select(near);
+                    h.settle(32);
+                    let slot_bounds = refs.swatches[usize::from(slot)].window_bounds().unwrap();
+                    let single = refs.fallback_samples[0].window_bounds().unwrap();
+                    assert!(refs.fallback_samples[1].window_bounds().is_none());
+                    assert!((slot_bounds.origin.y.0 + 20.0 - single.origin.y.0 - 10.0).abs() < 1.0);
+                    let wide = okcolor_core::Oklch::new(0.8,0.7,275.0,1.0).unwrap();
                     model.select(wide);
                     h.settle(32);
                     // Verify both hover targets report the exact color the action will select.
@@ -178,12 +185,13 @@ fn mounted_tabs_edit_recall_adjust_and_restore() {
                         let image = captured.last().unwrap();
                         let (x,y) = (b.origin.x.0 as i32, b.origin.y.0 as i32);
                         for (dx,dy) in [(10,0),(0,10),(39,10),(10,39)] {
-                            assert_eq!(image.rgba(x+dx, y+dy), [22,21,24,255], "outer slot frame");
+                            assert_eq!(image.rgba(x+dx, y+dy), [66,66,66,255], "outer slot frame");
                         }
                         let fill = image.rgba(x+10, y+2)[1];
+                        assert_eq!(fill, 0, "unavailable fill");
                         for dx in [10,29] {
                             let diagonal = image.rgba(x+dx,y+10)[1];
-                            assert!(diagonal.abs_diff(21) < fill.abs_diff(21)/2, "fixed-ink cross");
+                            assert!(diagonal.abs_diff(66) < fill.abs_diff(66)/2, "fixed-ink cross");
                         }
                     }
                     if slot==0 {click(&mut h,refs.fallback_samples[0]);}
@@ -221,11 +229,35 @@ fn mounted_tabs_edit_recall_adjust_and_restore() {
                     assert_eq!(image.rgba(x,y), [40,40,40,255], "dark variation edge");
                     assert!(image.rgba(x,y+2)[0] < 9, "dark variation fill");
                 }
+                for folded in [false, true] {
+                    if folded { click(&mut h,refs.group_toggles[0]); }
+                    let toggle=refs.group_toggles[0].window_bounds().unwrap();
+                    let x=toggle.origin.x.0.round() as i32;
+                    let y=(toggle.origin.y.0+(toggle.size.height.0-10.0)/2.0).round() as i32;
+                    let frames=frames.lock().unwrap();
+                    let image=frames.last().unwrap();
+                    for dy in 0..10 {
+                        for dx in 0..10 {
+                            let ink=if folded {(4..6).contains(&dx) && (4..6).contains(&dy)} else {(1..9).contains(&dx) && dy==4};
+                            assert_eq!(image.rgba(x+dx,y+dy)[0]>45,ink,"folded {folded} at {dx}/{dy}, {toggle:?}");
+                        }
+                    }
+                }
+                click(&mut h,refs.group_toggles[0]);
+                fit_page(&mut h,refs);
                 let strip = refs.tools[5].window_bounds().unwrap();
                 let page_height = refs.page_content.window_bounds().unwrap().size.height.0;
                 click(&mut h,refs.library[1]);
                 let folder = refs.folder_menu.window_bounds().expect("mounted swatch menu");
                 let anchor = refs.library[1].window_bounds().unwrap();
+                assert!(anchor.size.width.0==strip.size.width.0,"full-width folder trigger {anchor:?}");
+                {
+                    let frames=frames.lock().unwrap();
+                    let image=frames.last().unwrap();
+                    let right=(anchor.origin.x.0+anchor.size.width.0).round() as i32;
+                    let y=anchor.origin.y.0.round() as i32;
+                    assert!((right-16..right).any(|x|(0..16).any(|dy|image.rgba(x,y+dy)[0]>64)),"chevron at trailing edge");
+                }
                 assert!(folder.size.height.0 >= 40.0 && folder.origin.y.0 + folder.size.height.0 <= anchor.origin.y.0+1.0,"folder {folder:?}, trigger {anchor:?}");
                 let mx=folder.origin.x.0.round() as i32;
                 let my=folder.origin.y.0.round() as i32;
@@ -540,8 +572,53 @@ fn mounted_tabs_edit_recall_adjust_and_restore() {
                 assert_eq!(model.tools.get_untracked().contrast_grid.split, 0);
                 model.undo(); assert_eq!(model.tools.get_untracked().contrast_grid.split,2);
                 model.redo(); h.settle(32); assert_eq!(model.tools.get_untracked().contrast_grid.split,0);
-                click(&mut h, refs.tools[6]);
-                assert_eq!(model.tools.get_untracked().contrast_grid.split, 2);
+                for upper in [true,false] {
+                    if !upper {
+                        let bottom=Point::new(divider.x,CssPx(grid.origin.y.0+grid.size.height.0-1.0));
+                        for (action,at) in [(PointerAction::Pressed,divider),(PointerAction::Moved,bottom),(PointerAction::Released,bottom)] {
+                            tile_pointer(&mut h,action,primary,at);
+                        }
+                        assert_eq!(model.tools.get_untracked().contrast_grid.split,4);
+                    }
+                    let plus=refs.tools[6].window_bounds().unwrap();
+                    let reference=refs.tools[if upper {7} else {4}].window_bounds().unwrap();
+                    assert_eq!((plus.size.width.0,plus.size.height.0),(21.0,21.0));
+                    assert_eq!(plus.origin.y.0<reference.origin.y.0,upper);
+                    let (x,y)=(plus.origin.x.0.round() as i32,plus.origin.y.0.round() as i32);
+                    {
+                        let frames=frames.lock().unwrap();
+                        let image=frames.last().unwrap();
+                        let background=image.rgba(x+5,y+5);
+                        for dy in 5..16 {
+                            for dx in 5..16 {
+                                let ink=(dx==10 && (6..15).contains(&dy)) || (dy==10 && (6..15).contains(&dx));
+                                assert_eq!(image.rgba(x+dx,y+dy)!=background,ink,"restore cross at {dx}/{dy}");
+                            }
+                        }
+                    }
+                    click(&mut h, refs.tools[6]);
+                    assert_eq!(model.tools.get_untracked().contrast_grid.split, 2);
+                }
+                type_text(&mut h,refs.tools[7],"#ffccee");
+                key(&mut h,enter(),Modifiers::NONE);
+                let previous=model.tools.get_untracked();
+                let reset=refs.apca_reset.window_bounds().unwrap();
+                {
+                    let frames=frames.lock().unwrap();
+                    let image=frames.last().unwrap();
+                    let x=(reset.origin.x.0+reset.size.width.0+5.0).round() as i32;
+                    let y=reset.origin.y.0.round() as i32;
+                    let bg=image.rgba(x+5,y+9);
+                    assert_eq!(image.rgba(x+7,y+9),bg);
+                    assert!(image.rgba(x+6,y+9)[0]>bg[0]+40,"compact copy stroke aligned after 5px gap");
+                }
+                click(&mut h,refs.apca_reset);
+                let defaults=okcolor_app::workspace::ToolSettings::default();
+                let settings=model.tools.get_untracked();
+                assert_eq!(settings.contrast_grid,defaults.contrast_grid);
+                assert_eq!(settings.background,defaults.background);
+                model.undo(); h.settle(32);
+                assert_eq!(model.tools.get_untracked(),previous);
                 let saved = model.saved_state_untracked();
                 assert_eq!(SavedState::decode(&saved.encode().unwrap()).unwrap(), saved);
                 if let Ok(directory) = std::env::var("OKCOLOR_TOOLS_CAPTURE_DIR") {

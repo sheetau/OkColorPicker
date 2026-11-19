@@ -303,9 +303,9 @@ fn RelatedGroup(model: PickerModel, refs: PickerRefs, group: usize) -> impl Into
     let heading = crate::tiles::TileHeading::mount();
     view! {column(class="tool-section") {
         row(class="section-heading variation-heading") {
-            control(node_ref=Tooltips::button(NodeRef::new(),title),tabindex=Focus::Sequential,on:click=move |_|model.tools.update(|t|t.folded_groups[group] = !t.folded_groups[group])) {
+            control(node_ref=Tooltips::button(refs.group_toggles[group],title),tabindex=Focus::Sequential,on:click=move |_|model.tools.update(|t|t.folded_groups[group] = !t.folded_groups[group])) {
                 if move ||open.get() {{zgui::elements::vector().document(include_str!("../assets/minus.svg")).class("fold-icon")}}
-                else {{zgui::elements::vector().document(include_str!("../assets/add.svg")).class("fold-icon")}}
+                else {box(class="fold-icon") {box(class="fold-dot") {}}}
                 text {{title}}
             }
             spacer()
@@ -846,7 +846,15 @@ pub(crate) fn Contrast(model: PickerModel, refs: PickerRefs) -> impl IntoView {
             control(class="tool-action",node_ref=Tooltips::button(refs.tools[0],"Switch text and background roles"),tabindex=Focus::Sequential,on:click=move |_|model.edit_contrast(|t|t.contrast_grid.to_text = !t.contrast_grid.to_text)) {{move ||if grid.get().to_text{"To text"}else{"To bg"}}}
             control(class="tool-action",node_ref=Tooltips::button(refs.tools[1],"Switch contrast gamut"),tabindex=Focus::Sequential,on:click=move |_|model.edit_contrast(|t|t.contrast_grid.p3 = !t.contrast_grid.p3)) {{move ||if grid.get().p3{"P3"}else{"sRGB"}}}
             control(class="tool-action",node_ref=Tooltips::button(refs.tools[2],"Switch chroma limit"),tabindex=Focus::Sequential,on:click=move |_|model.edit_contrast(|t|t.contrast_grid.max_chroma = !t.contrast_grid.max_chroma)) {{move ||if grid.get().max_chroma{"Max C"}else{"Current C"}}}
-            CopyButton(text=UnsyncCallback::new(move |()|css()),compact=true,label="Copy generated CSS colors")
+            row(class="contrast-actions") {
+                control(class="generate-button",node_ref=Tooltips::button(refs.apca_reset,"Reset APCA grid"),tabindex=Focus::Sequential,a11y:label="Reset APCA grid",
+                    on:click=move |_|model.edit_contrast(|t|{
+                        let defaults=crate::workspace::ToolSettings::default();
+                        t.contrast_grid=defaults.contrast_grid;
+                        t.background=defaults.background;
+                    })) {{zgui::elements::vector().document(include_str!("../assets/generate.svg")).class("generate-icon")}}
+                CopyButton(text=UnsyncCallback::new(move |()|css()),compact=true,label="Copy generated CSS colors")
+            }
         }
         column(class="contrast-grid",node_ref=region,on:pointer_move=contrast_hover,on:pointer_leave=move |_|hot.set(None)) {
             box(class="grid-padding",style:background-color=move ||Some(hex(grid_reference(&model.tools.get(),grid.get().split>0)))) {}
@@ -911,7 +919,7 @@ pub(crate) fn Contrast(model: PickerModel, refs: PickerRefs) -> impl IntoView {
                         apply=UnsyncCallback::new(move |v|adjust_current_lc(model,grid_reference(&model.tools.get_untracked(),dark),grid.get_untracked().to_text,gamut.get_untracked(),v)))
                 }
                 box(class="reference-field",style:top=move ||{
-                    let g=grid.get();let top=if g.split==0{10}else if g.split==g.levels.len(){40+40*g.split-26}else if dark {20+40*g.split-26}else{20+40*g.split+10};
+                    let g=grid.get();let top=if g.split==0{40+40*g.levels.len()-26}else if g.split==g.levels.len(){10}else if dark {20+40*g.split-26}else{20+40*g.split+10};
                     Some(format!("{top}px"))},style:color=move ||Some(crate::tiles::contrast_ink(grid_reference(&model.tools.get(),dark)).into())) {
                     ReferenceField(model=model,node=if dark{refs.tools[4]}else{refs.tools[7]},dark=Memo::new(move |_|dark))
                 }
@@ -923,7 +931,7 @@ pub(crate) fn Contrast(model: PickerModel, refs: PickerRefs) -> impl IntoView {
                     on:pointer_up=move |cx|{if dragging.get_untracked(){boundary(cx.position.y.0);cx.release_pointer();if let Some(split)=preview_split.get_untracked(){model.edit_contrast(|t|t.contrast_grid.split=split);}preview_split.set(None);dragging.set(false);}},
                     on:pointer_cancel=move |_|{preview_split.set(None);dragging.set(false);}) {box(class="divider-line") {}}
             } else {
-                control(class="restore-reference",class:at-top=move ||grid.get().split>0,node_ref=Tooltips::button(refs.tools[6],"Restore both backgrounds"),style:color=move ||Some(crate::tiles::contrast_ink(grid_reference(&model.tools.get(),grid.get().split>0)).into()),tabindex=Focus::Sequential,a11y:label="Restore both backgrounds",on:click=move |_|model.edit_contrast(|t|{if t.contrast_grid.levels.len()==1{t.contrast_grid.insert(1);}t.contrast_grid.split=t.contrast_grid.levels.len()/2;})) {{zgui::elements::vector().document(include_str!("../assets/add.svg")).class("add-icon")}}
+                control(class="restore-reference",class:at-top=move ||grid.get().split==0,node_ref=Tooltips::button(refs.tools[6],"Restore both backgrounds"),style:color=move ||Some(crate::tiles::contrast_ink(grid_reference(&model.tools.get(),grid.get().split>0)).into()),tabindex=Focus::Sequential,a11y:label="Restore both backgrounds",on:click=move |_|model.edit_contrast(|t|{if t.contrast_grid.levels.len()==1{t.contrast_grid.insert(1);}t.contrast_grid.split=t.contrast_grid.levels.len()/2;})) {{zgui::elements::vector().document(include_str!("../assets/add.svg")).class("add-icon")}}
             }
             for i in move ||0..=grid.get().levels.len(),key=|i:&usize|*i {
                 control(class="contrast-insert",class:visible=move ||hot.get()==Some(i),style:top=move ||Some(format!("{}px",9+i*40)),

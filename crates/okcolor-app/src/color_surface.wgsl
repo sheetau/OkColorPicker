@@ -193,10 +193,10 @@ fn shade(input: ShaderInput, params: Params) -> vec4<f32> {
         // A crossing in either axis marks the exact RGB-boundary neighborhood.
         if params.kind > 0.5 && !in_gamut(lab, params.gamut) {
             // Perpendicular distance to parallel 45-degree strokes, in device pixels.
-            let pitch = 12.0 * input.scale;
+            let pitch = 11.0 * input.scale;
             let normal = dot(input.local, vec2<f32>(0.70710678));
             let distance = abs(fract(normal / pitch + 0.5) - 0.5) * pitch;
-            rgb *= clamp(distance - 5.0 * input.scale + 0.5, 0.0, 1.0);
+            rgb *= clamp(distance - 4.0 * input.scale + 0.5, 0.0, 1.0);
         }
         for (var g = 2; g >= 0; g -= 1) {
             if (g == 1 && params.show_p3 < 0.5) || (g == 2 && params.show_rec2020 < 0.5) { continue; }
@@ -209,7 +209,6 @@ fn shade(input: ShaderInput, params: Params) -> vec4<f32> {
                 // A one-device-pixel contour shares ink across neighboring pixels.
                 let coverage = max(1.0 - abs(distance), 0.0);
                 let inner = g == 0 && params.show_p3 > 0.5;
-                // The outer ink also strokes the frame and cross on unavailable slots.
                 let ink = select(vec3<f32>(22.0, 21.0, 24.0), vec3<f32>(31.0, 29.0, 34.0), inner) / 255.0;
                 rgb = mix(rgb, ink, coverage);
             } else {

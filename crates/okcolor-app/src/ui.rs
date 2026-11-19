@@ -35,6 +35,8 @@ pub struct PickerRefs {
     pub library: [NodeRef; 8],
     pub folder_menu: NodeRef,
     pub tools: [NodeRef; 8],
+    pub group_toggles: [NodeRef; 3],
+    pub apca_reset: NodeRef,
     pub current_lc: [NodeRef; 2],
     pub topmost: NodeRef,
     pub sampling: RwSignal<bool>,
@@ -76,6 +78,8 @@ impl Default for PickerRefs {
             tabs: std::array::from_fn(|_| NodeRef::new()),
             folder_menu: NodeRef::new(),
             library: std::array::from_fn(|_| NodeRef::new()),
+            group_toggles: std::array::from_fn(|_| NodeRef::new()),
+            apca_reset: NodeRef::new(),
             current_lc: std::array::from_fn(|_| NodeRef::new()),
             tools: std::array::from_fn(|_| NodeRef::new()),
             topmost: NodeRef::new(),
@@ -372,13 +376,31 @@ pub(crate) fn SlotSwatch(model: PickerModel, refs: PickerRefs, index: usize) -> 
 fn Fallbacks(model: PickerModel, refs: PickerRefs) -> impl IntoView {
     let color = Memo::new(move |_| model.color());
     let unavailable = Memo::new(move |_| model.display.get().unavailable(color.get()).is_some());
+    let distinct = Memo::new(move |_| {
+        if !unavailable.get() {
+            return false;
+        }
+        let displayed = |method| {
+            let rgb = color.get().mapped_rgb(Gamut::Srgb, method).ok()?;
+            Oklch::from_rgb(
+                rgb.map(|v| (v * 255.0).round() / 255.0),
+                Gamut::Srgb,
+                1.0,
+                0.0,
+            )
+            .ok()
+        };
+        displayed(GamutMapping::LocalMinde)
+            .zip(displayed(GamutMapping::Clip))
+            .is_some_and(|(a, b)| okcolor_core::delta_e_2000(a, b) >= 5.0)
+    });
     view! {
         if move ||unavailable.get() {
-            column(class="fallback-pair",class:sub-fallback=move ||model.selected.get()==1) {
+            column(class="fallback-pair",class:single=move ||!distinct.get(),class:sub-fallback=move ||model.selected.get()==1) {
                 FallbackSample(model=model,color=color,method=GamutMapping::LocalMinde,name="Mapped sRGB",
                     icon=include_str!("../assets/monitor.svg"),node=refs.fallback_samples[0])
-                FallbackSample(model=model,color=color,method=GamutMapping::Clip,name="Clipped sRGB",
-                    icon=include_str!("../assets/cube.svg"),node=refs.fallback_samples[1])
+                if move ||distinct.get() { FallbackSample(model=model,color=color,method=GamutMapping::Clip,name="Clipped sRGB",
+                    icon=include_str!("../assets/cube.svg"),node=refs.fallback_samples[1]) }
             }
         }
     }
@@ -472,7 +494,7 @@ fn GamutPanel(model: PickerModel, refs: PickerRefs) -> impl IntoView {
                         }
                         text(class="axis-c",style:left=move ||Some(format!("{}%",SurfaceKind::Slice.marker(model)[0].clamp(0.01,0.99)*100.0))) {{move ||if model.tools.get().fixed_axis==crate::workspace::FixedAxis::Hue {"C"} else {"H"}}}
                     }
-                    for axis in move ||[model.tools.get().fixed_axis],key=|axis:&crate::workspace::FixedAxis|axis.label() {
+                    for axis in move ||[model.tools.get().fixed_axis],key=|axis:&crate::workspace::FixedAxis|axis.view_name() {
                         ColorControl(model=model,kind=axis.bar(),node=refs.bars[axis.bar() as usize-1])
                     }
                     if move ||model.tools.get().show_alpha_slider {ColorControl(model=model,kind=SurfaceKind::Alpha,node=refs.bars[3])}
@@ -618,15 +640,15 @@ fn Settings(model: PickerModel, refs: PickerRefs) -> impl IntoView {
             column(class="settings-group") {
             column(class="folder-anchor") {
                 control(class="setting-row folder-heading",class:up=move ||menu.get() && above(),class:open=move ||menu.get(),node_ref=trigger,tabindex=Focus::Sequential,
-                    a11y:label="Gamut chart fixed axis",on:click=move |_|menu.update(|v| *v = !*v)) {
-                    text {"Gamut"} spacer() text {{move ||model.tools.get().fixed_axis.label()}}
+                    a11y:label="Gamut chart view",on:click=move |_|menu.update(|v| *v = !*v)) {
+                    text {"Gamut"} spacer() text {{move ||model.tools.get().fixed_axis.view_name()}}
                     box(class="folder-chevron") {{zgui::elements::vector().document(include_str!("../assets/chevron.svg")).class("chevron")}}
                 }
                 if move ||menu.get() {
                     column(class="folder-menu",class:above=above,node_ref=popup) {
-                        for axis in move ||[FixedAxis::Lightness,FixedAxis::Chroma,FixedAxis::Hue],key=|axis:&FixedAxis|axis.label() {
+                        for axis in move ||[FixedAxis::Hue,FixedAxis::Lightness,FixedAxis::Chroma],key=|axis:&FixedAxis|axis.view_name() {
                             control(node_ref=refs.axis_options[axis.bar() as usize-1],class:selected=move ||model.tools.get().fixed_axis==axis,tabindex=Focus::Sequential,
-                                on:click=move |_|{model.tools.update(|t|t.fixed_axis=axis);menu.set(false);trigger.focus();}) {text {{axis.label()}}}
+                                on:click=move |_|{model.tools.update(|t|t.fixed_axis=axis);menu.set(false);trigger.focus();}) {text {{axis.view_name()}}}
                         }
                     }
                 }

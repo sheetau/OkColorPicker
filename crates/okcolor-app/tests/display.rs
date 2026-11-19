@@ -67,7 +67,7 @@ fn availability_checks_each_supported_gamut_before_marking_a_color_unavailable()
     for display in [sdr, wide] {
         assert_eq!(
             display.unavailable(outside),
-            Some("unavailable on any device")
+            Some("Unavailable on any device")
         );
     }
 }

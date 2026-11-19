@@ -10,8 +10,9 @@ when its controls exceed the available height.
 
 ## Picker
 
-The chart holds one component constant. Choose L, C or H in Settings to change
-the fixed component and its slider. Hold Shift to snap to a visible gamut boundary
+The chart holds one component constant. In Settings, **Lightness** shows the cone (C × L),
+**Hue** the band (H × L), and **Chroma** the mountain profile (H × C).
+The slider edits the component held constant in that view. Hold Shift to snap to a visible gamut boundary
 on the chart or slider. **Always snap to gamut boundaries** reverses the Shift
 behavior. Settings controls the gamut boundaries, the alpha slider and
 **Always on top**. Press **O** or **R** outside a text
@@ -21,8 +22,9 @@ uncommitted field edit and releases text focus. The eyedropper
 A floating chip previews the sampled pixel and its six-digit HEX value.
 A left click selects the color and consumes the click. Right-click or Escape cancels sampling.
 
-An unavailable slot shows a fixed-color frame and cross over the mapped fill. The active
-slot offers mapped and clipped sRGB samples beside it. Click a sample to adopt that color
+An unavailable slot shows a gray frame and cross on black. The active slot shows
+the mapped sRGB sample and adds the clipped sample when their displayed colors
+differ by at least 5 CIEDE2000 units. Click a sample to adopt that color
 as one undoable edit. Until then the code fields and Harmony use the mapped
 preview. Right-click the original slot to copy the stored color in the selected
 output format.
@@ -70,7 +72,9 @@ The generated palette stays in the current session.
 
 ## APCA
 
-Edit an opaque reference color and the target Lc for each level.
+Edit an opaque reference color and the target Lc for each level. The reset button
+beside Copy restores the default levels, split, reference colors and grid options
+in one undoable edit.
 **To text** generates backgrounds for the reference text. **To background**
 generates text for the reference background. Choose sRGB or Display P3.
 **Current C** limits chroma to the selected color's chroma and **Max C**

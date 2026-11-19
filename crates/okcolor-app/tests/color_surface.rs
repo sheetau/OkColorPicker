@@ -237,8 +237,8 @@ fn gpu_surfaces_match_f64_mapping_and_working_gamut_mask() {
                 };
                 if (1.0..=3.0).contains(&params.kind) && !source.in_gamut(Gamut::DisplayP3) {
                     let normal = f64::from(x + y + 1) * std::f64::consts::FRAC_1_SQRT_2;
-                    let distance = (normal - 12.0 * (normal / 12.0).round()).abs();
-                    expected = expected.map(|v| v * (distance - 4.5).clamp(0.0, 1.0));
+                    let distance = (normal - 11.0 * (normal / 11.0).round()).abs();
+                    expected = expected.map(|v| v * (distance - 3.5).clamp(0.0, 1.0));
                 }
                 if params.kind == 0.0 {
                     let col = (f64::from(if params.fixed_axis == 0.0 {
