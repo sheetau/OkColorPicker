@@ -1,3 +1,14 @@
+# Local assistant instructions and project records
+AGENTS.md
+agents.md
+AGENTS.override.md
+CLAUDE.md
+.agents/
+.codex/
+.claude/
+.cursor/
+/.dashboard/
+
 # Private planning and local artifacts
 /plan.md
 /concepts
