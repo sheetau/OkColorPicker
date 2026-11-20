@@ -86,7 +86,12 @@ as anchors. Each generation compares 64 OKLCH candidates across eight compositio
 including tonal, pastel, accent and multihue arrangements. Starting colors are
 sampled from occupied bands in the bundled named-color dictionary. Selection
 accounts for near duplicates, neighboring colors, lightness range, accent strength
-and the last eight generated palettes. Locked colors retain their positions and
+and the last eight generated palettes. With locks, the generator compares the
+signed OKLab differences between each pair of locked slots and the corresponding
+roles in each composition. Nearby locks influence each free slot more strongly.
+The two best candidates per composition undergo three rounds of adjustments to
+free colors. An adjustment must improve the score of the entire palette.
+Locked colors retain their positions and
 original components, including alpha. New colors fit the selected working gamut.
 
 Use the adjustment button to the left of Generate to edit the current palette.

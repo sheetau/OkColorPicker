@@ -120,6 +120,9 @@ fn palette_generation_timing() {
     let initial = generator.generate(&[], Gamut::DisplayP3, 0);
     let cold = now.elapsed();
     let mut palette = initial.repeat(2);
+    for i in [0, 4, 9] {
+        palette[i].1 = true;
+    }
     let mut times = Vec::new();
     for seed in 0..100 {
         let start = Instant::now();
@@ -128,7 +131,7 @@ fn palette_generation_timing() {
     }
     times.sort();
     eprintln!(
-        "first 5-color palette: {cold:?}, warm 10-color median: {:?}, p95: {:?}",
+        "first 5-color palette: {cold:?}, warm 10-color median (three locks): {:?}, p95: {:?}",
         times[50], times[94]
     );
 }

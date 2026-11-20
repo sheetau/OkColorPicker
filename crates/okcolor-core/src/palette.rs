@@ -100,7 +100,11 @@ fn distance(a: Lab, b: Lab) -> f64 {
 
 struct Candidate {
     slots: Vec<Slot>,
-    generated: Vec<Lab>,
+    labs: Vec<Lab>,
+    targets: Vec<Lab>,
+    lock_mismatch: f64,
+    span: f64,
+    accent: Option<usize>,
     style: usize,
     quality: f64,
 }
@@ -112,11 +116,7 @@ impl Composition {
         let [anchor_l, anchor_c, anchor_h, _] = anchor.components();
         let phase = rng.next() as usize % self.hues.len();
         let hue_scale = rng.range(0.85, 1.15);
-        let accent_start = rng.next() as usize % count;
-        let accent = (0..count)
-            .map(|offset| (accent_start + offset) % count)
-            .find(|&i| !old[i].1)
-            .expect("at least one unlocked slot");
+        let accent = rng.next() as usize % count;
         let offset = |i: usize| {
             let family = if self.accent && i == accent {
                 self.hues.len() - 1
@@ -162,15 +162,9 @@ impl Composition {
         let reverse = rng.unit() < 0.5;
         let mut slots = Vec::with_capacity(count);
         let mut labs = Vec::with_capacity(count);
-        let mut generated = Vec::new();
-        let mut min_l: f64 = 1.0;
-        let mut max_l: f64 = 0.0;
-        let mut accent_c = 0.0;
-        let mut others_c = 0.0;
+        let mut roles = Vec::with_capacity(count);
         for (i, &(original, locked)) in old.iter().enumerate() {
-            let color = if locked {
-                original
-            } else {
+            let role = {
                 let rank = (i + start) % count;
                 let t = rank as f64 / (count - 1).max(1) as f64;
                 let t = if reverse { 1.0 - t } else { t };
@@ -188,50 +182,140 @@ impl Composition {
                 };
                 Oklch::new(l, limit * saturation, h, 1.0).unwrap()
             };
-            slots.push((color, locked));
-            // Extreme out-of-gamut locks stay intact. Assess their visible contribution.
+            roles.push(role.oklab());
             let visible = if locked {
-                color.reduce_chroma(gamut)
+                original.reduce_chroma(gamut)
             } else {
-                color
+                role
             };
-            let lab = visible.oklab();
-            if !locked {
-                generated.push(lab);
+            labs.push(visible.oklab());
+            slots.push((if locked { original } else { role }, locked));
+        }
+        let (targets, lock_mismatch) = lock_targets(&roles, &labs, old);
+        let mut candidate = Candidate {
+            slots,
+            labs,
+            targets,
+            lock_mismatch,
+            span,
+            accent: self.accent.then_some(accent),
+            style,
+            quality: 0.0,
+        };
+        candidate.quality = candidate.score();
+        candidate
+    }
+}
+
+/// Compare signed lightness and opponent-axis differences for every pair of locks.
+/// Each free role then follows the offsets of nearby locks more closely than distant ones.
+fn lock_targets(roles: &[Lab], visible: &[Lab], slots: &[Slot]) -> (Vec<Lab>, f64) {
+    let offsets: Vec<(usize, Lab)> = slots
+        .iter()
+        .enumerate()
+        .filter(|(_, slot)| slot.1)
+        .map(|(i, _)| (i, std::array::from_fn(|k| visible[i][k] - roles[i][k])))
+        .collect();
+    if offsets.is_empty() {
+        return (Vec::new(), 0.0);
+    }
+    let mut mismatch = 0.0;
+    let mut pairs = 0;
+    for (i, &(_, offset)) in offsets.iter().enumerate() {
+        for &(_, earlier) in &offsets[..i] {
+            // The difference of offsets is the error in the template's lock-to-lock vector.
+            mismatch += distance(offset, earlier);
+            pairs += 1;
+        }
+    }
+    let targets = roles
+        .iter()
+        .enumerate()
+        .map(|(i, role)| {
+            let mut shift = [0.0; 3];
+            let mut weight = 0.0;
+            for &(j, offset) in &offsets {
+                let w = 1.0 / (1.0 + i.abs_diff(j) as f64).powi(2);
+                for k in 0..3 {
+                    shift[k] += w * offset[k];
+                }
+                weight += w;
             }
-            labs.push(lab);
+            std::array::from_fn(|k| role[k] + shift[k] / weight)
+        })
+        .collect();
+    (targets, mismatch / pairs.max(1) as f64)
+}
+
+impl Candidate {
+    fn score(&self) -> f64 {
+        let count = self.slots.len();
+        let duplicate_threshold = 0.14 / (count as f64).sqrt();
+        let mut min_l: f64 = 1.0;
+        let mut max_l: f64 = 0.0;
+        let mut total_c = 0.0;
+        let mut relation_error = 0.0;
+        let mut free = 0;
+        let mut cost = 2.5 * self.lock_mismatch;
+        for (i, &lab) in self.labs.iter().enumerate() {
             min_l = min_l.min(lab[0]);
             max_l = max_l.max(lab[0]);
-            let chroma = visible.components()[1];
-            if i == accent {
-                accent_c = chroma;
-            } else {
-                others_c += chroma;
+            total_c += lab[1].hypot(lab[2]);
+            if !self.slots[i].1 && !self.targets.is_empty() {
+                relation_error += distance(lab, self.targets[i]);
+                free += 1;
             }
-        }
-        let mut duplicates = 0.0;
-        let mut adjacent = 0.0;
-        for i in 0..count {
-            for j in 0..i {
-                if old[i].1 && old[j].1 {
+            for (j, &earlier) in self.labs[..i].iter().enumerate() {
+                if self.slots[i].1 && self.slots[j].1 {
                     continue;
                 }
-                let d = distance(labs[i], labs[j]);
-                duplicates += (1.0 - d / (0.14 / (count as f64).sqrt())).max(0.0);
+                let d = distance(lab, earlier);
+                cost += 2.0 * (1.0 - d / duplicate_threshold).max(0.0);
                 if i == j + 1 {
-                    adjacent += (0.09 - d).max(0.0);
+                    cost += (0.09 - d).max(0.0);
                 }
             }
         }
-        let mut cost = 2.0 * duplicates + adjacent + 2.0 * ((max_l - min_l) - span).abs();
-        if self.accent && count > 1 {
-            cost += 3.0 * (others_c / (count - 1) as f64 + 0.03 - accent_c).max(0.0);
+        cost += 2.0 * (max_l - min_l - self.span).abs() + 4.0 * relation_error / free.max(1) as f64;
+        if let Some(i) = self.accent
+            && count > 1
+        {
+            let accent = self.labs[i][1].hypot(self.labs[i][2]);
+            cost += 3.0 * ((total_c - accent) / (count - 1) as f64 + 0.03 - accent).max(0.0);
         }
-        Candidate {
-            slots,
-            generated,
-            style,
-            quality: 1.0 / (1.0 + cost),
+        1.0 / (1.0 + cost)
+    }
+
+    fn refine(&mut self, gamut: Gamut, rng: &mut Random) {
+        if self.targets.is_empty() {
+            return;
+        }
+        // Coordinate search on the strongest candidates. Score the whole palette after
+        // each trial so that fitting a lock cannot silently introduce a duplicate.
+        for radius in [0.08, 0.04, 0.02] {
+            for i in 0..self.slots.len() {
+                if self.slots[i].1 {
+                    continue;
+                }
+                let start = self.labs[i];
+                let toward: Lab = std::array::from_fn(|k| (start[k] + self.targets[i][k]) * 0.5);
+                let jitter: Lab = std::array::from_fn(|k| start[k] + rng.range(-radius, radius));
+                for mut lab in [toward, jitter] {
+                    lab[0] = lab[0].clamp(0.02, 0.98);
+                    let hue = self.slots[i].0.components()[2];
+                    let trial = Oklch::from_oklab(lab, 1.0, hue)
+                        .unwrap()
+                        .reduce_chroma(gamut);
+                    let previous = std::mem::replace(&mut self.labs[i], trial.oklab());
+                    let quality = self.score();
+                    if quality > self.quality {
+                        self.quality = quality;
+                        self.slots[i].0 = trial;
+                    } else {
+                        self.labs[i] = previous;
+                    }
+                }
+            }
         }
     }
 }
@@ -269,13 +353,19 @@ impl PaletteGenerator {
                 .map(|_| composition.propose(old, gamut, &mut rng, style))
                 .collect();
             candidates.sort_by(|a, b| b.quality.total_cmp(&a.quality));
-            for candidate in candidates.into_iter().take(2) {
+            for mut candidate in candidates.into_iter().take(2) {
+                candidate.refine(gamut, &mut rng);
+                let generated: Vec<Lab> = candidate
+                    .labs
+                    .iter()
+                    .zip(&candidate.slots)
+                    .filter_map(|(&lab, slot)| (!slot.1).then_some(lab))
+                    .collect();
                 let mut novelty: f64 = 1.0;
                 let mut repeats = 0;
                 for (prior_style, previous) in &self.recent {
                     let dissimilarity = 0.5
-                        * (nearest_mean(&candidate.generated, previous)
-                            + nearest_mean(previous, &candidate.generated));
+                        * (nearest_mean(&generated, previous) + nearest_mean(previous, &generated));
                     novelty = novelty.min((dissimilarity / 0.16).clamp(0.025, 1.0));
                     repeats += usize::from(*prior_style == style);
                 }
@@ -283,15 +373,70 @@ impl PaletteGenerator {
                     candidate.quality.powi(4) * novelty.powi(2) / (1 + repeats * repeats) as f64;
                 total_weight += weight;
                 if rng.unit() * total_weight < weight {
-                    selected = Some(candidate);
+                    selected = Some((candidate, generated));
                 }
             }
         }
-        let chosen = selected.expect("at least one weighted candidate");
+        let (chosen, generated) = selected.expect("at least one weighted candidate");
         if self.recent.len() == 8 {
             self.recent.pop_front();
         }
-        self.recent.push_back((chosen.style, chosen.generated));
+        self.recent.push_back((chosen.style, generated));
         chosen.slots
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn lock_order_changes_the_fit_even_with_the_same_mean_color() {
+        let roles = [
+            [0.25, -0.08, 0.05],
+            [0.38, 0.0, 0.04],
+            [0.53, 0.0, 0.0],
+            [0.68, 0.0, -0.04],
+            [0.82, 0.1, -0.1],
+        ];
+        let mut visible = roles;
+        let mut slots = roles.map(|lab| (Oklch::from_oklab(lab, 1.0, 0.0).unwrap(), false));
+        slots[0].1 = true;
+        slots[4].1 = true;
+        let (exact, cost) = lock_targets(&roles, &visible, &slots);
+        assert_eq!(exact, roles);
+        assert_eq!(cost, 0.0);
+        visible.swap(0, 4);
+        let (reversed, cost) = lock_targets(&roles, &visible, &slots);
+        assert!(cost > 0.5);
+        assert!(reversed[1][0] > roles[1][0] && reversed[3][0] < roles[3][0]);
+        assert!(reversed[1][1] > roles[1][1] && reversed[3][2] > roles[3][2]);
+    }
+
+    #[test]
+    fn search_improves_locked_compositions_and_keeps_the_scored_colors() {
+        let mut rng = Random(42);
+        let slots = [
+            (Oklch::new(0.2, 0.03, 10.0, 0.4).unwrap(), true),
+            (Oklch::new(0.5, 0.0, 40.0, 1.0).unwrap(), false),
+            (Oklch::new(0.8, 0.23, 110.0, 1.0).unwrap(), true),
+            (Oklch::new(0.5, 0.0, 40.0, 1.0).unwrap(), false),
+            (Oklch::new(0.53, 0.18, 270.0, 1.0).unwrap(), true),
+        ];
+        for (style, composition) in STYLES.iter().enumerate() {
+            let mut candidate = composition.propose(&slots, Gamut::DisplayP3, &mut rng, style);
+            let initial = candidate.quality;
+            candidate.refine(Gamut::DisplayP3, &mut rng);
+            assert!(candidate.quality > initial);
+            assert_eq!(candidate.quality, candidate.score());
+            for (i, &slot) in candidate.slots.iter().enumerate() {
+                if slot.1 {
+                    assert_eq!(slot, slots[i]);
+                } else {
+                    assert!(slot.0.in_gamut(Gamut::DisplayP3));
+                    assert_eq!(slot.0.oklab(), candidate.labs[i]);
+                }
+            }
+        }
     }
 }
