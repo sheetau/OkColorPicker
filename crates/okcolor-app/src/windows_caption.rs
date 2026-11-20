@@ -47,6 +47,7 @@ struct BridgeState {
     content: Cell<Option<(PickerRefs, PickerModel)>>,
     frames: Cell<u64>,
     trace: bool,
+    opening_geometry: Option<WindowGeometry>,
 }
 
 struct NativeCaption {
@@ -56,7 +57,7 @@ struct NativeCaption {
 }
 
 impl CaptionBridge {
-    pub fn new(trace: bool) -> Self {
+    pub fn new(trace: bool, opening_geometry: Option<WindowGeometry>) -> Self {
         Self(Rc::new(BridgeState {
             buttons: Cell::new(None),
             visual: Cell::new(None),
@@ -64,6 +65,7 @@ impl CaptionBridge {
             content: Cell::new(None),
             frames: Cell::new(0),
             trace,
+            opening_geometry,
         }))
     }
 
@@ -111,6 +113,9 @@ impl CaptionBridge {
             } else {
                 // SAFETY: gpu retains the live window; the Hook checks the UI thread.
                 let hook = unsafe { Hook::install(hwnd) }.map_err(native_error)?;
+                if let Some(geometry) = bridge.0.opening_geometry {
+                    hook.restore_while_hidden(geometry);
+                }
                 *caption = Some(NativeCaption {
                     hook,
                     _surface: gpu,
@@ -154,20 +159,11 @@ impl FrameProbe for CaptionBridge {
                 let state = &native.hook.state;
                 if state.model.get().is_none() {
                     state.model.set(Some(model));
-                    state.restore.set(model.window_geometry.get_untracked());
-                    if state.restore.get().is_some() {
-                        unsafe {
-                            PostMessageW(native.hook.hwnd, RESTORE_PLACEMENT, 0, 0);
-                        }
-                    } else {
-                        unsafe {
-                            state.remember(native.hook.hwnd);
-                        }
+                    unsafe {
+                        state.remember(native.hook.hwnd);
                     }
                 }
-                if state.restore.get().is_none() {
-                    native.hook.fit_content(refs, model);
-                }
+                native.hook.fit_content(refs, model);
             }
         }
         if self.0.trace {
@@ -194,7 +190,7 @@ struct State {
     visual: Cell<Option<RwSignal<CaptionVisual>>>,
     alive: Cell<bool>,
     model: Cell<Option<PickerModel>>,
-    restore: Cell<Option<WindowGeometry>>,
+    maximize_on_show: Cell<bool>,
     desired_client: Cell<i32>,
     resizing: Cell<bool>,
     plot_resize: Cell<Option<(PickerModel, i32)>>,
@@ -205,7 +201,7 @@ impl State {
         let Some(model) = self.model.get() else {
             return;
         };
-        if self.restore.get().is_some() {
+        if self.maximize_on_show.get() {
             return;
         }
         unsafe {
@@ -253,9 +249,57 @@ struct Hook {
 
 const SUBCLASS_ID: usize = 1;
 const FIT_CONTENT: u32 = WM_APP + 0x3a2;
-const RESTORE_PLACEMENT: u32 = WM_APP + 0x3a3;
 
 impl Hook {
+    fn restore_while_hidden(&self, g: WindowGeometry) {
+        let hwnd = self.hwnd;
+        // SAFETY: the hook owns a subclass on this thread. The surface is still hidden.
+        unsafe {
+            let mut monitor = MONITORINFO {
+                cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+                ..Default::default()
+            };
+            // Select the screen under the saved title bar, including windows
+            // whose top-left corner was intentionally placed off screen.
+            let title = RECT {
+                left: g.x,
+                top: g.y,
+                right: g.x.saturating_add(g.width.ceil() as i32),
+                bottom: g.y.saturating_add(32),
+            };
+            let handle = MonitorFromRect(&title, MONITOR_DEFAULTTONEAREST);
+            if GetMonitorInfoW(handle, &mut monitor) != 0 {
+                let work = monitor.rcWork;
+                let x = if title.right < work.left.saturating_add(48) {
+                    work.left
+                } else {
+                    g.x.min(work.right.saturating_sub(48).max(work.left))
+                };
+                let y = g.y.clamp(
+                    work.top.saturating_sub(8),
+                    work.bottom.saturating_sub(32).max(work.top),
+                );
+                let flags = SWP_NOACTIVATE | SWP_NOZORDER;
+                SetWindowPos(hwnd, std::ptr::null_mut(), x, y, 0, 0, flags | SWP_NOSIZE);
+                let scale = GetDpiForWindow(hwnd) as f32 / 96.0;
+                let mut outer = RECT::default();
+                let mut client = RECT::default();
+                GetWindowRect(hwnd, &mut outer);
+                GetClientRect(hwnd, &mut client);
+                SetWindowPos(
+                    hwnd,
+                    std::ptr::null_mut(),
+                    x,
+                    y,
+                    (g.width * scale).round() as i32 + outer.right - outer.left - client.right,
+                    (g.height * scale).round() as i32 + outer.bottom - outer.top - client.bottom,
+                    flags,
+                );
+                self.state.maximize_on_show.set(g.maximized);
+            }
+        }
+    }
+
     fn fit_content(&self, refs: PickerRefs, model: PickerModel) {
         if refs.settings_content.window_bounds().is_some() {
             self.state.desired_client.set(0);
@@ -507,60 +551,10 @@ unsafe extern "system" fn caption_proc(
     unsafe {
         let state = &*(data as *const State);
         match message {
-            RESTORE_PLACEMENT => {
-                if let Some(g) = state.restore.get() {
-                    let mut monitor = MONITORINFO {
-                        cbSize: std::mem::size_of::<MONITORINFO>() as u32,
-                        ..Default::default()
-                    };
-                    // Select the screen under the saved title bar, including windows
-                    // whose top-left corner was intentionally placed off screen.
-                    let title = RECT {
-                        left: g.x,
-                        top: g.y,
-                        right: g.x.saturating_add(g.width.ceil() as i32),
-                        bottom: g.y.saturating_add(32),
-                    };
-                    let handle = MonitorFromRect(&title, MONITOR_DEFAULTTONEAREST);
-                    if GetMonitorInfoW(handle, &mut monitor) != 0 {
-                        let work = monitor.rcWork;
-                        let x = if title.right < work.left.saturating_add(48) {
-                            work.left
-                        } else {
-                            g.x.min(work.right.saturating_sub(48).max(work.left))
-                        };
-                        let y = g.y.clamp(
-                            work.top.saturating_sub(8),
-                            work.bottom.saturating_sub(32).max(work.top),
-                        );
-                        let flags = SWP_NOACTIVATE | SWP_NOZORDER;
-                        SetWindowPos(hwnd, std::ptr::null_mut(), x, y, 0, 0, flags | SWP_NOSIZE);
-                        let scale = GetDpiForWindow(hwnd) as f32 / 96.0;
-                        let mut outer = RECT::default();
-                        let mut client = RECT::default();
-                        GetWindowRect(hwnd, &mut outer);
-                        GetClientRect(hwnd, &mut client);
-                        SetWindowPos(
-                            hwnd,
-                            std::ptr::null_mut(),
-                            x,
-                            y,
-                            (g.width * scale).round() as i32 + outer.right
-                                - outer.left
-                                - client.right,
-                            (g.height * scale).round() as i32 + outer.bottom
-                                - outer.top
-                                - client.bottom,
-                            flags,
-                        );
-                        if g.maximized {
-                            ShowWindow(hwnd, SW_MAXIMIZE);
-                        }
-                    }
-                    state.restore.set(None);
-                    state.remember(hwnd);
-                }
-                return 0;
+            WM_SHOWWINDOW if wparam != 0 && state.maximize_on_show.replace(false) => {
+                // Keep the normal restore bounds on the saved monitor. Maximize during
+                // the first reveal, when zgui has a frame ready for this window.
+                ShowWindow(hwnd, SW_MAXIMIZE);
             }
             WM_WINDOWPOSCHANGED => state.remember(hwnd),
             WM_ENTERSIZEMOVE => state.resizing.set(true),

@@ -598,7 +598,7 @@ fn native_pointer_wheel_key_and_resize_reach_the_picker() {
     let state = Rc::new(Cell::new(None));
     let mounted = state.clone();
     let presented = Rc::new(Cell::new([0; 2]));
-    let caption = okcolor_app::windows_caption::CaptionBridge::new(false);
+    let caption = okcolor_app::windows_caption::CaptionBridge::new(false, None);
     let probe = Rc::new(Probe {
         caption: caption.clone(),
         state,

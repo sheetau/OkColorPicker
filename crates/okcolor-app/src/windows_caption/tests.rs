@@ -98,6 +98,49 @@ unsafe extern "system" fn observe(
 }
 
 #[test]
+fn saved_geometry_is_applied_before_show_and_survives_maximize_restore() {
+    for maximized in [false, true] {
+        let window = TestWindow::new();
+        // SAFETY: this test owns the HWND on the current thread.
+        unsafe {
+            let hwnd = window.hwnd;
+            let hook = Hook::install(hwnd).unwrap();
+            let mut monitor = MONITORINFO {
+                cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+                ..Default::default()
+            };
+            let screen = MonitorFromRect(&RECT::default(), MONITOR_DEFAULTTONEAREST);
+            assert_ne!(GetMonitorInfoW(screen, &mut monitor), 0);
+            let saved = WindowGeometry {
+                x: monitor.rcWork.left + 43,
+                y: monitor.rcWork.top + 67,
+                width: 351.0,
+                height: 421.0,
+                maximized,
+            };
+            hook.restore_while_hidden(saved);
+            assert_eq!(IsWindowVisible(hwnd), 0);
+            let mut outer = RECT::default();
+            assert_ne!(GetWindowRect(hwnd, &mut outer), 0);
+            assert_eq!((outer.left, outer.top), (saved.x, saved.y));
+            let (client, dpi, _) = window_state(hwnd).unwrap();
+            let scale = dpi as f32 / 96.0;
+            assert_eq!(
+                client,
+                [saved.width, saved.height].map(|v| (v * scale).round() as i32)
+            );
+            ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+            assert_eq!(IsZoomed(hwnd) != 0, maximized);
+            if maximized {
+                ShowWindow(hwnd, SW_RESTORE);
+            }
+            assert_ne!(GetWindowRect(hwnd, &mut outer), 0);
+            assert_eq!((outer.left, outer.top), (saved.x, saved.y));
+        }
+    }
+}
+
+#[test]
 fn native_hit_test_uses_actual_layout_negative_screen_coordinates_and_invalidates_stale_layout() {
     let window = TestWindow::new();
     // SAFETY: window outlives the hook on this thread.

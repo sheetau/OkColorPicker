@@ -62,7 +62,8 @@ fn run() -> Result<(), zgui::Error> {
     let display = okcolor_app::display::DisplayBridge::default();
     let renderer = graphics::factory_with_display(display.clone());
     #[cfg(target_os = "windows")]
-    let caption = okcolor_app::windows_caption::CaptionBridge::new(trace);
+    let caption =
+        okcolor_app::windows_caption::CaptionBridge::new(trace, startup.state.tools.window);
     #[cfg(target_os = "windows")]
     let renderer = caption.wrap_renderer(renderer);
     let (width, height) = startup
