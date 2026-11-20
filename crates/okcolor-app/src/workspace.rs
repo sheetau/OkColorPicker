@@ -123,6 +123,12 @@ fn valid_name(name: &str) -> bool {
     !name.trim().is_empty() && name.chars().count() <= 64 && !name.chars().any(char::is_control)
 }
 impl Library {
+    pub fn swatches_in(&self, folder: Option<u64>) -> impl Iterator<Item = &Swatch> {
+        self.swatches
+            .iter()
+            .filter(move |swatch| swatch.folder == folder)
+    }
+
     pub fn validate(&self) -> Result<(), &'static str> {
         if self.swatches.len() > 256 || self.folders.len() > 32 {
             return Err("Library capacity exceeded");

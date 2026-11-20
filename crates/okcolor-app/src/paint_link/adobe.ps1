@@ -1,4 +1,5 @@
-# Each line comes from the picker and contains only integer RGB triples and nulls.
+# The picker sends one UTF-8 JSON job per line. File paths can contain Unicode.
+[Console]::InputEncoding = [Text.UTF8Encoding]::new($false)
 $ErrorActionPreference = 'Stop'
 $program = $env:OKCOLOR_ADOBE_APP
 $script = $env:OKCOLOR_ADOBE_SCRIPT
@@ -27,7 +28,7 @@ while ($null -ne ($line = [Console]::ReadLine())) {
             if ($null -eq $application) { [Console]::WriteLine('WAIT'); continue }
         }
         $job = ConvertFrom-Json -InputObject $line
-        if ($null -ne $job.slots[0] -or $null -ne $job.slots[1] -or $job.palette) {
+        if ($null -ne $job.slots[0] -or $null -ne $job.slots[1] -or $job.palette -or $job.swatchFile) {
             $source = "($script)('$program',$line)"
             if ($program -eq 'InDesign') { $result = $application.DoScript($source,1246973031) }
             else { $result = $application.DoJavaScript($source) }

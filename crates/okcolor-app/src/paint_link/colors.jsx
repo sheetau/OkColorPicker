@@ -12,21 +12,16 @@ function applyColors(program, job) {
         channels.blue = rgb[2];
         return color;
     }
-    function photoshopSwatch(rgb) {
-        var id = charIDToTypeID;
+    function appendPhotoshopSwatches(file) {
+        var id = stringIDToTypeID;
         var target = new ActionReference();
-        target.putClass(id("Clrs"));
-        var make = new ActionDescriptor();
-        make.putReference(id("null"), target);
-        var swatch = new ActionDescriptor();
-        swatch.putString(id("Nm  "), nameOf(rgb));
-        var value = new ActionDescriptor();
-        value.putDouble(id("Rd  "), rgb[0]);
-        value.putDouble(id("Grn "), rgb[1]);
-        value.putDouble(id("Bl  "), rgb[2]);
-        swatch.putObject(id("Clr "), id("RGBC"), value);
-        make.putObject(id("Usng"), id("Clrs"), swatch);
-        executeAction(id("Mk  "), make, DialogModes.NO);
+        target.putProperty(id("property"), id("colors"));
+        target.putEnumerated(id("application"), id("ordinal"), id("targetEnum"));
+        var load = new ActionDescriptor();
+        load.putReference(id("null"), target);
+        load.putPath(id("to"), file);
+        load.putBoolean(id("append"), true);
+        executeAction(id("set"), load, DialogModes.NO);
     }
     function illustratorItem(item, slot, color) {
         if (!item || item.locked || item.hidden) return;
@@ -79,16 +74,17 @@ function applyColors(program, job) {
             }
         }
     }
-    for (var n = 0; job.palette && n < job.palette.length; ++n) {
+    if (job.swatchFile) {
+        var file = new File(job.swatchFile);
+        if (program === "Photoshop") appendPhotoshopSwatches(file);
+        else (doc || app).loadSwatches(file);
+    }
+    for (var n = 0; program === "Illustrator" && job.palette && n < job.palette.length; ++n) {
         var entry = job.palette[n];
-        if (program === "Photoshop") photoshopSwatch(entry);
-        else if (program === "InDesign") indesignSwatch(doc || app, nameOf(entry), entry);
-        else {
-            var sample;
-            try { sample = doc.swatches.getByName(nameOf(entry)); }
-            catch (missing) { sample = doc.swatches.add(); sample.name = nameOf(entry); }
-            sample.color = rgbColor(entry);
-        }
+        var sample;
+        try { sample = doc.swatches.getByName(nameOf(entry)); }
+        catch (missing) { sample = doc.swatches.add(); sample.name = nameOf(entry); }
+        sample.color = rgbColor(entry);
     }
     if (program === "Illustrator") app.redraw();
     return "OK";

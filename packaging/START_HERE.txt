@@ -75,7 +75,7 @@ Click Reb in the picker to send the selected color to the brush on port 8265.
 
 With an Adobe app, Aseprite or Krita connected, choose Send palette in the
 Harmony tab to append its colors to the destination swatches or palette.
-Send swatches in Picker or APCA exports all saved library colors.
+Send swatches in Picker or APCA exports colors in the open folder, or unfiled colors at the top level.
 
 SAVED COLORS
 

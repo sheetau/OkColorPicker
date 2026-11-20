@@ -1157,6 +1157,17 @@ fn mounted_tabs_edit_recall_adjust_and_restore() {
                 let item=refs.library[4].window_bounds().unwrap();
                 assert_eq!(menu.origin.y.0,32.0);
                 assert!((item.origin.y.0-anchor.origin.y.0-anchor.size.height.0/2.0).abs()<=1.0);
+                {
+                    let captured = frames.lock().unwrap();
+                    let image = captured.last().unwrap();
+                    let x = item.origin.x.0.round() as i32;
+                    let y = item.origin.y.0.round() as i32;
+                    let ink = |dx: i32| (2..19).any(|dy| image.rgba(x+dx, y+dy)[0] > 60);
+                    let plus = (0..35).find(|dx| ink(*dx)).expect("plus visible");
+                    let gap = (plus..plus+15).find(|dx| !ink(*dx)).expect("end of plus");
+                    let label = (gap..gap+20).find(|dx| ink(*dx)).expect("folder label visible");
+                    assert_eq!(label-gap, 5, "visible gap between plus and folder label");
+                }
                 let edit = Point::new(CssPx(item.origin.x.0+20.0),CssPx(item.origin.y.0+10.0));
                 for action in [PointerAction::Pressed,PointerAction::Released] {tile_pointer(&mut h,action,primary,edit);}
                 assert!(refs.library[2].window_bounds().is_some(),"the overlaid menu receives clicks");

@@ -32,13 +32,18 @@ fn rgb_bytes(color: Oklch, mapping: GamutMapping) -> Rgb {
         .map(|v| (v.clamp(0.0, 1.0) * 255.0).round() as u8)
 }
 impl Colors {
-    fn read(model: PickerModel) -> Self {
-        let edit = model.edit.get();
+    fn read(model: PickerModel, app: PaintApp) -> Self {
+        let (colors, slot) = if app.adobe() {
+            (model.committed.get(), model.selected.get())
+        } else {
+            let edit = model.edit.get();
+            (edit.colors, edit.slot)
+        };
         let mapping = model.mapping.get();
-        let slots = edit.colors.map(|color| rgb_bytes(color, mapping));
+        let slots = colors.map(|color| rgb_bytes(color, mapping));
         Self {
             slots,
-            active: usize::from(edit.slot),
+            active: usize::from(slot),
         }
     }
 }
@@ -63,9 +68,14 @@ impl Incoming {
     }
 }
 
+struct PaletteExport {
+    name: String,
+    colors: Vec<Rgb>,
+}
+
 enum Command {
     Select(u64, Option<PaintApp>),
-    Palette(u64, Vec<Rgb>),
+    Palette(u64, PaletteExport),
 }
 #[derive(Clone, Copy)]
 pub(crate) struct PaintLink {
@@ -89,7 +99,11 @@ impl PaintLink {
             if matches!(incoming.state, State::Idle | State::Failed(_)) {
                 return (incoming.generation, 0);
             }
-            let Colors { slots, active } = Colors::read(model);
+            let app = model.tools.with(|t| t.paint_app);
+            if app.adobe() && model.stepping_channel.get() {
+                return (incoming.generation, 0);
+            }
+            let Colors { slots, active } = Colors::read(model, app);
             link.colors
                 .with_value(|c| *c.lock().expect("paint colors") = Colors { slots, active });
             let generation = link.generation.get();
@@ -116,22 +130,34 @@ impl PaintLink {
     }
     pub fn export_palette(self) {
         let mapping = self.model.mapping.get_untracked();
-        let colors = if self.model.tab.get_untracked() == crate::workspace::Tab::Harmonies {
-            self.model
-                .palette
-                .with_untracked(|items| items.iter().map(|(c, _)| rgb_bytes(*c, mapping)).collect())
+        let palette = if self.model.tab.get_untracked() == crate::workspace::Tab::Harmonies {
+            PaletteExport {
+                name: "OkColorPicker".into(),
+                colors: self.model.palette.with_untracked(|items| {
+                    items.iter().map(|(c, _)| rgb_bytes(*c, mapping)).collect()
+                }),
+            }
         } else {
-            self.model.library.with_untracked(|library| {
-                library
-                    .swatches
+            let folder = self.model.swatch_folder.get_untracked();
+            self.model.library.with_untracked(|library| PaletteExport {
+                name: library
+                    .folders
                     .iter()
+                    .find(|f| Some(f.id) == folder)
+                    .map_or("OkColorPicker", |f| f.name.as_str())
+                    .to_owned(),
+                colors: library
+                    .swatches_in(folder)
                     .map(|s| rgb_bytes(s.color(), mapping))
-                    .collect()
+                    .collect(),
             })
         };
+        if palette.colors.is_empty() {
+            return;
+        }
         self.channel.with_value(|tx| {
             if let Some(tx) = tx {
-                let _ = tx.send(Command::Palette(self.generation.get_untracked(), colors));
+                let _ = tx.send(Command::Palette(self.generation.get_untracked(), palette));
             }
         });
     }
@@ -140,9 +166,9 @@ impl PaintLink {
     }
     pub fn set(self, app: Option<PaintApp>) {
         let generation = self.generation.get_untracked() + 1;
-        if app.is_some() {
+        if let Some(app) = app {
             self.colors
-                .with_value(|c| *c.lock().expect("paint colors") = Colors::read(self.model));
+                .with_value(|c| *c.lock().expect("paint colors") = Colors::read(self.model, app));
         }
         self.generation.set(generation);
         self.inbox.set(Incoming::new(
@@ -483,7 +509,7 @@ fn run(rx: mpsc::Receiver<Command>, colors: Arc<Mutex<Colors>>, inbox: RwSignal<
                 Err(mpsc::RecvTimeoutError::Timeout) => {}
                 Ok(Command::Palette(epoch, entries)) => {
                     if epoch == generation && app.palette_export() {
-                        let text = serde_json::json!({"palette":entries}).to_string();
+                        let text = serde_json::json!({"palette":entries.colors}).to_string();
                         peers.retain_mut(|p| {
                             !p.socket
                                 .send(Message::text(text.clone()))
@@ -506,6 +532,37 @@ mod tests {
     use super::*;
     use serde_json::{Value, json};
     use tungstenite::protocol::Role;
+
+    #[test]
+    fn adobe_uses_committed_colors_while_other_hosts_receive_drag_previews() {
+        Owner::new().with(|| {
+            let model = PickerModel::default();
+            let original = Colors::read(model, PaintApp::Photoshop).slots;
+            let preview = Oklch::new(0.4, 0.0, 0.0, 1.0).unwrap();
+            for commit in [false, true] {
+                assert!(model.begin());
+                model.preview(preview);
+                let live = Colors::read(model, PaintApp::Krita).slots;
+                assert_ne!(live, original);
+                for app in [
+                    PaintApp::Photoshop,
+                    PaintApp::Illustrator,
+                    PaintApp::InDesign,
+                ] {
+                    assert_eq!(Colors::read(model, app).slots, original);
+                }
+                if commit {
+                    model.commit();
+                } else {
+                    model.cancel();
+                }
+                assert_eq!(
+                    Colors::read(model, PaintApp::Photoshop).slots,
+                    if commit { live } else { original }
+                );
+            }
+        });
+    }
 
     // Use connected loopback sockets and the real frame codecs in both directions.
     fn pair() -> (Peer, Socket) {

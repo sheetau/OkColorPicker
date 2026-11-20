@@ -792,7 +792,10 @@ fn Statusbar(model: PickerModel, refs: PickerRefs, settings: RwSignal<bool>) -> 
         if model.tab.get() == Tab::Harmonies {
             !model.palette.with(Vec::is_empty)
         } else {
-            model.library.with(|l| !l.swatches.is_empty())
+            let folder = model.swatch_folder.get();
+            model
+                .library
+                .with(|l| l.swatches_in(folder).next().is_some())
         }
     };
     let action = move || {
@@ -858,12 +861,14 @@ fn Statusbar(model: PickerModel, refs: PickerRefs, settings: RwSignal<bool>) -> 
                     }
                 }))) {"Paste pairing link"}
         }
-        if move ||!settings.get() && target.get().palette_export() && state()==State::Connected && has_colors() {
-            control(node_ref={let node=NodeRef::new();Tooltips::bind(node,move ||format!("{} to {}",export_label(),target.get().name()));node},
-                tabindex=Focus::Sequential,a11y:label=export_label,on:click=move |_|link.export_palette()) {text {{export_label}}}
-        }
         if move ||!model.storage_message.get().is_empty() && model.can_save.get() {
             control(node_ref=Tooltips::button(NodeRef::new(),"Retry saving"),tabindex=Focus::Sequential,on:click=move |_|model.save_request.update(|r|*r=r.wrapping_add(1))) {"Retry"}
+        }
+        if move ||!settings.get() && target.get().palette_export() && state()==State::Connected && has_colors() {
+            control(class="csp-connect send-swatches",node_ref={let node=NodeRef::new();Tooltips::bind(node,move ||format!("{} to {}",export_label(),target.get().name()));node},
+                tabindex=Focus::Sequential,a11y:label=export_label,on:click=move |_|link.export_palette()) {
+                {zgui::elements::vector().document(include_str!("../assets/send-swatches.svg")).class("status-icon")}
+            }
         }
         control(class="csp-connect",node_ref=refs.companion,tabindex=Focus::Sequential,
             class:warning=failed,class:linked=move ||state()==State::Connected,
@@ -1110,7 +1115,7 @@ fn Channel(
                 },
                 on:pointer_cancel=move |_|cancel_number(),
                 on:focus_in=move |_|{focused.set(true);model.editing_text.set(true);wheel_remainder.set((Modifiers::NONE,0.0));},
-                on:focus_out=move |_|{focused.set(false);model.editing_text.set(false);},
+                on:focus_out=move |_|{focused.set(false);model.stepping_channel.set(false);model.editing_text.set(false);},
                 on:input=move |cx|{if let Some(v)=cx.payload().as_value(){draft.set(v.value.to_string());dirty.set(true);wheel_remainder.set((Modifiers::NONE,0.0));}},
                 on:ime_start=move |_|{composing.set(true);wheel_remainder.set((Modifiers::NONE,0.0));},
                 on:ime_preedit=move |_|composing.set(true),
@@ -1118,6 +1123,11 @@ fn Channel(
                 on:ime_end=move |_|composing.set(false),
                 on:change=move |_|commit(),
                 on:wheel=wheel,
+                on:key_up=move |cx| {
+                    if matches!(cx.key, Key::Named(NamedKey::ArrowUp | NamedKey::ArrowDown)) {
+                        model.stepping_channel.set(false);
+                    }
+                },
                 on:key_down=move |cx|{
                     if composing.get_untracked() { return; }
                     if cx.key==Key::Named(NamedKey::Escape) && gesture.get_untracked().is_some() {
@@ -1126,6 +1136,7 @@ fn Channel(
                     wheel_remainder.set((Modifiers::NONE,0.0));
                     if matches!(cx.key, Key::Named(NamedKey::ArrowUp | NamedKey::ArrowDown)) {
                         let steps = if cx.key == Key::Named(NamedKey::ArrowUp) { 1.0 } else { -1.0 };
+                        model.stepping_channel.set(true);
                         adjust(steps, cx.modifiers, true);
                         cx.prevent_default();
                         cx.stop_propagation();

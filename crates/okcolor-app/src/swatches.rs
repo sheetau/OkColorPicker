@@ -111,7 +111,7 @@ fn FolderOption(
 
 #[component]
 pub(crate) fn Swatches(model: PickerModel, refs: PickerRefs) -> impl IntoView {
-    let destination = RwSignal::new(None::<u64>);
+    let destination = model.swatch_folder;
     let folder = Memo::new(move |_| {
         destination.get().filter(|id| {
             model
@@ -329,7 +329,7 @@ fn Tiles(model: PickerModel, folder: Option<u64>, refs: PickerRefs) -> impl Into
     let gestures = TileGestures::current();
     gestures.register(refs.library[0], end);
     view! {row(class="swatch-tiles",node_ref=refs.library[7]) {
-        for id in move ||model.library.with(|l|l.swatches.iter().filter(|s|s.folder==folder).map(|s|s.id).collect::<Vec<_>>()),key=|id:&u64|*id {
+        for id in move ||model.library.with(|l|l.swatches_in(folder).map(|s|s.id).collect::<Vec<_>>()),key=|id:&u64|*id {
             ColorTile(class="library-tile",node=NodeRef::new(),source=Source::Library(id),destination=Some(Destination::Library(folder,Some(id))),
                 color=Memo::new(move |_|model.library.with(|l|l.swatches.iter().find(|s|s.id==id).map(|s|s.color())).unwrap_or(model.current())),
                 label=Memo::new(move |_|model.library.with(|l|l.swatches.iter().find(|s|s.id==id).map(|s|s.name.clone())).unwrap_or_default()),

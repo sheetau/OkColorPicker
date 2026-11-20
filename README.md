@@ -35,8 +35,9 @@ its abbreviation to connect or disconnect. The picker remembers the app you chos
 | Rebelle 8 Pro | Start Rebelle with `-websocket-server-enable -websocket-allowed-ip-addresses 127.0.0.1`, then click **Reb**. [Rebelle WebSocket settings](https://www.escapemotions.com/products/rebelle/manual/8.4/starting-painting/websocket/) | Selected picker color to the brush |
 
 In Harmony, **Send palette** exports the current palette to a connected Adobe
-app, Aseprite or Krita. In Picker or APCA, **Send swatches** exports the saved
-library. Adobe connections use Windows scripting. The other
+app, Aseprite or Krita. In Picker or APCA, **Send swatches** exports the colors in the
+currently open folder. At the top level it exports unfiled colors. Adobe connections
+use Windows scripting and send color edits when you commit them. The other
 desktop plugins communicate over loopback. Follow the plugin installation
 steps in [the package guide](packaging/START_HERE.txt).
 
