@@ -209,6 +209,15 @@ impl SurfaceKind {
     }
 }
 
+/// The selected slot paints the same centered shadow as a slider thumb.
+pub(crate) fn slot_shadow() -> impl IntoView {
+    let (surface, _) = zgui::custom::custom(ColorSurface::new(ColorParams {
+        kind: 7.0,
+        ..Default::default()
+    }));
+    surface.class("slot-shadow").into_view()
+}
+
 /// A color sample uses the same GPU preview policy as the editing surfaces.
 #[component]
 pub fn ColorSwatch(model: PickerModel, color: Memo<Oklch>, outline_dark: bool) -> impl IntoView {

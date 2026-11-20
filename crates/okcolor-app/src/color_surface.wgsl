@@ -165,7 +165,17 @@ fn slice_distance(uv: vec2<f32>, pixel: vec2<f32>, lab: vec3<f32>, params: Param
     return distance + gamut_margin(color_at(crossing, params), gamut) / slope;
 }
 
+fn shadow_alpha(distance: f32) -> f32 {
+    let outside = max(distance, 0.0);
+    return 0.16 * exp(-0.5 * outside * outside);
+}
+
 fn shade(input: ShaderInput, params: Params) -> vec4<f32> {
+    if params.kind > 6.5 {
+        // The effect extends three CSS pixels beyond each edge of the slot.
+        let edge = vec2<f32>(3.0) - min(input.local, input.size - input.local) / input.scale;
+        return vec4<f32>(0.0, 0.0, 0.0, shadow_alpha(length(max(edge, vec2<f32>(0.0)))));
+    }
     let uv = clamp(input.local / max(input.size, vec2<f32>(1.0)), vec2<f32>(0.0), vec2<f32>(1.0));
     let lab = color_at(uv, params);
     // The difference strokes retain the reference chart ink.
@@ -241,9 +251,7 @@ fn shade(input: ShaderInput, params: Params) -> vec4<f32> {
         let aa = 0.5 / input.scale;
         let coverage = 1.0 - smoothstep(-aa, aa, d);
         let outline = smoothstep(-1.0 - aa, -1.0 + aa, d);
-        let outside = max(d, 0.0);
-        let shadow = 0.16 * exp(-0.5 * outside * outside);
-        let alpha = coverage + (1.0 - coverage) * shadow;
+        let alpha = coverage + (1.0 - coverage) * shadow_alpha(d);
         return vec4<f32>(mix(rgb, vec3<f32>(1.0), outline) * coverage, alpha);
     }
     return vec4<f32>(rgb, 1.0);

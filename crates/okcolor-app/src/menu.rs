@@ -1,6 +1,6 @@
 use zgui::prelude::*;
 
-/// A dropdown occupies the right edge of the page, independent of its trigger's
+/// A dropdown aligns with the right edge of the page content, independent of its trigger's
 /// scroll container. The palette sets its lower edge at the swatch strip.
 #[component]
 pub(crate) fn MenuBand(
@@ -40,11 +40,13 @@ pub(crate) fn MenuBand(
     });
     let children = StoredValue::new_local(children);
     view! {Portal {
-        column(class="menu-band",node_ref=node,
+        box(class="menu-area",
             style:top=move ||Some(format!("{}px",geometry.get().0)),
             style:height=move ||Some(format!("{}px",geometry.get().1))) {
-            column(class="menu-items",node_ref=items,style:margin-top=move ||Some(format!("{}px",geometry.get().2))) {
-                {children.get_value().view()}
+            column(class="menu-band",node_ref=node) {
+                column(class="menu-items",node_ref=items,style:margin-top=move ||Some(format!("{}px",geometry.get().2))) {
+                    {children.get_value().view()}
+                }
             }
         }
     }}

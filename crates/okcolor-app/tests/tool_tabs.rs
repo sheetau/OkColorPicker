@@ -89,6 +89,53 @@ fn type_text(h: &mut Harness<impl zgui::platform::AppHandler>, node: NodeRef, te
     key(h, KeyEvent::character(text), Modifiers::NONE);
 }
 
+fn check_slot_shadows(
+    h: &mut Harness<impl zgui::platform::AppHandler>,
+    model: PickerModel,
+    refs: PickerRefs,
+    frames: &Mutex<Vec<zgui_render_wgpu::Pixels>>,
+) {
+    tile_pointer(
+        h,
+        PointerAction::Moved,
+        PointerButton::Primary,
+        Point::new(CssPx(2.0), CssPx(2.0)),
+    );
+    // White on white isolates the shadow on either side of the overlap.
+    let slots = model.slots.map(|color| color.get_untracked());
+    let selected = model.selected.get_untracked();
+    for slot in 0..2 {
+        model.select_slot(slot);
+        model.input("#ffffff");
+    }
+    for slot in 0..2 {
+        model.select_slot(slot);
+        h.settle(32);
+        let main = refs.swatches[0].window_bounds().unwrap();
+        let x = main.origin.x.0 as i32;
+        let y = main.origin.y.0 as i32 + 32;
+        let captured = frames.lock().unwrap();
+        let frame = captured.last().unwrap();
+        let ink = |dx| frame.rgba(x + dx, y)[0];
+        let (edge, direction, inactive) = if slot == 0 { (40, 1, 23) } else { (23, -1, 40) };
+        assert!(
+            ink(edge) < ink(edge + direction) && ink(edge + direction) < ink(edge + 3 * direction),
+            "selected slot {slot} shadow: {:?}",
+            [ink(edge), ink(edge + direction), ink(edge + 3 * direction)]
+        );
+        assert_eq!(
+            ink(inactive),
+            ink(edge + 3 * direction),
+            "shadow under the inactive slot"
+        );
+    }
+    for (i, color) in slots.into_iter().enumerate() {
+        model.select_slot(i as u8);
+        model.select(color);
+    }
+    model.select_slot(selected);
+}
+
 fn check_palette_adjustment(
     h: &mut Harness<impl zgui::platform::AppHandler>,
     model: PickerModel,
@@ -126,7 +173,10 @@ fn check_palette_adjustment(
     let body = refs.tool_page.window_bounds().unwrap();
     let strip = refs.tools[5].window_bounds().unwrap();
     assert_eq!(menu.origin.y, body.origin.y);
-    assert_eq!(menu.origin.x.0 + menu.size.width.0, body.size.width.0);
+    assert_eq!(
+        menu.origin.x.0 + menu.size.width.0,
+        body.size.width.0 - 20.0
+    );
     assert_eq!(menu.origin.y.0 + menu.size.height.0, strip.origin.y.0);
     let cancel = refs.adjustment_cancel.window_bounds().unwrap();
     assert_eq!(cancel.origin.y.0 + cancel.size.height.0, strip.origin.y.0);
@@ -398,6 +448,7 @@ fn mounted_tabs_edit_recall_adjust_and_restore() {
                     Modifiers::NONE,
                 );
                 assert!(!refs.sampling.get_untracked());
+                check_slot_shadows(&mut h,model,refs,&frames);
                 for slot in 0..2 {
                     model.select_slot(slot);
                     let old = model.current();
@@ -488,7 +539,7 @@ fn mounted_tabs_edit_recall_adjust_and_restore() {
                 let trigger=refs.format_trigger.window_bounds().unwrap();
                 assert_eq!(panel.origin.y,page.origin.y);
                 assert_eq!(panel.size.height,page.size.height);
-                assert_eq!(panel.origin.x.0+panel.size.width.0,page.size.width.0);
+                assert_eq!(panel.origin.x.0+panel.size.width.0,page.size.width.0-20.0);
                 let rows=11.0*22.0;
                 let first=(trigger.origin.y.0+trigger.size.height.0/2.0-rows/2.0)
                     .clamp(page.origin.y.0,page.origin.y.0+page.size.height.0-rows);
@@ -533,7 +584,7 @@ fn mounted_tabs_edit_recall_adjust_and_restore() {
                 let body=refs.tool_page.window_bounds().unwrap();
                 assert_eq!(folder.origin.y,body.origin.y);
                 assert_eq!(folder.size.height,body.size.height);
-                assert_eq!(folder.origin.x.0+folder.size.width.0,body.origin.x.0+body.size.width.0);
+                assert_eq!(folder.origin.x.0+folder.size.width.0,body.origin.x.0+body.size.width.0-20.0);
                 assert_eq!(folder.size.width.0,100.0);
                 let mx=folder.origin.x.0.round() as i32;
                 let my=refs.library[4].window_bounds().unwrap().origin.y.0.round() as i32-22;
@@ -571,11 +622,13 @@ fn mounted_tabs_edit_recall_adjust_and_restore() {
                 key(&mut h,KeyEvent::named(NamedKey::Escape,PhysicalKey::Unidentified(0)),Modifiers::NONE);
                 assert!(refs.folder_menu.get().is_none());
                 let short_width=folder.size.width.0;
-                let folder_id=model.library.try_update(|lib|lib.create_folder("Long label for a collection of colors").unwrap()).unwrap();
+                let folder_id=model.library.try_update(|lib|lib.create_folder(&"W".repeat(64)).unwrap()).unwrap();
                 click(&mut h,refs.library[1]);
                 let wide_menu=refs.folder_menu.window_bounds().unwrap();
                 assert!(wide_menu.size.width.0>short_width+20.0,"folder menu must fit its longest item: {short_width} -> {wide_menu:?}");
                 key(&mut h,KeyEvent::named(NamedKey::Escape,PhysicalKey::Unidentified(0)),Modifiers::NONE);
+                assert_eq!(wide_menu.origin.x.0,body.origin.x.0+20.0);
+                assert_eq!(wide_menu.size.width.0,body.size.width.0-40.0);
                 model.library.update(|lib|lib.remove(folder_id));
                 let original_library=model.library.get_untracked();
                 model.library.update(|lib|{

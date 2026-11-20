@@ -393,10 +393,16 @@ pub(crate) fn RecentColors(model: PickerModel, node: NodeRef) -> impl IntoView {
 // controls. Remount only this two-swatch branch when selection changes; ordinary
 // color edits still update the existing paint handles without rebuilding the view.
 #[component]
-pub(crate) fn SlotSwatch(model: PickerModel, refs: PickerRefs, index: usize) -> impl IntoView {
+pub(crate) fn SlotSwatch(
+    model: PickerModel,
+    refs: PickerRefs,
+    index: usize,
+    front: bool,
+) -> impl IntoView {
     let color = Memo::new(move |_| model.slots[index].get());
     view! {
         box(class="slot-layer",class:main=index==0,class:sub=index==1) {
+            {front.then(|| crate::surface::slot_shadow().into_view())}
             ColorTile(node=refs.swatches[index],class="slot-tile",color=color,source=Source::Sample,destination=None,
                 label=Memo::new(move |_|{
                     let c=color.get();let label=if index==0 {"Main color"}else{"Sub color"};
@@ -550,11 +556,11 @@ fn ColorPanel(model: PickerModel, refs: PickerRefs) -> impl IntoView {
                     column(class="preview-column") {
                         box(class="swatches") {
                             if move ||model.selected.get()==0 {
-                                SlotSwatch(model=model,refs=refs,index=1)
-                                SlotSwatch(model=model,refs=refs,index=0)
+                                SlotSwatch(model=model,refs=refs,index=1,front=false)
+                                SlotSwatch(model=model,refs=refs,index=0,front=true)
                             } else {
-                                SlotSwatch(model=model,refs=refs,index=0)
-                                SlotSwatch(model=model,refs=refs,index=1)
+                                SlotSwatch(model=model,refs=refs,index=0,front=false)
+                                SlotSwatch(model=model,refs=refs,index=1,front=true)
                             }
                             Fallbacks(model=model,refs=refs)
                             control(class="eyedropper",node_ref=eyedropper,tabindex=Focus::Sequential,a11y:label="Sample a screen color (Ctrl+Shift+C)",

@@ -71,7 +71,8 @@ field:focus { color: var(--bright); }
 .format-trigger { width: var(--small-tile); min-width: var(--small-tile); height: var(--button); position: relative; }
 .chevron { width: var(--icon); height: var(--icon); --zgui-stroke: currentColor; pointer-events: none; }
 .copy { position: relative; width: var(--button); min-width: var(--button); height: var(--button); }
-.menu-band { position: absolute; right: 0; min-width: var(--menu-width); width: max-content; max-width: 100%; background-color: var(--black); border-left: 1px solid var(--bright); border-right: 1px solid var(--bright); box-sizing: border-box; overflow-y: auto; pointer-events: auto; }
+.menu-area { position: absolute; left: var(--space-x); right: var(--space-x); pointer-events: none; }
+.menu-band { position: absolute; right: 0; height: 100%; min-width: var(--menu-width); width: max-content; max-width: 100%; background-color: var(--black); border-left: 1px solid var(--bright); border-right: 1px solid var(--bright); box-sizing: border-box; overflow-y: auto; pointer-events: auto; }
 .menu-items { flex-shrink: 0; }
 .menu-band control { height: var(--tile); min-height: var(--tile); padding: 0 7px; display: flex; align-items: center; justify-content: flex-start; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text); background-color: transparent; }
 .csp-connect { padding: 0 var(--gap); display: flex; flex-direction: row; align-items: center; color: var(--text); }
@@ -179,6 +180,7 @@ field:focus { color: var(--bright); }
 .restore-reference.at-top { bottom: auto; top: 10px; }
 
 .slot-layer { position: absolute; width: var(--sample); height: var(--sample); }
+.slot-shadow { position: absolute; left: -3px; right: -3px; top: -3px; bottom: -3px; pointer-events: none; }
 .slot-tile { width: 100%; height: 100%; position: relative; }
 .unavailable-slot { position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; }
 .unavailable-cross { width: 100%; height: 100%; pointer-events: none; }
