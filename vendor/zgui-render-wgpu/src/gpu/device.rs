@@ -116,11 +116,16 @@ impl Gpu {
         extensions: &[&'static CStr],
     ) -> Result<Self, String> {
         let info = adapter.get_info();
-        let limits = if info.backend == wgpu::Backend::Gl {
+        let mut limits = if info.backend == wgpu::Backend::Gl {
             wgpu::Limits::downlevel_defaults().using_resolution(adapter.limits())
         } else {
             adapter.limits()
         };
+        if info.backend == wgpu::Backend::Dx12 {
+            // DX12 allocates the entire shader-visible view heap at device creation.
+            // Keep room for 65,536 live descriptors across the picker and its cached views.
+            limits.max_non_sampler_bindings = limits.max_non_sampler_bindings.min(65_536);
+        }
         // Derived once and read by both paths. The hal path creates the device itself, so a
         // feature set or a limit set of its own would give a device capabilities the ordinary path
         // never grants, with nothing anywhere to report the difference.
