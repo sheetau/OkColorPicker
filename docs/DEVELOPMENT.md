@@ -258,8 +258,10 @@ GPU submissions, so this is serialized workload cost, not pipelined throughput
 or native input-to-display latency. The separate GPU timing is the sum of zgui's
 timed passes: it excludes the final scRGB pass and copies, and vector spans can
 include CPU submission gaps. Only timestamp data is read back, never pixels.
-Renderer-accounted allocation bytes and the extra scRGB target are reported
-separately; they do not represent total driver/GPU residency or process memory.
+The settled Picker reports renderer allocations by category and the extra scRGB
+target separately. On Windows the harness also samples process private commit
+around font registration, DX12 instance creation, adapter enumeration, device
+opening and the first settled frames. Run it in a fresh process for each startup measurement.
 
 The harness uses the production picker and output shader on a headless surface.
 It excludes OS input, DirectComposition presentation, CSP and persistence, and

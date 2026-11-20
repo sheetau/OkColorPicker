@@ -139,6 +139,28 @@ impl Renderer for MeasuredRenderer {
     }
 }
 
+#[cfg(windows)]
+fn report_private_commit(phase: &str) {
+    use windows_sys::Win32::System::Threading::{
+        APP_MEMORY_INFORMATION, GetCurrentProcess, GetProcessInformation, ProcessAppMemoryInfo,
+    };
+    let mut memory = APP_MEMORY_INFORMATION::default();
+    // SAFETY: the SDK writes this sized structure synchronously for the current process.
+    let ok = unsafe {
+        GetProcessInformation(
+            GetCurrentProcess(),
+            ProcessAppMemoryInfo,
+            (&raw mut memory).cast(),
+            size_of_val(&memory) as u32,
+        )
+    };
+    assert_ne!(ok, 0, "{}", std::io::Error::last_os_error());
+    println!(
+        "{}",
+        json!({"phase": phase, "process_private_commit_bytes": memory.PrivateCommitUsage})
+    );
+}
+
 fn distribution(values: &[f64]) -> serde_json::Value {
     assert!(!values.is_empty());
     let mut sorted = values.to_vec();
@@ -158,12 +180,22 @@ fn measure_picker_drag_workloads() {
     {
         assert!(!cfg!(debug_assertions), "measure a release build");
     }
+    #[cfg(windows)]
+    report_private_commit("before_fonts");
+    let fonts = fonts::load();
+    #[cfg(windows)]
+    report_private_commit("after_fonts");
     timing::enable();
     let mut descriptor = adapter::instance_descriptor(wgpu::Backends::DX12);
     descriptor.backend_options.dx12.shader_compiler = wgpu::Dx12Compiler::StaticDxc;
     let instance = wgpu::Instance::new(descriptor);
+    #[cfg(windows)]
+    report_private_commit("after_instance");
+    let adapters = adapter::candidates(&instance, wgpu::Backends::DX12);
+    #[cfg(windows)]
+    report_private_commit("after_adapter_enumeration");
     let gpu = Arc::new(
-        adapter::candidates(&instance, wgpu::Backends::DX12)
+        adapters
             .into_iter()
             .find_map(|adapter| Gpu::open(instance.clone(), adapter, &[]).ok())
             .expect("DX12 device"),
@@ -174,12 +206,14 @@ fn measure_picker_drag_workloads() {
         "scope": "headless DX12 FP16 + scRGB; serialized completion; no native presentation",
         "gpu_scope": "zgui timed passes only; excludes final scRGB pass and copies; vector spans are upper bounds"})
     );
+    #[cfg(windows)]
+    report_private_commit("after_device_open");
     let graphics = SharedGraphics::with_gpu(gpu);
     let measurements = Rc::new(RefCell::new(Measurements::default()));
     let capture = measurements.clone();
     let state = Rc::new(Cell::new(None));
     let mounted = state.clone();
-    app().with_size(330.0, 560.0).with_transparent(true).with_fonts(fonts::load())
+    app().with_size(330.0, 560.0).with_transparent(true).with_fonts(fonts)
         .with_stylesheet(STYLE)
         .with_renderer(Box::new(move |_, target| {
             let mut renderer = graphics.renderer_offscreen(target, wgpu::TextureFormat::Rgba16Float, false)?;
@@ -190,6 +224,13 @@ fn measure_picker_drag_workloads() {
         .run_on(|handler| {
             let mut harness = Harness::new(handler);
             harness.settle(64);
+            #[cfg(windows)]
+            report_private_commit("after_picker_settle");
+            let startup = measurements.borrow().memory;
+            println!("{}", json!({"phase": "settled_picker", "scale": 1.0,
+                "renderer_bytes": {"fixed": startup.fixed, "targets": startup.targets,
+                "scratch": startup.scratch, "atlases": startup.atlases, "buffers": startup.buffers},
+                "scRGB_target_bytes": measurements.borrow().output_bytes}));
             let (model, refs): (PickerModel, PickerRefs) = state.get().unwrap();
             for scale in [1.0, 2.0] {
                 harness.deliver_to_first(SurfaceEvent::ScaleFactorChanged {
