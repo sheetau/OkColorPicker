@@ -128,6 +128,21 @@ impl Companion {
             )
         });
     }
+    pub fn paste_link(self, text: &str) {
+        if let Some(control) = self.control.get_untracked() {
+            match okcolor_csp::Pairing::parse(text) {
+                Ok(pairing) => {
+                    control.pair(pairing);
+                    self.state.set(State::Connecting);
+                    self.hint.set(String::new());
+                    self.can_resolve.set(false);
+                }
+                Err(_) => self.state.set(State::Failed(
+                    "Clipboard has no valid CSP pairing link".into(),
+                )),
+            }
+        }
+    }
     pub fn scan(self) {
         if let Some(control) = self.control.get_untracked() {
             control.scan();

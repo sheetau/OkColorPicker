@@ -17,7 +17,7 @@ never commit binaries, archives, logs or private validation profiles.
 The command builds `okcolor-app` with `--release --locked`, verifies x64 and the
 Windows GUI subsystem, and records its imported DLLs. It collects the notice
 bundle, verifies its commit and checksums, and adds `OkColorPicker.exe`,
-`START_HERE.txt`, the Aseprite script, the update helper and `PACKAGE.json`. The output contains an unpacked package,
+`START_HERE.txt`, the Aseprite script, the Krita and Obsidian plugins, the update helper and `PACKAGE.json`. The output contains an unpacked package,
 a ZIP with the same files and `SHA256SUMS.txt` for the ZIP. The ZIP has fixed
 entry timestamps; reproducible binary builds are not guaranteed. Assembly
 neither signs nor uploads the candidate.

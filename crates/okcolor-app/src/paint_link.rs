@@ -1,6 +1,7 @@
 //! Local paint application connections. Only an explicit click starts a worker.
+mod adobe;
 use crate::{model::PickerModel, workspace::PaintApp};
-use okcolor_core::Gamut;
+use okcolor_core::{Gamut, GamutMapping, Oklch};
 use okcolor_csp::worker::State;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -24,15 +25,17 @@ struct Colors {
     active: usize,
 }
 
+fn rgb_bytes(color: Oklch, mapping: GamutMapping) -> Rgb {
+    color
+        .mapped_rgb(Gamut::Srgb, mapping)
+        .expect("validated picker color")
+        .map(|v| (v.clamp(0.0, 1.0) * 255.0).round() as u8)
+}
 impl Colors {
     fn read(model: PickerModel) -> Self {
         let edit = model.edit.get();
         let mapping = model.mapping.get();
-        let slots = edit.colors.map(|c| {
-            c.mapped_rgb(Gamut::Srgb, mapping)
-                .expect("validated picker color")
-                .map(|v| (255.0 * v.clamp(0.0, 1.0)).round() as u8)
-        });
+        let slots = edit.colors.map(|color| rgb_bytes(color, mapping));
         Self {
             slots,
             active: usize::from(edit.slot),
@@ -60,11 +63,14 @@ impl Incoming {
     }
 }
 
-type RequestMode = (u64, Option<PaintApp>);
+enum Command {
+    Select(u64, Option<PaintApp>),
+    Palette(u64, Vec<Rgb>),
+}
 #[derive(Clone, Copy)]
 pub(crate) struct PaintLink {
     model: PickerModel,
-    channel: StoredValue<Option<mpsc::Sender<RequestMode>>>,
+    channel: StoredValue<Option<mpsc::Sender<Command>>>,
     colors: StoredValue<Arc<Mutex<Colors>>>,
     generation: RwSignal<u64>,
     inbox: RwSignal<Incoming>,
@@ -108,6 +114,27 @@ impl PaintLink {
         on_cleanup_local(move || drop(effect));
         link
     }
+    pub fn export_palette(self) {
+        let mapping = self.model.mapping.get_untracked();
+        let colors = if self.model.tab.get_untracked() == crate::workspace::Tab::Harmonies {
+            self.model
+                .palette
+                .with_untracked(|items| items.iter().map(|(c, _)| rgb_bytes(*c, mapping)).collect())
+        } else {
+            self.model.library.with_untracked(|library| {
+                library
+                    .swatches
+                    .iter()
+                    .map(|s| rgb_bytes(s.color(), mapping))
+                    .collect()
+            })
+        };
+        self.channel.with_value(|tx| {
+            if let Some(tx) = tx {
+                let _ = tx.send(Command::Palette(self.generation.get_untracked(), colors));
+            }
+        });
+    }
     pub fn state(self) -> State {
         self.inbox.with(|i| i.state.clone())
     }
@@ -141,7 +168,7 @@ impl PaintLink {
         }
         self.channel.with_value(|tx| {
             if let Some(tx) = tx {
-                let _ = tx.send((generation, app));
+                let _ = tx.send(Command::Select(generation, app));
             }
         });
     }
@@ -172,8 +199,15 @@ fn waiting(e: &tungstenite::Error) -> bool {
     clippy::result_large_err,
     reason = "tungstenite handshake callback signature"
 )]
-fn origin(req: &Request, response: Response) -> Result<Response, ErrorResponse> {
+fn check_origin(
+    obsidian: bool,
+    req: &Request,
+    response: Response,
+) -> Result<Response, ErrorResponse> {
     let allowed = req.headers().get("origin").is_none_or(|o| {
+        if obsidian && o == "app://obsidian.md" {
+            return true;
+        }
         o.to_str()
             .ok()
             .and_then(|s| s.parse::<tungstenite::http::Uri>().ok())
@@ -216,7 +250,25 @@ impl Peer {
         }
         for _ in 0..16 {
             match self.socket.read() {
-                Ok(Message::Text(s)) if app == PaintApp::Aseprite => {
+                Ok(Message::Text(s)) if app == PaintApp::Obsidian => {
+                    #[derive(Deserialize)]
+                    struct Hex {
+                        hex: String,
+                    }
+                    if let Ok(value) = serde_json::from_str::<Hex>(&s)
+                        && let Some(hex) = value.hex.strip_prefix('#')
+                        && hex.len() == 6
+                        && hex.bytes().all(|b| b.is_ascii_hexdigit())
+                        && let Ok(n) = u32::from_str_radix(hex, 16)
+                    {
+                        let [_, r, g, b] = n.to_be_bytes();
+                        let slot = colors.active;
+                        self.active = Some(slot);
+                        self.sent[slot] = Some([r, g, b]);
+                        receive(Swatch { slot, r, g, b });
+                    }
+                }
+                Ok(Message::Text(s)) if matches!(app, PaintApp::Aseprite | PaintApp::Krita) => {
                     if let Ok(c) = serde_json::from_str::<Swatch>(&s)
                         && c.slot < 2
                     {
@@ -236,7 +288,7 @@ impl Peer {
     fn publish(&mut self, app: PaintApp, colors: Colors) -> bool {
         for slot in [1 - colors.active, colors.active] {
             let rgb = colors.slots[slot];
-            if app == PaintApp::Rebelle && slot != colors.active {
+            if matches!(app, PaintApp::Rebelle | PaintApp::Obsidian) && slot != colors.active {
                 continue;
             }
             if self.sent[slot] == Some(rgb) && (slot != colors.active || self.active == Some(slot))
@@ -244,7 +296,9 @@ impl Peer {
                 continue;
             }
             let [r, g, b] = rgb;
-            let text = if app == PaintApp::Aseprite {
+            let text = if app == PaintApp::Obsidian {
+                serde_json::json!({"hex":format!("#{r:02X}{g:02X}{b:02X}")}).to_string()
+            } else if matches!(app, PaintApp::Aseprite | PaintApp::Krita) {
                 serde_json::to_string(&Swatch { r, g, b, slot }).expect("RGB packet")
             } else {
                 serde_json::json!({"event_type":"SET_BRUSH_COLOR","color":{"r":r,"g":g,"b":b}})
@@ -269,6 +323,14 @@ impl Drop for Peer {
     }
 }
 
+#[allow(clippy::result_large_err, reason = "tungstenite callback signature")]
+fn native_origin(req: &Request, resp: Response) -> Result<Response, ErrorResponse> {
+    check_origin(false, req, resp)
+}
+#[allow(clippy::result_large_err, reason = "tungstenite callback signature")]
+fn obsidian_origin(req: &Request, resp: Response) -> Result<Response, ErrorResponse> {
+    check_origin(true, req, resp)
+}
 type Server = tungstenite::handshake::server::ServerHandshake<
     TcpStream,
     fn(&Request, Response) -> Result<Response, ErrorResponse>,
@@ -292,11 +354,15 @@ fn finish_handshake(
 }
 
 const TICK: Duration = Duration::from_millis(25);
-fn run(rx: mpsc::Receiver<RequestMode>, colors: Arc<Mutex<Colors>>, inbox: RwSignal<Incoming>) {
-    let mut request = rx.recv().ok();
-    while let Some((generation, app)) = request {
+fn run(rx: mpsc::Receiver<Command>, colors: Arc<Mutex<Colors>>, inbox: RwSignal<Incoming>) {
+    let mut next = rx.recv().ok();
+    while let Some(command) = next {
+        let Command::Select(generation, app) = command else {
+            next = rx.recv().ok();
+            continue;
+        };
         let Some(app) = app else {
-            request = rx.recv().ok();
+            next = rx.recv().ok();
             continue;
         };
         let status = |state: State| {
@@ -306,15 +372,19 @@ fn run(rx: mpsc::Receiver<RequestMode>, colors: Arc<Mutex<Colors>>, inbox: RwSig
                 }
             });
         };
-        let listener = if app == PaintApp::Aseprite {
-            match TcpListener::bind((Ipv4Addr::LOCALHOST, 9009)).and_then(|l| {
+        if app.adobe() {
+            next = adobe::session(app, generation, &rx, &colors, status);
+            continue;
+        }
+        let listener = if let Some(port) = app.listen_port() {
+            match TcpListener::bind((Ipv4Addr::LOCALHOST, port)).and_then(|l| {
                 l.set_nonblocking(true)?;
                 Ok(l)
             }) {
                 Ok(l) => Some(l),
                 Err(e) => {
-                    status(State::Failed(format!("Aseprite port 9009: {e}")));
-                    request = rx.recv().ok();
+                    status(State::Failed(format!("{} port {port}: {e}", app.name())));
+                    next = rx.recv().ok();
                     continue;
                 }
             }
@@ -334,7 +404,12 @@ fn run(rx: mpsc::Receiver<RequestMode>, colors: Arc<Mutex<Colors>>, inbox: RwSig
                 {
                     let handshake = tungstenite::accept_hdr_with_config(
                         stream,
-                        origin as fn(&Request, Response) -> Result<Response, ErrorResponse>,
+                        (if app == PaintApp::Obsidian {
+                            obsidian_origin
+                        } else {
+                            native_origin
+                        })
+                            as fn(&Request, Response) -> Result<Response, ErrorResponse>,
                         Some(config()),
                     );
                     finish_handshake(
@@ -406,8 +481,18 @@ fn run(rx: mpsc::Receiver<RequestMode>, colors: Arc<Mutex<Colors>>, inbox: RwSig
             }
             match rx.recv_timeout(TICK) {
                 Err(mpsc::RecvTimeoutError::Timeout) => {}
-                Ok(next) => {
-                    request = Some(next);
+                Ok(Command::Palette(epoch, entries)) => {
+                    if epoch == generation && app.palette_export() {
+                        let text = serde_json::json!({"palette":entries}).to_string();
+                        peers.retain_mut(|p| {
+                            !p.socket
+                                .send(Message::text(text.clone()))
+                                .is_err_and(|e| !waiting(&e))
+                        });
+                    }
+                }
+                Ok(command) => {
+                    next = Some(command);
                     break;
                 }
                 Err(mpsc::RecvTimeoutError::Disconnected) => return,

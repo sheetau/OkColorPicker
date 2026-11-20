@@ -13,7 +13,7 @@ import zipfile
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "packaging/update.ps1"
 FILES = ("BUNDLE.json", "DXC_SOURCES.json", "SOURCE_INDEX.json", "SOURCES.zip",
-         "THIRD_PARTY_NOTICES.html", "START_HERE.txt", "OkColorPicker.lua", "update.ps1", "OkColorPicker.exe")
+         "THIRD_PARTY_NOTICES.html", "START_HERE.txt", "OkColorPicker.lua", "Painting-plugins.zip", "update.ps1", "OkColorPicker.exe")
 
 
 @unittest.skipUnless(os.name == "nt", "requires Windows PowerShell and NTFS")

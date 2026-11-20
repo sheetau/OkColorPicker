@@ -1,0 +1,9 @@
+{
+  "id": "okcolorpicker",
+  "name": "OkColorPicker",
+  "version": "0.1.0",
+  "minAppVersion": "1.5.0",
+  "description": "Edit colors in notes and Canvas with the Windows OKLCH picker.",
+  "author": "sheeta",
+  "isDesktopOnly": true
+}

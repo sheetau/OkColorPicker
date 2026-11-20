@@ -101,6 +101,14 @@ def package(output, cargo_about):
         bundle = verify_notice_bundle(folder, commit)
         (folder / 'OkColorPicker.exe').write_bytes(binary)
         shutil.copyfile(ROOT / 'packaging/START_HERE.txt', folder / 'START_HERE.txt')
+        bridges = ROOT / 'packaging/bridges'
+        members = ['krita/OkColorPicker.gpl', 'krita/okcolorpicker.desktop',
+                   'krita/okcolorpicker/__init__.py', 'krita/okcolorpicker/bridge.py',
+                   'krita/okcolorpicker/transport.py', 'obsidian/okcolorpicker/main.js',
+                   'obsidian/okcolorpicker/manifest.json']
+        with zipfile.ZipFile(folder / 'Painting-plugins.zip', 'w', compression=zipfile.ZIP_DEFLATED) as plugins:
+            for member in members:
+                notices.write_zip_entry(plugins, member, (bridges / member).read_bytes())
         shutil.copyfile(ROOT / 'packaging/OkColorPicker.lua', folder / 'OkColorPicker.lua')
         shutil.copyfile(ROOT / 'packaging/update.ps1', folder / 'update.ps1')
         metadata = {'version': version, 'project_commit': commit, 'candidate': True,

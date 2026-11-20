@@ -9,13 +9,46 @@ pub enum PaintApp {
     ClipStudio,
     Aseprite,
     Rebelle,
+    Photoshop,
+    Illustrator,
+    InDesign,
+    Krita,
+    Obsidian,
 }
 impl PaintApp {
-    pub const ALL: [Self; 3] = [Self::ClipStudio, Self::Aseprite, Self::Rebelle];
+    pub const ALL: [Self; 8] = [
+        Self::ClipStudio,
+        Self::Photoshop,
+        Self::Illustrator,
+        Self::InDesign,
+        Self::Aseprite,
+        Self::Krita,
+        Self::Rebelle,
+        Self::Obsidian,
+    ];
+    pub fn adobe(self) -> bool {
+        matches!(self, Self::Photoshop | Self::Illustrator | Self::InDesign)
+    }
+    pub fn palette_export(self) -> bool {
+        self.adobe() || matches!(self, Self::Aseprite | Self::Krita)
+    }
+    pub fn listen_port(self) -> Option<u16> {
+        match self {
+            Self::Aseprite => Some(9009),
+            Self::Obsidian => Some(9010),
+            Self::Krita => Some(9011),
+            _ => None,
+        }
+    }
 
     pub fn name(self) -> &'static str {
         match self {
             Self::ClipStudio => "CLIP STUDIO PAINT",
+            Self::Photoshop => "Adobe Photoshop",
+            Self::Illustrator => "Adobe Illustrator",
+            Self::InDesign => "Adobe InDesign",
+            Self::Krita => "Krita",
+            Self::Obsidian => "Obsidian",
             Self::Aseprite => "Aseprite",
             Self::Rebelle => "Rebelle 8 Pro",
         }
@@ -24,6 +57,11 @@ impl PaintApp {
     pub fn short(self) -> &'static str {
         match self {
             Self::ClipStudio => "CSP",
+            Self::Photoshop => "PS",
+            Self::Illustrator => "Ai",
+            Self::InDesign => "Id",
+            Self::Krita => "Krita",
+            Self::Obsidian => "Ob",
             Self::Aseprite => "Ase",
             Self::Rebelle => "Reb",
         }

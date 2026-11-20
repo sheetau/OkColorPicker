@@ -40,7 +40,28 @@ Right-click the status bar connection button to choose an app. Left-click the
 abbreviation to connect or disconnect. The selected app is saved.
 
 CSP: In CLIP STUDIO PAINT, display the Companion Mode QR code (Connect to
-smartphone). Click CSP in the picker while the code is visible.
+smartphone). Click CSP in the picker while the code is visible. If scanning
+fails, copy the pairing URL from the QR code and click Paste pairing link.
+
+PS, Ai, Id: Start Photoshop, Illustrator or InDesign, then click its button.
+Illustrator needs an open document. The picker writes the current
+foreground/background pair to Photoshop. In Illustrator it updates default and
+selected fill/stroke. In InDesign it updates two named swatches and the
+default fill/stroke and selected frames. Connecting while an object is selected recolors the object.
+
+Krita: Extract Painting-plugins.zip. In Krita, use Settings > Manage Resources
+> Open Resource Folder. Copy krita/okcolorpicker.desktop and the accompanying
+okcolorpicker folder into pykrita. Copy OkColorPicker.gpl into palettes.
+Enable OkColorPicker under Settings > Configure Krita > Python Plugin Manager.
+Restart Krita, open a document, then click Krita in the picker. The plugin
+synchronizes brush foreground and background on local port 9011.
+
+Ob: From Painting-plugins.zip copy obsidian/okcolorpicker into the vault's
+.obsidian/plugins directory. Enable OkColorPicker in Settings > Community
+plugins. Click Ob in the picker. Place the cursor on a six-digit hex color in
+a note, or select a Canvas card or edge. Color edits synchronize on local
+port 9010. Use the editor context menu to wrap selected text in a text or
+background color, or choose automatic wrapping in the plugin settings.
 
 Ase: In Aseprite 1.3 or later, use File > Scripts > Open Scripts Folder.
 Copy OkColorPicker.lua from this package there, rescan the scripts folder,
@@ -51,6 +72,10 @@ Close the script dialog to stop the Aseprite connection.
 Reb: Start Rebelle 8 Pro with these command-line arguments:
 -websocket-server-enable -websocket-allowed-ip-addresses 127.0.0.1
 Click Reb in the picker to send the selected color to the brush on port 8265.
+
+With an Adobe app, Aseprite or Krita connected, choose Send palette in the
+Harmony tab to append its colors to the destination swatches or palette.
+Send swatches in Picker or APCA exports all saved library colors.
 
 SAVED COLORS
 

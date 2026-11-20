@@ -14,6 +14,9 @@ exposes a QR through **Connect to smartphone**. The wire implementation referenc
 documents a reverse-engineered protocol, not a supported CELSYS integration API.
 Retain its [license](../licenses/clipremote-MIT.txt) when distributing this code.
 
+After a failed scan, **Paste pairing link** reads a copied Companion Mode URL
+and runs the same pairing validation and authentication.
+
 ## Pairing and authentication
 
 `Pairing::parse` accepts an HTTPS URL on `companion.clip-studio.com` with a `/rc/`

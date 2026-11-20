@@ -448,16 +448,16 @@ fn mounted_tabs_edit_recall_adjust_and_restore() {
                     Modifiers::NONE,
                 );
                 assert!(!refs.sampling.get_untracked());
-                let bounds=refs.companion.window_bounds().unwrap();
-                let pt=Point::new(CssPx(bounds.origin.x.0+5.0),CssPx(bounds.origin.y.0+5.0));
-                for n in [1,2,0] {
+                for n in [1,2,3,4,5,6,7,0] {
+                    let bounds=refs.companion.window_bounds().unwrap();
+                    let pt=Point::new(CssPx(bounds.origin.x.0+bounds.size.width.0/2.0),CssPx(bounds.origin.y.0+bounds.size.height.0/2.0));
                     for action in [PointerAction::Moved,PointerAction::Pressed,PointerAction::Released] {
                         tile_pointer(&mut h,action,PointerButton::Secondary,pt);
                     }
                     let menu=refs.paint_menu.window_bounds().expect("right click opens target list");
                     let window=refs.companion.window_root().unwrap().window_bounds().unwrap();
                     assert!((window.size.width.0-(menu.origin.x.0+menu.size.width.0)-20.0).abs()<1.1);
-                    let bottom={let r=refs.paint_options[2].window_bounds().unwrap();r.origin.y.0+r.size.height.0};
+                    let bottom={let r=refs.paint_options[7].window_bounds().unwrap();r.origin.y.0+r.size.height.0};
                     assert!((bottom-(menu.origin.y.0+menu.size.height.0)).abs()<1.1);
                     click(&mut h,refs.paint_options[n]);
                     assert_eq!(model.tools.get_untracked().paint_app,okcolor_app::workspace::PaintApp::ALL[n]);

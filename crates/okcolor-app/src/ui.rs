@@ -58,7 +58,7 @@ pub struct PickerRefs {
     pub always_snap: NodeRef,
     pub companion: NodeRef,
     pub paint_menu: NodeRef,
-    pub paint_options: [NodeRef; 3],
+    pub paint_options: [NodeRef; crate::workspace::PaintApp::ALL.len()],
     pub csp_pull: NodeRef,
     pub csp_send: NodeRef,
     pub maximize: NodeRef,
@@ -756,6 +756,7 @@ fn Statusbar(model: PickerModel, refs: PickerRefs, settings: RwSignal<bool>) -> 
     use crate::{paint_link::PaintLink, workspace::PaintApp};
     use okcolor_csp::worker::State;
     let link = PaintLink::mount(model);
+    let clipboard = StoredValue::new_local(use_clipboard());
     let target = Memo::new(move |_| model.tools.with(|tools| tools.paint_app));
     let state = move || {
         if target.get() == PaintApp::ClipStudio {
@@ -780,6 +781,20 @@ fn Statusbar(model: PickerModel, refs: PickerRefs, settings: RwSignal<bool>) -> 
             .unwrap_or_else(|| model.display.get().label().into())
     };
     let failed = move || !failure.get().is_empty();
+    let export_label = move || {
+        if model.tab.get() == Tab::Harmonies {
+            "Send palette"
+        } else {
+            "Send swatches"
+        }
+    };
+    let has_colors = move || {
+        if model.tab.get() == Tab::Harmonies {
+            !model.palette.with(Vec::is_empty)
+        } else {
+            model.library.with(|l| !l.swatches.is_empty())
+        }
+    };
     let action = move || {
         let app = target.get();
         if failed() {
@@ -793,6 +808,10 @@ fn Statusbar(model: PickerModel, refs: PickerRefs, settings: RwSignal<bool>) -> 
     Tooltips::bind(refs.companion, move || {
         let hint = match (target.get(), state()) {
             (PaintApp::ClipStudio, _) => model.companion.hint.get_untracked(),
+            (app, State::Connecting) if app.adobe() => format!("Waiting for {}", app.name()),
+            (PaintApp::Krita | PaintApp::Obsidian, State::Connecting) => {
+                "Waiting for the bridge plugin".into()
+            }
             (PaintApp::Aseprite, State::Connecting) => "Waiting for the Aseprite script".into(),
             (PaintApp::Rebelle, State::Connecting) => "Waiting for Rebelle on port 8265".into(),
             _ => String::new(),
@@ -830,6 +849,18 @@ fn Statusbar(model: PickerModel, refs: PickerRefs, settings: RwSignal<bool>) -> 
             }
         } else {
             text(class="status-center",node_ref=notification) {{status}}
+        }
+        if move ||target.get()==PaintApp::ClipStudio && matches!(state(),State::Failed(_)) {
+            control(node_ref=Tooltips::button(NodeRef::new(),"Paste a CSP Companion Mode pairing URL"),tabindex=Focus::Sequential,
+                on:click=move |_|clipboard.with_value(|clip|clip.read_text(ClipboardKind::Standard,move |url|{
+                    if target.get_untracked()==PaintApp::ClipStudio && matches!(model.companion.state.get_untracked(),State::Failed(_)) {
+                        model.companion.paste_link(url.as_deref().unwrap_or_default());
+                    }
+                }))) {"Paste pairing link"}
+        }
+        if move ||!settings.get() && target.get().palette_export() && state()==State::Connected && has_colors() {
+            control(node_ref={let node=NodeRef::new();Tooltips::bind(node,move ||format!("{} to {}",export_label(),target.get().name()));node},
+                tabindex=Focus::Sequential,a11y:label=export_label,on:click=move |_|link.export_palette()) {text {{export_label}}}
         }
         if move ||!model.storage_message.get().is_empty() && model.can_save.get() {
             control(node_ref=Tooltips::button(NodeRef::new(),"Retry saving"),tabindex=Focus::Sequential,on:click=move |_|model.save_request.update(|r|*r=r.wrapping_add(1))) {"Retry"}
