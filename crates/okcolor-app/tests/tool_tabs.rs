@@ -575,6 +575,19 @@ fn mounted_tabs_edit_recall_adjust_and_restore() {
                     Modifiers::NONE,
                 );
                 assert!(!refs.sampling.get_untracked());
+                let named = |key| KeyEvent::named(key, PhysicalKey::Unidentified(0));
+                key(&mut h, named(NamedKey::Tab), Modifiers::CONTROL);
+                assert_eq!(model.tab.get_untracked(), Tab::Harmonies);
+                key(&mut h, named(NamedKey::Enter), Modifiers::NONE);
+                assert!(refs.settings_content.window_bounds().is_none());
+                key(&mut h, named(NamedKey::Tab), Modifiers::NONE);
+                key(&mut h, named(NamedKey::Enter), Modifiers::NONE);
+                assert!(refs.settings_content.window_bounds().is_some(), "Tab still reaches Settings");
+                key(&mut h, named(NamedKey::Escape), Modifiers::NONE);
+                key(&mut h, named(NamedKey::Enter), Modifiers::NONE);
+                assert!(refs.settings_content.window_bounds().is_none(), "Escape leaves no active button");
+                key(&mut h, named(NamedKey::Tab), Modifiers::CONTROL | Modifiers::SHIFT);
+                assert_eq!(model.tab.get_untracked(), Tab::Picker);
                 for n in [1,2,3,4,5,6,7,0] {
                     let bounds=refs.companion.window_bounds().unwrap();
                     let pt=Point::new(CssPx(bounds.origin.x.0+bounds.size.width.0/2.0),CssPx(bounds.origin.y.0+bounds.size.height.0/2.0));
@@ -723,6 +736,10 @@ fn mounted_tabs_edit_recall_adjust_and_restore() {
                 }
                 assert_eq!(model.format.get_untracked(),okcolor_core::ColorFormat::Rgb);
                 assert!(refs.format_menu.get_untracked().is_none());
+                click(&mut h,refs.format_trigger);
+                key(&mut h, named(NamedKey::Escape), Modifiers::NONE);
+                key(&mut h, named(NamedKey::Enter), Modifiers::NONE);
+                assert!(refs.format_menu.window_bounds().is_none(), "Escape does not arm the format trigger");
                 model.format.set(original_format);
                 // Black in the variations uses the same inner edge as a dark swatch.
                 let shades = refs.tools[7].window_bounds().unwrap();

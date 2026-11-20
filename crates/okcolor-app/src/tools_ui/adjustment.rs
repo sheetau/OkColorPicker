@@ -23,10 +23,10 @@ pub(super) fn AdjustmentMenu(
             model.finish_palette_adjustment(apply);
         }
     };
-    let close = move |apply| {
+    let close = move |apply, focus: NodeRef| {
         finish(apply);
         open.set(false);
-        refs.palette_adjust.focus();
+        focus.focus();
     };
     let observe = RenderEffect::new(move |_| {
         if model
@@ -150,7 +150,7 @@ pub(super) fn AdjustmentMenu(
                 drag.set_value(None);
                 cx.release_pointer();
             }
-            close(false);
+            close(false, refs.app_root);
             cx.prevent_default();
             cx.stop_propagation();
         }
@@ -169,7 +169,7 @@ pub(super) fn AdjustmentMenu(
                 }}}
             }
         }
-        control(class="adjustment-action",node_ref=refs.adjustment_apply,tabindex=Focus::Sequential,on:click=move |_|close(true)) {text(class="adjustment-caption") {"Apply"}}
-        control(class="adjustment-action",node_ref=refs.adjustment_cancel,tabindex=Focus::Sequential,on:click=move |_|close(false)) {text(class="adjustment-caption") {"Cancel"}}
+        control(class="adjustment-action",node_ref=refs.adjustment_apply,tabindex=Focus::Sequential,on:click=move |_|close(true,refs.palette_adjust)) {text(class="adjustment-caption") {"Apply"}}
+        control(class="adjustment-action",node_ref=refs.adjustment_cancel,tabindex=Focus::Sequential,on:click=move |_|close(false,refs.palette_adjust)) {text(class="adjustment-caption") {"Cancel"}}
     }}
 }

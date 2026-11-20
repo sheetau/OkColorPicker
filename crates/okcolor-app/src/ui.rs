@@ -24,6 +24,7 @@ pub(crate) struct InputExit(pub NodeRef);
 /// Stable handles also let application tests exercise the actual mounted controls.
 #[derive(Clone, Copy)]
 pub struct PickerRefs {
+    pub app_root: NodeRef,
     pub tool_page: NodeRef,
     pub page_content: NodeRef,
     pub settings_content: NodeRef,
@@ -78,6 +79,7 @@ pub struct PickerRefs {
 impl Default for PickerRefs {
     fn default() -> Self {
         Self {
+            app_root: NodeRef::new(),
             tool_page: NodeRef::new(),
             page_content: NodeRef::new(),
             settings_content: NodeRef::new(),
@@ -141,7 +143,7 @@ pub fn Picker(model: PickerModel, refs: PickerRefs) -> impl IntoView {
         refs.adjustment_menu,
         model,
     );
-    let app_root = NodeRef::new();
+    let app_root = refs.app_root;
     provide_context(InputExit(app_root));
     let app_size = app_root.observe_border_size();
     let maximized = use_window().maximized();
@@ -185,6 +187,7 @@ pub fn Picker(model: PickerModel, refs: PickerRefs) -> impl IntoView {
         }
         if cx.key == Key::Named(NamedKey::Escape) && refs.sampling.get_untracked() {
             refs.sampling.set(false);
+            app_root.focus();
             cx.prevent_default();
             return;
         }
@@ -204,7 +207,7 @@ pub fn Picker(model: PickerModel, refs: PickerRefs) -> impl IntoView {
                 return;
             }
             settings.set(false);
-            refs.menu.focus();
+            app_root.focus();
             cx.prevent_default();
             return;
         }
@@ -249,7 +252,7 @@ pub fn Picker(model: PickerModel, refs: PickerRefs) -> impl IntoView {
         };
         if let Some(tab) = tab {
             settings.set(false);
-            switch_tab(model, refs, tab);
+            switch_tab(model, refs, tab, app_root);
             cx.prevent_default();
             cx.stop_propagation();
             return;
@@ -508,8 +511,9 @@ fn FallbackSample(
     }}
 }
 
-/// Close each popup on Escape or an outside press and restore keyboard focus.
+/// Close each popup on Escape or an outside press.
 pub(crate) fn dismiss_menu(open: RwSignal<bool>, popup: NodeRef, trigger: NodeRef) {
+    let exit = expect_context::<InputExit>().0;
     let effect = RenderEffect::new(move |_| {
         if !open.get() || popup.get().is_none() {
             return None;
@@ -523,7 +527,7 @@ pub(crate) fn dismiss_menu(open: RwSignal<bool>, popup: NodeRef, trigger: NodeRe
         let escape = root.listen(events::KEY_DOWN, ListenerOptions::CAPTURE, move |cx| {
             if cx.key == Key::Named(NamedKey::Escape) {
                 open.set(false);
-                trigger.focus();
+                exit.focus();
                 cx.prevent_default();
                 cx.stop_propagation();
             }
@@ -860,7 +864,7 @@ fn Statusbar(model: PickerModel, refs: PickerRefs, settings: RwSignal<bool>) -> 
         for entry in move ||tabs.into_iter().enumerate(),key=|entry:&(usize,(Tab,&str,&str))|entry.0 {
             control(class="tab-button",node_ref=refs.tabs[entry.0],tabindex=Focus::Sequential,a11y:label=entry.1.1,
                 class:active=move ||model.tab.get()==entry.1.0,
-                on:click=move |_|{settings.set(false);switch_tab(model,refs,entry.1.0);}) {
+                on:click=move |_|{settings.set(false);switch_tab(model,refs,entry.1.0,refs.menu);}) {
                 {zgui::elements::vector().document(entry.1.2).class("status-icon")}
             }
         }
@@ -1311,11 +1315,11 @@ fn CodeField(model: PickerModel, refs: PickerRefs, node: NodeRef, primary: bool)
 
 pub const STYLE: &str = include_str!("style.css");
 
-fn switch_tab(model: PickerModel, refs: PickerRefs, tab: Tab) {
+fn switch_tab(model: PickerModel, refs: PickerRefs, tab: Tab, focus: NodeRef) {
     if model.dragging.get_untracked() {
         return;
     }
-    refs.menu.focus();
+    focus.focus();
     refs.tool_page.scroll_to(
         ScrollTarget::Offset(zgui::geom::Point::new(
             zgui::geom::DevicePx(0.0),
