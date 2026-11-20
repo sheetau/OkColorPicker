@@ -229,7 +229,7 @@ field:focus { color: var(--bright); }
 .number.editing { cursor: text; }
 .code:focus, .number:focus { color: var(--bright); outline: 0; }
 .copy, .folder-chevron, .format-trigger, .recent-nav, .contrast-heading > .tool-action, .palette-section .generate-button { color: var(--muted); }
-.format-trigger.open, .folder-heading.open .folder-chevron, .copy:hover, .folder-heading:hover .folder-chevron, .contrast-heading > .tool-action:hover, .palette-section .generate-button:hover { color: var(--bright); }
+.format-trigger.open, .folder-heading.open .folder-chevron, .copy:hover, .folder-heading:hover .folder-chevron, .contrast-heading > .tool-action:hover, .palette-section .generate-button:hover, .palette-section .generate-button.open { color: var(--bright); }
 .palette-section .section-heading { gap: var(--space-y); min-height: var(--icon); height: var(--icon); }
 .copy-icon { width: 100%; height: 100%; --zgui-stroke: currentColor; pointer-events: none; }
 .copy.compact { width: var(--icon); min-width: var(--icon); height: var(--icon); }
@@ -253,8 +253,9 @@ field:focus { color: var(--bright); }
 .folder-confirm control:hover, .folder-menu control.drag-over { color: var(--bright); }
 .folder-menu .adjustment-row { flex-direction: row; justify-content: space-between; gap: var(--space-y); cursor: ew-resize; }
 .adjustment-name { color: var(--muted); }
-.adjustment-value { color: var(--text); font-family: var(--mono); }
-.adjustment-row:hover .adjustment-value { color: var(--bright); }
+.adjustment-value { width: 35px; min-width: 35px; text-align: right; color: var(--text); font-family: var(--mono); }
+.adjustment-caption { color: var(--text); }
+.adjustment-action:hover .adjustment-caption, .adjustment-row:hover .adjustment-value { color: var(--bright); }
 .folder-menu .new-folder { flex-direction: row; gap: var(--gap); }
 .new-folder .add-icon { align-self: flex-start; margin-left: -5px; width: 21px; height: 21px; }
 .add-tile .add-icon { position: absolute; left: -1px; top: -1px; width: 21px; height: 21px; }

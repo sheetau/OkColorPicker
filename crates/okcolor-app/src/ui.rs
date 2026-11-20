@@ -32,6 +32,8 @@ pub struct PickerRefs {
     pub tooltip: NodeRef,
     pub palette_adjust: NodeRef,
     pub adjustment_menu: NodeRef,
+    pub adjustment_apply: NodeRef,
+    pub adjustment_cancel: NodeRef,
     pub adjustment_rows: [NodeRef; 4],
     pub palette_dot: NodeRef,
     pub similar: NodeRef,
@@ -79,6 +81,8 @@ impl Default for PickerRefs {
             tooltip: NodeRef::new(),
             palette_adjust: NodeRef::new(),
             adjustment_menu: NodeRef::new(),
+            adjustment_apply: NodeRef::new(),
+            adjustment_cancel: NodeRef::new(),
             adjustment_rows: std::array::from_fn(|_| NodeRef::new()),
             palette_dot: NodeRef::new(),
             similar: NodeRef::new(),
@@ -159,7 +163,7 @@ pub fn Picker(model: PickerModel, refs: PickerRefs) -> impl IntoView {
         bridge.with_value(|bridge| bridge.bind_content(refs, model));
     }
     let shortcut = move |cx: &mut EventCx<'_, events::KeyDown>| {
-        if present_update.get_untracked() {
+        if present_update.get_untracked() || refs.adjustment_menu.get_untracked().is_some() {
             return;
         }
         if cx.key == Key::Named(NamedKey::Escape) && refs.sampling.get_untracked() {

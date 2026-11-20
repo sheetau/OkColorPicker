@@ -516,6 +516,49 @@ impl FrameProbe for Probe {
                         <= 1.0
                 );
                 self.stage.set(18);
+                click(hwnd, refs.tabs[1]);
+            }
+            18 if fitted && refs.palette_adjust.window_bounds().is_some() => {
+                click(hwnd, refs.palette_adjust);
+                self.stage.set(19);
+            }
+            19 if refs.adjustment_rows[0].window_bounds().is_some() => {
+                let point = position(refs.adjustment_rows[0], 0.5, 0.5);
+                mouse(hwnd, WM_MOUSEMOVE, point);
+                mouse(hwnd, WM_LBUTTONDOWN, point);
+                assert_eq!(
+                    unsafe { GetCapture() },
+                    hwnd,
+                    "native press owns OS mouse capture"
+                );
+                let outside = POINT {
+                    x: client.right + 80,
+                    y: point.y,
+                };
+                mouse(hwnd, WM_MOUSEMOVE, outside);
+                mouse(hwnd, WM_LBUTTONUP, outside);
+                self.stage.set(20);
+            }
+            20 if refs.adjustment_rows[0].text_content().contains('+') => {
+                self.base.set(Some(model.palette.get_untracked()[0].0));
+                mouse(
+                    hwnd,
+                    WM_MOUSEMOVE,
+                    position(refs.adjustment_rows[0], 0.05, 0.5),
+                );
+                self.stage.set(21);
+            }
+            21 => {
+                assert_eq!(
+                    Some(model.palette.get_untracked()[0].0),
+                    self.base.get(),
+                    "returning after an off-window release cannot scrub"
+                );
+                click(hwnd, refs.adjustment_cancel);
+                self.stage.set(22);
+            }
+            22 if refs.adjustment_menu.get_untracked().is_none() => {
+                self.stage.set(23);
                 // SAFETY: exercise the normal close-request path on this owned window.
                 unsafe {
                     assert_ne!(PostMessageW(hwnd, WM_SYSCOMMAND, SC_CLOSE as usize, 0), 0);
@@ -523,7 +566,7 @@ impl FrameProbe for Probe {
             }
             _ => {}
         }
-        if self.stage.get() < 18 {
+        if self.stage.get() < 23 {
             window.request_frame();
         }
     }
@@ -604,7 +647,7 @@ fn native_pointer_wheel_key_and_resize_reach_the_picker() {
         .unwrap();
     assert_eq!(
         probe.stage.get(),
-        18,
+        23,
         "all native input and resize stages must complete"
     );
     finish.send(()).unwrap();

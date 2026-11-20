@@ -272,7 +272,6 @@ fn Palette(model: PickerModel, refs: PickerRefs) -> impl IntoView {
     let end = Destination::Palette(usize::MAX);
     gestures.register(tail, end);
     let menu = RwSignal::new(false);
-    crate::ui::dismiss_menu(menu, refs.adjustment_menu, refs.palette_adjust);
     let regenerate = move || model.generate_palette();
     let shortcut = RenderEffect::new(move |_| {
         refs.tools[0].get()?;
@@ -298,7 +297,7 @@ fn Palette(model: PickerModel, refs: PickerRefs) -> impl IntoView {
             text {"Palettes"} spacer() HoverLabel(heading=heading)
             row(class="palette-actions") {
                 box(class="folder-anchor") {
-                    control(class="generate-button",node_ref=Tooltips::button(refs.palette_adjust,"Adjust palette"),a11y:label="Adjust palette",tabindex=Focus::Sequential,on:click=move |_|menu.update(|visible| *visible = !*visible)) {
+                    control(class="generate-button",class:open=move ||menu.get(),node_ref=Tooltips::button(refs.palette_adjust,"Adjust palette"),a11y:label="Adjust palette",tabindex=Focus::Sequential,on:click=move |_|menu.update(|visible| *visible = !*visible)) {
                         {zgui::elements::vector().document(include_str!("../assets/adjust.svg")).class("generate-icon")}
                     }
                     if move ||menu.get() { AdjustmentMenu(model=model,refs=refs,open=menu) }

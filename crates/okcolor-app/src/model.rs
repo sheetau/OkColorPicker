@@ -554,12 +554,12 @@ impl PickerModel {
                     palette: Arc::new(palette.clone()),
                     ..history.current()
                 })
-                .expect("active palette gesture");
+                .expect("active palette adjustment");
         });
         self.palette.set(palette);
     }
 
-    pub(crate) fn finish_palette_drag(self, commit: bool) {
+    pub(crate) fn finish_palette_adjustment(self, commit: bool) {
         self.history.update(|history| {
             if commit {
                 let _ = history.commit();

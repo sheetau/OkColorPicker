@@ -2,6 +2,9 @@ use super::{PickerModel, PickerRefs};
 use okcolor_core::adjust_palette_color;
 use zgui::{prelude::*, reactive::RenderEffect};
 
+const LABELS: [&str; 4] = ["L", "C", "H", "Temp"];
+const LIMITS: [i16; 4] = [100, 1000, 360, 100];
+
 #[component]
 pub(super) fn AdjustmentMenu(
     model: PickerModel,
@@ -13,13 +16,17 @@ pub(super) fn AdjustmentMenu(
     let gamut = model.gamut.get_untracked();
     let offsets = RwSignal::new([0i16; 4]);
     let drag = StoredValue::new(None::<(usize, f32, i16)>);
-    let cancel = move || {
-        if let Some((index, _, original)) = drag.get_value() {
-            drag.set_value(None);
-            offsets.update(|v| v[index] = original);
-            model.finish_palette_drag(false);
-            expected.set_value(model.palette.get_untracked());
+    let editing = StoredValue::new(false);
+    let finish = move |apply| {
+        if editing.get_value() {
+            editing.set_value(false);
+            model.finish_palette_adjustment(apply);
         }
+    };
+    let close = move |apply| {
+        finish(apply);
+        open.set(false);
+        refs.palette_adjust.focus();
     };
     let observe = RenderEffect::new(move |_| {
         if model
@@ -30,53 +37,87 @@ pub(super) fn AdjustmentMenu(
             open.set(false);
         }
     });
-    on_cleanup_local(move || {
-        drop(observe);
-        cancel();
-    });
 
     let scrub = move |x: f32, modifiers: Modifiers| {
         let Some((index, start, original)) = drag.get_value() else {
             return;
         };
-        let limit = if index == 0 { 180.0 } else { 100.0 };
-        let speed = if modifiers.contains(Modifiers::SHIFT) {
-            10.0
-        } else if modifiers.contains(Modifiers::CONTROL) {
-            0.1
-        } else {
-            1.0
-        };
+        let limit = f32::from(LIMITS[index]);
+        let mut speed = 1.0;
+        if modifiers.contains(Modifiers::SHIFT) {
+            speed *= 10.0;
+        }
+        if modifiers.contains(Modifiers::CONTROL) {
+            speed *= 0.1;
+        }
         let next =
             (f32::from(original) + ((x - start) * speed / 4.0).trunc()).clamp(-limit, limit) as i16;
         let mut values = offsets.get_untracked();
-        if values[index] != next {
-            values[index] = next;
-            offsets.set(values);
-            let palette: Vec<_> = base.with_value(|base| {
-                base.iter()
-                    .map(|&(source, locked)| {
-                        (
-                            if locked {
-                                source
-                            } else {
-                                adjust_palette_color(source, gamut, values)
-                            },
-                            locked,
-                        )
-                    })
-                    .collect()
-            });
-            expected.set_value(palette.clone());
-            model.preview_palette(palette);
+        if values[index] == next {
+            return;
+        }
+        if !editing.get_value() {
+            if !model.begin() {
+                return;
+            }
+            editing.set_value(true);
+        }
+        values[index] = next;
+        offsets.set(values);
+        let palette = base.with_value(|base| {
+            base.iter()
+                .map(|&(source, locked)| {
+                    let color = if locked {
+                        source
+                    } else {
+                        adjust_palette_color(source, gamut, values)
+                    };
+                    (color, locked)
+                })
+                .collect::<Vec<_>>()
+        });
+        expected.set_value(palette.clone());
+        model.preview_palette(palette);
+        if values == [0; 4] {
+            finish(false);
         }
     };
-    // A row can disappear on Escape before the pointer is released. Listen at
-    // the window so the drag can cross rows without leaving capture on a removed node.
     let root = refs
         .palette_adjust
         .window_root()
         .expect("mounted palette trigger");
+    // Win32 captures the physical mouse for a button press. Capture the zgui
+    // root as well so an off-window release still has a live dispatch target.
+    let pressed = root.listen(events::POINTER_DOWN, ListenerOptions::CAPTURE, move |cx| {
+        if let Some(index) = refs
+            .adjustment_rows
+            .iter()
+            .position(|row| row.contains(cx.target))
+        {
+            if cx.primary && cx.button == Some(PointerButton::Primary) {
+                drag.set_value(Some((
+                    index,
+                    cx.position.x.0,
+                    offsets.get_untracked()[index],
+                )));
+                cx.capture_pointer();
+                cx.prevent_default();
+            }
+        } else if !refs.adjustment_menu.contains(cx.target) {
+            if editing.get_value() {
+                cx.prevent_default();
+                cx.stop_propagation();
+            } else if !refs.palette_adjust.contains(cx.target) {
+                open.set(false);
+            }
+        }
+    });
+    let clicked = root.listen(events::CLICK, ListenerOptions::CAPTURE, move |cx| {
+        if editing.get_value() && !refs.adjustment_menu.contains(cx.target) {
+            cx.prevent_default();
+            cx.stop_propagation();
+        }
+    });
     let moved = root.listen(events::POINTER_MOVE, ListenerOptions::CAPTURE, move |cx| {
         if cx.primary && drag.get_value().is_some() {
             scrub(cx.position.x.0, cx.modifiers);
@@ -87,7 +128,7 @@ pub(super) fn AdjustmentMenu(
         if cx.button == Some(PointerButton::Primary) && drag.get_value().is_some() {
             scrub(cx.position.x.0, cx.modifiers);
             drag.set_value(None);
-            model.finish_palette_drag(true);
+            cx.release_pointer();
             cx.prevent_default();
             cx.stop_propagation();
         }
@@ -95,26 +136,37 @@ pub(super) fn AdjustmentMenu(
     let cancelled = root.listen(
         events::POINTER_CANCEL,
         ListenerOptions::CAPTURE,
-        move |_| cancel(),
+        move |cx| {
+            drag.set_value(None);
+            cx.release_pointer();
+        },
     );
-    on_cleanup_local(move || drop((moved, released, cancelled)));
-    const LABELS: [&str; 4] = ["Hue", "Saturation", "Brightness", "Temperature"];
+    let key = root.listen(events::KEY_DOWN, ListenerOptions::CAPTURE, move |cx| {
+        if cx.key == Key::Named(NamedKey::Escape) {
+            if drag.get_value().is_some() {
+                drag.set_value(None);
+                cx.release_pointer();
+            }
+            close(false);
+            cx.prevent_default();
+            cx.stop_propagation();
+        }
+    });
+    on_cleanup_local(move || {
+        drop((observe, pressed, clicked, moved, released, cancelled, key));
+        finish(false);
+    });
     view! {column(class="folder-menu above",node_ref=refs.adjustment_menu) {
         for i in move ||0..LABELS.len(),key=|i:&usize|*i {
-            control(class="adjustment-row",node_ref=refs.adjustment_rows[i],a11y:label=LABELS[i],
-                on:pointer_down=move |cx|{
-                    if cx.primary && cx.button==Some(PointerButton::Primary) && model.begin() {
-                        drag.set_value(Some((i,cx.position.x.0,offsets.get_untracked()[i])));
-                        cx.prevent_default();
-                    }
-                }) {
+            control(class="adjustment-row",node_ref=refs.adjustment_rows[i],a11y:label=LABELS[i]) {
                 text(class="adjustment-name") {{LABELS[i]}}
                 text(class="adjustment-value") {{move ||{
                     let value=offsets.get()[i];
-                    let unit=if i==0 {""}else{"%"};
-                    if value>0 {format!("+{value}{unit}")}else{format!("{value}{unit}")}
+                    if value>0 {format!("+{value}")}else{value.to_string()}
                 }}}
             }
         }
+        control(class="adjustment-action",node_ref=refs.adjustment_apply,tabindex=Focus::Sequential,on:click=move |_|close(true)) {text(class="adjustment-caption") {"Apply"}}
+        control(class="adjustment-action",node_ref=refs.adjustment_cancel,tabindex=Focus::Sequential,on:click=move |_|close(false)) {text(class="adjustment-caption") {"Cancel"}}
     }}
 }

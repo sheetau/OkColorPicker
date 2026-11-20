@@ -7,27 +7,29 @@ fn adjustments_preserve_working_gamut_and_alpha_and_have_neutral_zero() {
     for gamut in [Gamut::Srgb, Gamut::DisplayP3, Gamut::Rec2020] {
         let base = Oklch::from_rgb([0.0, 1.0, 0.0], gamut, 0.4, 0.0).unwrap();
         assert_eq!(adjust_palette_color(base, gamut, [0; 4]), base);
-        for (offsets, rgb) in [
-            ([60, 0, 0, 0], [0.0, 0.0, 1.0]),
-            ([0, -100, 0, 0], [0.5, 0.5, 0.5]),
-            ([0, 0, 50, 0], [0.5, 1.0, 0.5]),
-            ([0, 0, 0, -50], [0.0, 0.5, 0.5]),
-            ([0, 0, 0, 100], [1.0, 0.0, 0.0]),
-            ([0, 0, 50, -50], [0.25, 1.0, 1.0]),
-        ] {
-            let result = adjust_palette_color(base, gamut, offsets);
-            assert_eq!(result.components()[3], 0.4);
-            for (actual, expected) in result.encoded_rgb(gamut).into_iter().zip(rgb) {
-                assert!(
-                    (actual - expected).abs()
-                        < if gamut == Gamut::Srgb {
-                            0.5 / 255.0 + 0.00001
-                        } else {
-                            0.0001
-                        },
-                    "{gamut:?} {offsets:?}: {actual} versus {expected}"
-                );
-            }
+        let inside = Oklch::new(0.52, 0.02, 352.0, 0.4).unwrap();
+        assert_eq!(
+            adjust_palette_color(inside, gamut, [10, 20, 15, 0]),
+            Oklch::new(0.62, 0.04, 7.0, 0.4).unwrap()
+        );
+        assert_eq!(adjust_palette_color(inside, gamut, [0, 0, 360, 0]), inside);
+        assert_eq!(adjust_palette_color(inside, gamut, [0, 0, -360, 0]), inside);
+        for delta in [-100, 100] {
+            let [l, c, _, a] = adjust_palette_color(inside, gamut, [delta, 0, 0, 0]).components();
+            assert_eq!((l, c, a), (if delta < 0 { 0.0 } else { 1.0 }, 0.0, 0.4));
+        }
+        assert_eq!(
+            adjust_palette_color(inside, gamut, [0, -1000, 0, 0]).components()[1],
+            0.0
+        );
+        let peak = adjust_palette_color(inside, gamut, [0, 1000, 0, 0]);
+        assert!(peak.in_gamut(gamut));
+        let [l, c, h, a] = peak.components();
+        assert_eq!((l, h, a), (0.52, 352.0, 0.4));
+        assert!(!Oklch::new(l, c + 0.0001, h, a).unwrap().in_gamut(gamut));
+        let warm = adjust_palette_color(base, gamut, [0, 0, 0, 100]);
+        for (actual, expected) in warm.encoded_rgb(gamut).into_iter().zip([1.0, 0.0, 0.0]) {
+            assert!((actual - expected).abs() < 0.0001);
         }
     }
 }

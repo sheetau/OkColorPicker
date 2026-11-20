@@ -76,12 +76,15 @@ and the last eight generated palettes. Locked colors retain their positions and
 original components, including alpha. New colors fit the selected working gamut.
 
 Use the adjustment button to the left of Generate to edit the current palette.
-Drag a row horizontally to rotate hue (−180 to +180, one full turn in either
-direction), adjust saturation or brightness (±100%), or mix toward a cooler
-blue or warmer red (±100%). Adjustments use the selected working gamut and
-preserve alpha. Locked tiles keep their exact colors. Zeroing all four rows
-restores the colors from when the menu opened. Each drag is one undo step.
-Click outside the menu or press Escape to close.
+Drag L, C, H or Temp horizontally to preview offsets from the palette that opened
+the menu. One step adds 0.01 to OKLCH lightness, 0.001 to chroma, or one degree
+to hue, as in Picker. The signed ranges are ±100, ±1000 and ±360 respectively.
+Lightness stops at black or white. Chroma is reduced when necessary to fit the
+working gamut at the adjusted lightness and hue. Temp ranges from −100 (cool)
+to +100 (warm). Locked colors and alpha are preserved.
+Choose **Apply** to keep all adjustments as one undo step, or **Cancel** or
+**Escape** to restore the original palette. Clicking outside closes an
+unmodified menu. After an adjustment, the menu stays open until you decide.
 
 Shift-click a palette tile to toggle its lock. A dot at the lower
 center marks a locked tile. Click **+** to insert one color. Drag **+** upward

@@ -102,6 +102,25 @@ fn check_palette_adjustment(
         5.0
     );
     assert_eq!(button.origin.y, generate.origin.y);
+    let ink_bounds = |node: NodeRef| {
+        let b = node.window_bounds().unwrap();
+        let (x, y) = (b.origin.x.0.round() as i32, b.origin.y.0.round() as i32);
+        let frames = frames.lock().unwrap();
+        let frame = frames.last().unwrap();
+        let mut peak = 0;
+        let mut left = b.size.width.0 as i32;
+        for dx in 0..b.size.width.0 as i32 {
+            for dy in 0..b.size.height.0 as i32 {
+                let color = frame.rgba(x + dx, y + dy)[0];
+                peak = peak.max(color);
+                if color > 32 {
+                    left = left.min(dx);
+                }
+            }
+        }
+        (peak, left)
+    };
+    let closed_ink = ink_bounds(refs.palette_adjust).0;
     let before = model.palette.get_untracked();
     click(h, refs.palette_adjust);
     let menu = refs.adjustment_menu.window_bounds().unwrap();
@@ -146,6 +165,23 @@ fn check_palette_adjustment(
         hovered[1] > normal[1] + 30,
         "hovered ink {hovered:?}, normal {normal:?}"
     );
+    assert!(
+        ink_bounds(refs.palette_adjust).0 > closed_ink + 40,
+        "open trigger stays lit off hover"
+    );
+    for node in [refs.adjustment_apply, refs.adjustment_cancel] {
+        let (normal, left) = ink_bounds(node);
+        assert!((6..=10).contains(&left) && (75..=118).contains(&normal));
+        let b = node.window_bounds().unwrap();
+        let over = Point::new(CssPx(b.origin.x.0 + 10.0), CssPx(b.origin.y.0 + 10.0));
+        tile_pointer(h, PointerAction::Moved, PointerButton::Primary, over);
+        let hovered = ink_bounds(node).0;
+        assert!(
+            hovered > normal + 30,
+            "{} action: normal {normal}, hovered {hovered}",
+            node.text_content()
+        );
+    }
     for row in refs.adjustment_rows {
         click(h, row);
         assert!(refs.adjustment_menu.get().is_some());
@@ -181,35 +217,81 @@ fn check_palette_adjustment(
     tile_pointer(h, PointerAction::Released, primary, below);
     assert_eq!(model.palette.get_untracked(), after);
     assert!(refs.adjustment_menu.get().is_some());
-    tile_pointer(h, PointerAction::Pressed, primary, end);
-    tile_pointer(h, PointerAction::Moved, primary, start);
-    assert_eq!(model.palette.get_untracked(), before);
-    let escape = || KeyEvent::named(NamedKey::Escape, PhysicalKey::Unidentified(0));
-    key(h, escape(), Modifiers::NONE);
-    assert!(refs.adjustment_menu.get().is_none());
+    // A click, including its activation on release, must not reach Generate.
+    click(h, refs.tools[0]);
+    click(h, refs.palette_adjust);
+    assert!(refs.adjustment_menu.get().is_some());
+    assert_eq!(model.palette.get_untracked(), after);
     assert_eq!(
-        model.palette.get_untracked(),
-        after,
-        "Escape cancels an unfinished drag"
+        refs.adjustment_menu.window_bounds().unwrap().size.width,
+        menu.size.width
     );
-    tile_pointer(h, PointerAction::Released, primary, start);
+    let visible_value = refs.adjustment_rows[2].text_content();
+    assert!(visible_value.contains("+10"), "hue offset: {visible_value}");
+    let light = refs.adjustment_rows[0].window_bounds().unwrap();
+    let light_start = Point::new(start.x, CssPx(light.origin.y.0 + 9.0));
+    let light_end = Point::new(end.x, light_start.y);
+    tile_pointer(h, PointerAction::Pressed, primary, light_start);
+    tile_pointer(h, PointerAction::Moved, primary, light_end);
+    tile_pointer(h, PointerAction::Released, primary, light_end);
+    let combined = model.palette.get_untracked();
+    assert_ne!(combined, after);
+    let after = combined;
+    click(h, refs.adjustment_apply);
+    assert!(refs.adjustment_menu.get().is_none());
+    assert_eq!(model.palette.get_untracked(), after);
     model.undo();
     h.settle(32);
     assert_eq!(model.palette.get_untracked(), before);
     model.redo();
     h.settle(32);
     assert_eq!(model.palette.get_untracked(), after);
+
+    // Cancel and Escape abandon every drag since opening, including a held one.
+    for escape in [false, true] {
+        click(h, refs.palette_adjust);
+        tile_pointer(h, PointerAction::Pressed, primary, start);
+        tile_pointer(h, PointerAction::Moved, primary, end);
+        tile_pointer(h, PointerAction::Released, primary, end);
+        assert_ne!(model.palette.get_untracked(), after);
+        if escape {
+            tile_pointer(h, PointerAction::Pressed, primary, start);
+            tile_pointer(h, PointerAction::Moved, primary, end);
+            key(
+                h,
+                KeyEvent::named(NamedKey::Escape, PhysicalKey::Unidentified(0)),
+                Modifiers::NONE,
+            );
+            tile_pointer(h, PointerAction::Released, primary, end);
+        } else {
+            click(h, refs.adjustment_cancel);
+        }
+        assert!(refs.adjustment_menu.get().is_none());
+        assert_eq!(model.palette.get_untracked(), after);
+    }
     click(h, refs.palette_adjust);
-    assert!(refs.adjustment_menu.get().is_some(), "reopen after Escape");
+    for (row, limit) in refs.adjustment_rows.into_iter().zip([100, 1000, 360, 100]) {
+        let rect = row.window_bounds().unwrap();
+        let p = Point::new(start.x, CssPx(rect.origin.y.0 + 8.0));
+        for sign in [1, -1] {
+            let far = Point::new(CssPx(p.x.0 + 10000.0 * sign as f32), p.y);
+            tile_pointer(h, PointerAction::Pressed, primary, p);
+            tile_pointer(h, PointerAction::Moved, primary, far);
+            tile_pointer(h, PointerAction::Released, primary, far);
+            assert!(row.text_content().ends_with(&format!("{:+}", limit * sign)));
+            assert_eq!(
+                refs.adjustment_menu.window_bounds().unwrap().size.width,
+                menu.size.width
+            );
+        }
+    }
+    click(h, refs.adjustment_cancel);
+    assert_eq!(model.palette.get_untracked(), after);
+    click(h, refs.palette_adjust);
     click(h, refs.tools[0]);
     assert!(refs.adjustment_menu.get().is_none());
-    assert_ne!(
-        model.palette.get_untracked(),
-        after,
-        "Generate works while the menu is open"
-    );
+    assert_ne!(model.palette.get_untracked(), after);
     model.undo();
-    assert_eq!(model.palette.get_untracked(), after);
     model.undo();
     h.settle(32);
     assert_eq!(model.palette.get_untracked(), before);
