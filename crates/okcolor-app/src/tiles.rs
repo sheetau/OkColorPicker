@@ -6,6 +6,7 @@ use zgui::{prelude::*, reactive::UnsyncCallback};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Source {
+    Slot(usize),
     Sample,
     Recent,
     Library(u64),
@@ -14,6 +15,7 @@ pub(crate) enum Source {
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Destination {
+    Slot(usize),
     FolderMenu,
     Folder(Option<u64>),
     Library(Option<u64>, Option<u64>),
@@ -59,12 +61,16 @@ impl TileGestures {
         self.zones
             .update_value(|zones| zones.push((node, destination)));
         on_cleanup_local(move || {
-            self.zones
-                .update_value(|zones| zones.retain(|(zone, _)| *zone != node))
+            // A remount can register the same stable node before its previous owner is disposed.
+            self.zones.update_value(|zones| {
+                if let Some(i) = zones.iter().position(|entry| *entry == (node, destination)) {
+                    zones.remove(i);
+                }
+            })
         });
     }
 
-    fn hit(self, x: f32, y: f32) -> Option<Destination> {
+    fn hit(self, x: f32, y: f32, source: Source) -> Option<Destination> {
         let visible = self.page.window_bounds()?;
         if y < visible.origin.y.0 || y >= visible.origin.y.0 + visible.size.height.0 {
             return None;
@@ -85,6 +91,9 @@ impl TileGestures {
                     if matches!(dest, Destination::Folder(_)) != in_menu
                         || (adjusting && matches!(dest, Destination::Palette(_)))
                     {
+                        return None;
+                    }
+                    if matches!(dest, Destination::Slot(_)) && !matches!(source, Source::Slot(_)) {
                         return None;
                     }
                     let b = node.window_bounds()?;
@@ -128,6 +137,11 @@ impl TileGestures {
             other => other,
         };
         match destination {
+            Destination::Slot(to) => {
+                if let Source::Slot(from) = source {
+                    model.copy_slot(from, to);
+                }
+            }
             Destination::FolderMenu | Destination::Folder(_) => {}
             Destination::Library(folder, before) => {
                 model.edit_library(|library| {
@@ -261,7 +275,8 @@ pub(crate) fn ColorTile(
     crate::tooltip::Tooltips::bind(node, move || {
         let mut text = label.get_untracked();
         if (matches!(source, Source::Library(_))
-            || matches!(class, "preset-color" | "transparent-color"))
+            || class == "preset-color"
+            || (class == "transparent-color" && !model.supports_none()))
             && let Ok(hex) = format_color(
                 color.get_untracked(),
                 okcolor_core::ColorFormat::Hex,
@@ -332,7 +347,7 @@ pub(crate) fn ColorTile(
                         colors.remove(i);
                     }
                 }),
-                Source::Sample => {}
+                Source::Sample | Source::Slot(_) => {}
             },
             _ => {}
         }
@@ -351,7 +366,7 @@ pub(crate) fn ColorTile(
                     cx.position.x.0 * scale.get_untracked(),
                     cx.position.y.0 * scale.get_untracked(),
                 );
-                shared.hovering.set(shared.hit(px, py));
+                shared.hovering.set(shared.hit(px, py, source));
             }
         }
     };
@@ -362,6 +377,7 @@ pub(crate) fn ColorTile(
         let target = shared.hit(
             cx.position.x.0 * scale.get_untracked(),
             cx.position.y.0 * scale.get_untracked(),
+            source,
         );
         let dropping = shared.dragging.get_untracked() == Some(node);
         cx.release_pointer();
@@ -370,9 +386,9 @@ pub(crate) fn ColorTile(
             shared.drop_at(model, source, color.get_untracked(), dest);
         }
     };
-    let unavailable = Memo::new(move |_| {
-        class == "slot-tile" && model.display.get().unavailable(color.get()).is_some()
-    });
+    let unavailable = Memo::new(
+        move |_| matches!(source, Source::Slot(i) if model.slot_is_none(i) || model.display.get().unavailable(color.get()).is_some()),
+    );
     let renaming = move || matches!(source, Source::Library(id) if rename.is_some_and(|state| state.active.get() == Some(id)));
     let ink = move || boundary_ink(color.get(), Oklch::new(0.0, 0.0, 0.0, 1.0).expect("black"));
     let fill = Memo::new(move |_| {
@@ -382,10 +398,14 @@ pub(crate) fn ColorTile(
             color.get()
         }
     });
+    let outlined = move || {
+        shared.dragging.get() == Some(node)
+            || matches!(destination, Some(Destination::Slot(_)) if destination == shared.hovering.get())
+    };
     view! {control(class=class,node_ref=node,tabindex=Focus::Sequential,a11y:label=move ||label.get(),
-        class:dragged=move ||shared.dragging.get()==Some(node),
+        class:dragged=outlined,
         class:renaming=renaming,
-        style:outline-color=move ||(shared.dragging.get()==Some(node) || renaming()).then(&ink),
+        style:outline-color=move ||(outlined() || renaming()).then(&ink),
         on:pointer_enter=move |_|{
             if let Some(heading)=heading{heading.0.set(label.get_untracked());}
         },
@@ -403,7 +423,7 @@ pub(crate) fn ColorTile(
             suppress_click.set(false);
         }) {
             ColorSwatch(model=model,color=fill,outline_dark=class!="transparent-color")
-            if move ||destination.is_some() && shared.hovering.get()==destination {box(class="insertion-line",style:background-color=move ||match destination { Some(Destination::Palette(i))=>Some(shared.palette_boundary(i)), _=>None }) {}}
+            if move ||destination.is_some() && !matches!(destination,Some(Destination::Slot(_))) && shared.hovering.get()==destination {box(class="insertion-line",style:background-color=move ||match destination { Some(Destination::Palette(i))=>Some(shared.palette_boundary(i)), _=>None }) {}}
             if move ||unavailable.get() {
                 box(class="unavailable-slot") {{zgui::elements::vector().document(include_str!("../assets/unavailable.svg")).class("unavailable-cross")}}
             }

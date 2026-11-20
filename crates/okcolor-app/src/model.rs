@@ -46,6 +46,7 @@ struct Snapshot {
     library: Arc<crate::workspace::Library>,
     palette: Arc<Vec<(Oklch, bool)>>,
     colors: [Oklch; 2],
+    none: [bool; 2],
     contrast: std::sync::Arc<(crate::workspace::ContrastGrid, [f64; 4])>,
 }
 
@@ -76,6 +77,9 @@ pub struct PickerModel {
     pub recent: RwSignal<Vec<Oklch>>,
     pub slots: [RwSignal<Oklch>; 2],
     pub selected: RwSignal<u8>,
+    pub linked_adobe: RwSignal<Option<crate::workspace::PaintApp>>,
+    pub(crate) none_slots: RwSignal<[bool; 2]>,
+    pub(crate) committed_none: RwSignal<[bool; 2]>,
     pub can_undo: RwSignal<bool>,
     pub can_redo: RwSignal<bool>,
     pub message: RwSignal<String>,
@@ -118,6 +122,7 @@ impl PickerModel {
                 library: Arc::new(saved.library.clone()),
                 palette: Arc::new(palette.clone()),
                 colors,
+                none: [false; 2],
                 contrast: std::sync::Arc::new((
                     saved.tools.contrast_grid.clone(),
                     saved.tools.background,
@@ -158,6 +163,9 @@ impl PickerModel {
             recent: RwSignal::new(recent),
             slots: colors.map(RwSignal::new),
             selected: RwSignal::new(saved.selected),
+            linked_adobe: RwSignal::new(None),
+            none_slots: RwSignal::new([false; 2]),
+            committed_none: RwSignal::new([false; 2]),
             can_undo: RwSignal::new(false),
             can_redo: RwSignal::new(false),
             message: RwSignal::new(String::new()),
@@ -277,18 +285,56 @@ impl PickerModel {
             self.publish_from(true, origin);
         }
     }
+    pub(crate) fn supports_none(self) -> bool {
+        matches!(
+            self.linked_adobe.get(),
+            Some(crate::workspace::PaintApp::Illustrator | crate::workspace::PaintApp::InDesign)
+        )
+    }
+
+    pub(crate) fn slot_is_none(self, index: usize) -> bool {
+        self.supports_none() && self.none_slots.get()[index]
+    }
+
+    pub(crate) fn set_slot_none(self, value: bool) {
+        if !self.supports_none() {
+            return;
+        }
+        let index = usize::from(self.selected.get_untracked());
+        self.finish_remote();
+        self.history.update(|history| {
+            let mut next = history.current();
+            next.none[index] = value;
+            let _ = history.set_without_recent(next);
+        });
+        self.publish(true);
+    }
+
+    pub(crate) fn copy_slot(self, from: usize, to: usize) {
+        if from == to || self.dragging.get_untracked() || self.editing_text.get_untracked() {
+            return;
+        }
+        self.finish_remote();
+        self.history.update(|history| {
+            let mut next = history.current();
+            next.colors[to] = next.colors[from];
+            next.none[to] = self.supports_none() && next.none[from];
+            let _ = history.set(next);
+        });
+        self.publish(true);
+    }
+
     pub fn swap(self) {
         if self.dragging.get_untracked() || self.editing_text.get_untracked() {
             return;
         }
         self.finish_remote();
-        let [main, sub] = self.colors();
         let mut changed = false;
         self.history.update(|history| {
-            changed = history.set(Snapshot {
-                colors: [sub, main],
-                ..history.current()
-            }) == Ok(true)
+            let mut next = history.current();
+            next.colors.swap(0, 1);
+            next.none.swap(0, 1);
+            changed = history.set(next) == Ok(true);
         });
         if changed {
             self.record_recent();
@@ -350,10 +396,16 @@ impl PickerModel {
             self.remote_edit.set(true);
         }
         self.history.update(|history| {
-            let _ = history.preview(Snapshot {
+            let mut next = Snapshot {
                 colors,
                 ..history.current()
-            });
+            };
+            for (index, sample) in samples.iter().enumerate() {
+                if sample.is_some() {
+                    next.none[index] = false;
+                }
+            }
+            let _ = history.preview(next);
         });
         self.publish_from(false, EditOrigin::Companion);
         if !manipulating {
@@ -386,10 +438,11 @@ impl PickerModel {
         let colors = self.replacing(color);
         let mut accepted = true;
         self.history.update(|history| {
-            let colors = Snapshot {
+            let mut colors = Snapshot {
                 colors,
                 ..history.current()
             };
+            colors.none[usize::from(self.selected.get_untracked())] = false;
             match if add_recent {
                 history.set(colors)
             } else {
@@ -465,10 +518,12 @@ impl PickerModel {
     pub fn preview(self, color: Oklch) {
         let colors = self.replacing(color);
         self.history.update(|history| {
-            let _ = history.preview(Snapshot {
+            let mut next = Snapshot {
                 colors,
                 ..history.current()
-            });
+            };
+            next.none[usize::from(self.selected.get_untracked())] = false;
+            let _ = history.preview(next);
         });
         self.publish(false);
     }
@@ -705,10 +760,18 @@ impl PickerModel {
             }
         }
         self.history.with_untracked(|history| {
+            let none = history.current().none;
+            if self.none_slots.get_untracked() != none {
+                self.none_slots.set(none);
+            }
             self.can_undo.set(history.can_undo());
             self.can_redo.set(history.can_redo());
             if committed {
-                let color = history.committed().colors;
+                let snapshot = history.committed();
+                if self.committed_none.get_untracked() != snapshot.none {
+                    self.committed_none.set(snapshot.none);
+                }
+                let color = snapshot.colors;
                 if self.committed.get_untracked() != color {
                     self.committed.set(color);
                 }

@@ -1,7 +1,7 @@
 use crate::about::AboutProps;
 use crate::eyedropper::EyedropperProps;
 use crate::menu::MenuBandProps;
-use crate::tiles::{ColorTileProps, Source, TileGestures};
+use crate::tiles::{ColorTileProps, Destination, Source, TileGestures};
 use crate::tooltip::Tooltips;
 use crate::updates::{UpdatePromptProps, Updates};
 use crate::{
@@ -12,7 +12,7 @@ use crate::{
 use crate::{
     swatches::SwatchesProps,
     tools_ui::{ContrastProps, HarmoniesProps},
-    workspace::Tab,
+    workspace::{PaintApp, Tab},
 };
 use okcolor_core::{ColorFormat, Gamut, GamutMapping, Oklch};
 use zgui::reactive::UnsyncCallback;
@@ -69,6 +69,7 @@ pub struct PickerRefs {
     pub swatches: [NodeRef; 2],
     pub fallback_samples: [NodeRef; 2],
     pub swap: NodeRef,
+    pub transparent: NodeRef,
     pub slice: NodeRef,
     pub bars: [NodeRef; 4],
     pub numbers: [NodeRef; 4],
@@ -122,6 +123,7 @@ impl Default for PickerRefs {
             fallback_samples: std::array::from_fn(|_| NodeRef::new()),
             swatches: std::array::from_fn(|_| NodeRef::new()),
             swap: NodeRef::new(),
+            transparent: NodeRef::new(),
             slice: NodeRef::new(),
             bars: std::array::from_fn(|_| NodeRef::new()),
             numbers: std::array::from_fn(|_| NodeRef::new()),
@@ -408,9 +410,10 @@ pub(crate) fn SlotSwatch(
     view! {
         box(class="slot-layer",class:main=index==0,class:sub=index==1) {
             {front.then(|| crate::surface::slot_shadow().into_view())}
-            ColorTile(node=refs.swatches[index],class="slot-tile",color=color,source=Source::Sample,destination=None,
+            ColorTile(node=refs.swatches[index],class="slot-tile",color=color,source=Source::Slot(index),destination=Some(Destination::Slot(index)),
                 label=Memo::new(move |_|{
                     let c=color.get();let label=if index==0 {"Main color"}else{"Sub color"};
+                    if model.slot_is_none(index) { return format!("{label} · None"); }
                     let hex=okcolor_core::format_color(c,ColorFormat::Hex,model.mapping.get()).expect("validated color").text;
                     match model.display.get().unavailable(c) {
                         Some(reason)=>format!("{label} {hex} · {reason}"),None=>format!("{label} {hex}")
@@ -445,14 +448,19 @@ fn Fallbacks(model: PickerModel, refs: PickerRefs) -> impl IntoView {
             .is_some_and(|(a, b)| okcolor_core::delta_e_2000(a, b) >= 5.0)
     });
     view! {
-        if move ||unavailable.get() {
+        if move ||model.slot_is_none(usize::from(model.selected.get())) {
+            column(class="fallback-pair single",class:sub-fallback=move ||model.selected.get()==1) {
+                FallbackSample(model=model,color=color,method=None,name="Last color",
+                    icon=include_str!("../assets/last-color.svg"),node=refs.fallback_samples[0])
+            }
+        } else { if move ||unavailable.get() {
             column(class="fallback-pair",class:single=move ||!distinct.get(),class:sub-fallback=move ||model.selected.get()==1) {
-                FallbackSample(model=model,color=color,method=GamutMapping::LocalMinde,name="Mapped sRGB",
+                FallbackSample(model=model,color=color,method=Some(GamutMapping::LocalMinde),name="Mapped sRGB",
                     icon=include_str!("../assets/monitor.svg"),node=refs.fallback_samples[0])
-                if move ||distinct.get() { FallbackSample(model=model,color=color,method=GamutMapping::Clip,name="Clipped sRGB",
+                if move ||distinct.get() { FallbackSample(model=model,color=color,method=Some(GamutMapping::Clip),name="Clipped sRGB",
                     icon=include_str!("../assets/cube.svg"),node=refs.fallback_samples[1]) }
             }
-        }
+        }}
     }
 }
 
@@ -460,13 +468,16 @@ fn Fallbacks(model: PickerModel, refs: PickerRefs) -> impl IntoView {
 fn FallbackSample(
     model: PickerModel,
     color: Memo<Oklch>,
-    method: GamutMapping,
+    method: Option<GamutMapping>,
     name: &'static str,
     icon: &'static str,
     node: NodeRef,
 ) -> impl IntoView {
     let sample = Memo::new(move |_| {
         let original = color.get();
+        let Some(method) = method else {
+            return original;
+        };
         let [_, _, h, a] = original.components();
         original
             .mapped_rgb(Gamut::Srgb, method)
@@ -474,9 +485,13 @@ fn FallbackSample(
             .unwrap_or(original)
     });
     let label = Memo::new(move |_| {
-        let hex = okcolor_core::format_color(sample.get(), ColorFormat::Hex, method)
-            .expect("valid sRGB fallback")
-            .text;
+        let hex = okcolor_core::format_color(
+            sample.get(),
+            ColorFormat::Hex,
+            method.unwrap_or(model.mapping.get()),
+        )
+        .expect("valid sRGB fallback")
+        .text;
         format!("{name} {hex}")
     });
     let button = NodeRef::new();
@@ -581,13 +596,17 @@ fn ColorPanel(model: PickerModel, refs: PickerRefs) -> impl IntoView {
                         spacer()
                         row(class="quick-colors") {
                             for index in move ||0..3,key=|index:&usize|*index {
-                                ColorTile(node=NodeRef::new(),class=if index==0{"transparent-color"}else{"preset-color"},source=Source::Sample,destination=None,
+                                ColorTile(node=if index==0{refs.transparent}else{NodeRef::new()},class=if index==0{"transparent-color"}else{"preset-color"},source=Source::Sample,destination=None,
                                     color=Memo::new(move |_|{
                                         let [l,c,h,_]=model.color().components();
-                                        if index==0 {Oklch::new(l,c,h,0.0)}else{Oklch::new(if index==1{0.0}else{1.0},0.0,h,1.0)}
+                                        if index==0 && model.supports_none() {Ok(model.color())} else if index==0 {Oklch::new(l,c,h,0.0)}else{Oklch::new(if index==1{0.0}else{1.0},0.0,h,1.0)}
                                             .expect("valid preset color")
-                                    }),label=Memo::new(move |_|["Transparent","Black","White"][index].into()),
+                                    }),label=Memo::new(move |_| match (index, model.linked_adobe.get()) {
+                                        (0, Some(PaintApp::Illustrator | PaintApp::InDesign)) => "None",
+                                        _ => ["Transparent","Black","White"][index]
+                                    }.into()),
                                     activate=UnsyncCallback::new(move |()|{match index {
+                                        0 if model.supports_none()=>model.set_slot_none(true),
                                         0=>{model.set_channel(3,0.0);},
                                         1=>{model.input("#000");},
                                         _=>{model.input("#fff");}
@@ -753,7 +772,7 @@ fn transient_message(source: impl Fn() -> String + 'static) -> RwSignal<String> 
 #[component]
 fn Statusbar(model: PickerModel, refs: PickerRefs, settings: RwSignal<bool>) -> impl IntoView {
     let notification = refs.status_notice;
-    use crate::{paint_link::PaintLink, workspace::PaintApp};
+    use crate::paint_link::PaintLink;
     use okcolor_csp::worker::State;
     let link = PaintLink::mount(model);
     let clipboard = StoredValue::new_local(use_clipboard());
@@ -780,7 +799,7 @@ fn Statusbar(model: PickerModel, refs: PickerRefs, settings: RwSignal<bool>) -> 
             .find(|s| !s.is_empty())
             .unwrap_or_else(|| model.display.get().label().into())
     };
-    let failed = move || !failure.get().is_empty();
+    let failed = Memo::new(move |_| !failure.get().is_empty());
     let export_label = move || {
         if model.tab.get() == Tab::Harmonies {
             "Send palette"
@@ -800,7 +819,7 @@ fn Statusbar(model: PickerModel, refs: PickerRefs, settings: RwSignal<bool>) -> 
     };
     let action = move || {
         let app = target.get();
-        if failed() {
+        if failed.get() {
             return "Dismiss connection error".into();
         }
         match state() {
@@ -871,7 +890,7 @@ fn Statusbar(model: PickerModel, refs: PickerRefs, settings: RwSignal<bool>) -> 
             }
         }
         control(class="csp-connect",node_ref=refs.companion,tabindex=Focus::Sequential,
-            class:warning=failed,class:linked=move ||state()==State::Connected,
+            class:warning=move ||failed.get(),class:linked=move ||state()==State::Connected,
             a11y:label=action,
             on:pointer_down=move |cx|{if cx.button==Some(PointerButton::Secondary) {
                 open.update(|v| *v = !*v); cx.prevent_default(); cx.stop_propagation();
@@ -879,18 +898,20 @@ fn Statusbar(model: PickerModel, refs: PickerRefs, settings: RwSignal<bool>) -> 
             on:click=move |_| {
                 open.set(false);
                 if target.get()==PaintApp::ClipStudio {
-                    if failed() || model.companion.active() {model.companion.disconnect();} else {model.companion.scan();}
-                } else if failed() || !matches!(state(),State::Idle | State::Failed(_)) {
+                    if failed.get() || model.companion.active() {model.companion.disconnect();} else {model.companion.scan();}
+                } else if failed.get() || !matches!(state(),State::Idle | State::Failed(_)) {
                     link.set(None);
                 } else {link.set(Some(target.get()));}
             }) {
-            if move ||failed() || matches!(state(),State::Scanning|State::Connecting|State::Reconnecting) {
+            if move ||failed.get() {
                 {zgui::elements::vector().document(include_str!("../assets/menu-close.svg")).class("status-icon")}
+            } else { if move ||matches!(state(),State::Scanning|State::Connecting|State::Reconnecting) {
+                {zgui::elements::vector().document(include_str!("../assets/connecting.svg")).class("status-dots")}
             } else { if move ||state()==State::Connected {
                 {zgui::elements::vector().document(include_str!("../assets/link.svg")).class("status-icon")}
             } else {
                 {zgui::elements::vector().document(include_str!("../assets/unlinked.svg")).class("status-icon")}
-            }}
+            }}}
             text {{move ||target.get().short()}}
         }
         if move ||open.get() {

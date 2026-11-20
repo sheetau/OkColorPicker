@@ -33,6 +33,17 @@ to report the Windows SDR pixel value. Windows capture restrictions apply to
 protected surfaces.
 A left click selects the color and consumes the click. Right-click or Escape cancels sampling.
 
+Drag the main color onto the sub color, or the sub onto the main, to copy it.
+The destination gains an outline while the pointer is over it. The selected slot
+stays selected. Use the swap button to exchange both colors.
+
+With Illustrator or InDesign connected, **None** removes the selected fill
+(main) or stroke (sub). A cross marks that slot. Its numeric values and gamut
+view keep the previous color. Click **Last color** to restore it, or edit the
+color to apply the new value. InDesign also selects the corresponding fill or
+stroke control. In Photoshop, **Transparent** changes the picker's alpha and
+preserves the host's foreground and background RGB values.
+
 An unavailable slot shows a gray frame and cross on black. The active slot shows
 the mapped sRGB sample and adds the clipped sample when their displayed colors
 differ by at least 5 CIEDE2000 units. Click a sample to adopt that color

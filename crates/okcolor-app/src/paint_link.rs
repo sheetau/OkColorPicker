@@ -21,6 +21,7 @@ use zgui::{prelude::*, reactive::RenderEffect};
 type Rgb = [u8; 3];
 #[derive(Clone, Copy, Default, PartialEq)]
 struct Colors {
+    none: [bool; 2],
     slots: [Rgb; 2],
     active: usize,
 }
@@ -44,6 +45,11 @@ impl Colors {
         Self {
             slots,
             active: usize::from(slot),
+            none: if matches!(app, PaintApp::Illustrator | PaintApp::InDesign) {
+                model.committed_none.get()
+            } else {
+                [false; 2]
+            },
         }
     }
 }
@@ -96,16 +102,21 @@ impl PaintLink {
         };
         let effect = RenderEffect::new(move |last: Option<(u64, u64)>| {
             let incoming = link.inbox.get();
+            let app = model.tools.with(|t| t.paint_app);
+            let host = (app.adobe() && incoming.state == State::Connected).then_some(app);
+            if model.linked_adobe.get_untracked() != host {
+                model.linked_adobe.set(host);
+            }
             if matches!(incoming.state, State::Idle | State::Failed(_)) {
                 return (incoming.generation, 0);
             }
-            let app = model.tools.with(|t| t.paint_app);
             if app.adobe() && model.stepping_channel.get() {
                 return (incoming.generation, 0);
             }
-            let Colors { slots, active } = Colors::read(model, app);
+            let current = Colors::read(model, app);
+            let Colors { slots, active, .. } = current;
             link.colors
-                .with_value(|c| *c.lock().expect("paint colors") = Colors { slots, active });
+                .with_value(|c| *c.lock().expect("paint colors") = current);
             let generation = link.generation.get();
             let since = last.filter(|(g, _)| *g == generation).map_or(0, |(_, s)| s);
             if incoming.generation == generation
@@ -564,6 +575,42 @@ mod tests {
         });
     }
 
+    #[test]
+    fn no_paint_keeps_the_last_color_and_commits_per_slot() {
+        Owner::new().with(|| {
+            let model = PickerModel::default();
+            model.linked_adobe.set(Some(PaintApp::Illustrator));
+            let colors = model.colors();
+            model.set_slot_none(true);
+            assert_eq!(model.colors(), colors);
+            assert_eq!(
+                Colors::read(model, PaintApp::Illustrator).none,
+                [true, false]
+            );
+            assert_eq!(Colors::read(model, PaintApp::Photoshop).none, [false; 2]);
+            model.select_slot(1);
+            assert!(!model.slot_is_none(1));
+            model.copy_slot(0, 1);
+            assert!(model.slot_is_none(1));
+            model.undo();
+            assert!(!model.slot_is_none(1));
+            model.select_slot(0);
+            assert!(model.begin());
+            model.preview(colors[1]);
+            assert!(!model.slot_is_none(0));
+            assert!(Colors::read(model, PaintApp::Illustrator).none[0]);
+            model.cancel();
+            assert!(model.slot_is_none(0));
+            model.select(colors[0]);
+            assert!(!model.slot_is_none(0));
+            assert_eq!(model.colors(), colors);
+            model.undo();
+            assert!(model.slot_is_none(0));
+            model.linked_adobe.set(Some(PaintApp::Photoshop));
+            assert!(!model.slot_is_none(0));
+        });
+    }
+
     // Use connected loopback sockets and the real frame codecs in both directions.
     fn pair() -> (Peer, Socket) {
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
@@ -591,6 +638,7 @@ mod tests {
     fn aseprite_transfers_both_slots_and_never_echoes_a_stale_snapshot() {
         let (mut picker, mut app) = pair();
         let colors = Colors {
+            none: [false; 2],
             slots: [[1, 2, 3], [4, 5, 6]],
             active: 0,
         };
@@ -611,12 +659,14 @@ mod tests {
         assert_eq!(received, Some((0, [21, 43, 65])));
         assert!(picker.tick(PaintApp::Aseprite, colors, |_| panic!()));
         let applied = Colors {
+            none: [false; 2],
             slots: [[21, 43, 65], [4, 5, 6]],
             active: 0,
         };
         assert!(picker.tick(PaintApp::Aseprite, applied, |_| panic!()));
         // A real change to the background is followed by the active foreground.
         let edited = Colors {
+            none: [false; 2],
             slots: [applied.slots[0], [7, 8, 9]],
             active: 0,
         };
@@ -628,6 +678,7 @@ mod tests {
     #[test]
     fn rebelle_sends_only_the_active_brush_and_replays_it_for_a_new_peer() {
         let colors = Colors {
+            none: [false; 2],
             slots: [[8, 9, 10], [32, 48, 64]],
             active: 1,
         };

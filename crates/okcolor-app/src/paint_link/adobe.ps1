@@ -28,7 +28,7 @@ while ($null -ne ($line = [Console]::ReadLine())) {
             if ($null -eq $application) { [Console]::WriteLine('WAIT'); continue }
         }
         $job = ConvertFrom-Json -InputObject $line
-        if ($null -ne $job.slots[0] -or $null -ne $job.slots[1] -or $job.palette -or $job.swatchFile) {
+        if ($null -ne $job.slots[0] -or $null -ne $job.slots[1] -or $null -ne $job.active -or $job.palette -or $job.swatchFile) {
             $source = "($script)('$program',$line)"
             if ($program -eq 'InDesign') { $result = $application.DoScript($source,1246973031) }
             else { $result = $application.DoJavaScript($source) }

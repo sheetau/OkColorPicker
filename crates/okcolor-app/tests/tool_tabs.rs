@@ -89,6 +89,133 @@ fn type_text(h: &mut Harness<impl zgui::platform::AppHandler>, node: NodeRef, te
     key(h, KeyEvent::character(text), Modifiers::NONE);
 }
 
+fn check_connection_dots(
+    h: &mut Harness<impl zgui::platform::AppHandler>,
+    model: PickerModel,
+    refs: PickerRefs,
+    frames: &Mutex<Vec<zgui_render_wgpu::Pixels>>,
+) {
+    model
+        .companion
+        .state
+        .set(okcolor_csp::worker::State::Connecting);
+    h.settle(32);
+    {
+        let b = refs.companion.window_bounds().unwrap();
+        let (x, y) = (
+            b.origin.x.0.round() as i32,
+            (b.origin.y.0 + b.size.height.0 / 2.0).round() as i32,
+        );
+        let capture = frames.lock().unwrap();
+        let frame = capture.last().unwrap();
+        let pixels: Vec<_> = (0..24)
+            .filter(|dx| (-3..3).any(|dy| frame.rgba(x + dx, y + dy)[0] > 16))
+            .collect();
+        assert_eq!(
+            pixels,
+            vec![5, 6, 11, 12, 17, 18],
+            "three dots on the pixel grid"
+        );
+    }
+    model.companion.state.set(okcolor_csp::worker::State::Idle);
+    h.settle(32);
+}
+
+fn check_none_controls(
+    h: &mut Harness<impl zgui::platform::AppHandler>,
+    model: PickerModel,
+    refs: PickerRefs,
+    frames: &Mutex<Vec<zgui_render_wgpu::Pixels>>,
+) {
+    let stored = model.colors();
+    for host in [
+        okcolor_app::workspace::PaintApp::Illustrator,
+        okcolor_app::workspace::PaintApp::InDesign,
+    ] {
+        model.linked_adobe.set(Some(host));
+        for index in 0..2 {
+            model.select_slot(index);
+            h.settle(32);
+            click(h, refs.transparent);
+            assert_eq!(model.colors(), stored);
+            let slot = refs.swatches[index as usize].window_bounds().unwrap();
+            {
+                let captures = frames.lock().unwrap();
+                let image = captures.last().unwrap();
+                let (x, y) = (slot.origin.x.0 as i32, slot.origin.y.0 as i32);
+                assert_eq!(
+                    image.rgba(x + 8, y + 4),
+                    [0, 0, 0, 255],
+                    "None uses a black tile"
+                );
+                assert!(
+                    image.rgba(x + 8, y + 8)[0] > 20,
+                    "None has the unavailable cross"
+                );
+            }
+            click(h, refs.fallback_samples[0]);
+            assert_eq!(model.colors(), stored);
+            assert!(
+                refs.fallback_samples[0].window_bounds().is_none(),
+                "Last color restores paint"
+            );
+        }
+    }
+    model
+        .linked_adobe
+        .set(Some(okcolor_app::workspace::PaintApp::Photoshop));
+    click(h, refs.transparent);
+    assert_eq!(model.current().components()[3], 0.0);
+    assert!(refs.fallback_samples[0].window_bounds().is_none());
+    model.undo();
+    model.linked_adobe.set(None);
+}
+
+fn check_slot_copy(
+    h: &mut Harness<impl zgui::platform::AppHandler>,
+    model: PickerModel,
+    refs: PickerRefs,
+    frames: &Mutex<Vec<zgui_render_wgpu::Pixels>>,
+) {
+    for (selected, from) in [(0, 0), (0, 1), (1, 0), (1, 1)] {
+        model.select_slot(selected);
+        h.settle(32);
+        let before = model.colors();
+        assert_ne!(before[0], before[1]);
+        let to = 1 - from;
+        let exposed = |i: usize| {
+            let b = refs.swatches[i].window_bounds().unwrap();
+            let inset = if i == 0 { 8.0 } else { 32.0 };
+            Point::new(CssPx(b.origin.x.0 + inset), CssPx(b.origin.y.0 + inset))
+        };
+        let start = exposed(from);
+        let end = if to == usize::from(selected) {
+            let main = refs.swatches[0].window_bounds().unwrap();
+            Point::new(CssPx(main.origin.x.0 + 32.0), CssPx(main.origin.y.0 + 32.0))
+        } else {
+            exposed(to)
+        };
+        let target = refs.swatches[to].window_bounds().unwrap();
+        let edge = (
+            target.origin.x.0 as i32 + if to == 0 { 8 } else { 32 },
+            target.origin.y.0 as i32 + if to == 0 { 0 } else { 39 },
+        );
+        let edge_pixel = || frames.lock().unwrap().last().unwrap().rgba(edge.0, edge.1);
+        let normal = edge_pixel();
+        let button = PointerButton::Primary;
+        tile_pointer(h, PointerAction::Moved, button, start);
+        tile_pointer(h, PointerAction::Pressed, button, start);
+        tile_pointer(h, PointerAction::Moved, button, end);
+        assert_ne!(edge_pixel(), normal, "the destination gains an outline");
+        assert_eq!(model.colors(), before, "hover only previews the drop");
+        tile_pointer(h, PointerAction::Released, button, end);
+        assert_eq!(model.colors(), [before[from]; 2]);
+        assert_eq!(model.selected.get_untracked(), selected);
+        model.undo();
+        assert_eq!(model.colors(), before);
+    }
+}
+
 fn check_slot_shadows(
     h: &mut Harness<impl zgui::platform::AppHandler>,
     model: PickerModel,
@@ -466,6 +593,9 @@ fn mounted_tabs_edit_recall_adjust_and_restore() {
                     assert!(refs.companion.text_content().contains(okcolor_app::workspace::PaintApp::ALL[n].short()));
                 }
                 check_slot_shadows(&mut h,model,refs,&frames);
+                check_connection_dots(&mut h, model, refs, &frames);
+                check_none_controls(&mut h, model, refs, &frames);
+                check_slot_copy(&mut h, model, refs, &frames);
                 for slot in 0..2 {
                     model.select_slot(slot);
                     let old = model.current();

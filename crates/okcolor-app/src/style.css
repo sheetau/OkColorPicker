@@ -75,9 +75,10 @@ field:focus { color: var(--bright); }
 .menu-band { position: absolute; right: 0; height: 100%; min-width: var(--menu-width); width: max-content; max-width: 100%; background-color: var(--black); border-left: 1px solid var(--bright); border-right: 1px solid var(--bright); box-sizing: border-box; overflow-y: auto; pointer-events: auto; }
 .menu-items { flex-shrink: 0; }
 .menu-band control { height: var(--tile); min-height: var(--tile); padding: 0 7px; display: flex; align-items: center; justify-content: flex-start; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text); background-color: transparent; }
-.csp-connect { padding: 0 var(--gap) 0 0; display: flex; flex-direction: row; align-items: center; color: var(--text); }
+.csp-connect { padding: 0 var(--gap) 0 0; display: flex; flex-direction: row; align-items: center; color: var(--muted); }
 .csp-connect.send-swatches { width: var(--button); padding: 0; }
-.csp-connect:hover { color: var(--bright); }
+.csp-connect:hover { color: var(--text); background-color: transparent; }
+.csp-connect.send-swatches:hover { color: var(--bright); }
 .csp-connect:focus-visible { outline: 1px solid var(--text); }
 .grip { position: absolute; z-index: 30; }
 .grip.north { top: 0; left: 8px; right: 8px; height: 4px; }
@@ -124,6 +125,7 @@ field:focus { color: var(--bright); }
 
 .status { min-height: var(--chrome); height: var(--chrome); align-items: center; padding: 0 4px; }
 .status-center { padding: 0 var(--gap); flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; text-align: center; color: var(--text); font-size: var(--text-sm); justify-content: center; }
+.status-dots { width: var(--button); height: var(--button); pointer-events: none; --zgui-fill: currentColor; }
 .status-icon { width: var(--button); height: var(--button); pointer-events: none; --zgui-stroke: currentColor; }
 .settings-overlay { position: relative; flex: 1; min-height: 0; background-color: var(--black); }
 .settings-viewport { flex: 1; min-height: 0; overflow-y: hidden; overflow-x: auto; }

@@ -195,10 +195,15 @@ pub(super) fn session(
         let changed = sent != Some(current);
         if !waiting && (Instant::now() >= check || (connected && (changed || palette.is_some()))) {
             let slots = std::array::from_fn::<_, 2, _>(|i| {
-                (sent.is_none_or(|last| last.slots[i] != current.slots[i]))
-                    .then_some(current.slots[i])
+                (sent.is_none_or(|last| {
+                    last.slots[i] != current.slots[i] || last.none[i] != current.none[i]
+                }))
+                .then_some(current.slots[i])
             });
-            let mut job = serde_json::json!({"slots": slots});
+            let mut job = serde_json::json!({"slots": slots, "none": current.none});
+            if app == PaintApp::InDesign && sent.is_none_or(|last| last.active != current.active) {
+                job["active"] = serde_json::json!(current.active);
+            }
             if let Some(entries) = palette.take() {
                 if app == PaintApp::Illustrator {
                     job["palette"] = serde_json::json!(entries.colors);
