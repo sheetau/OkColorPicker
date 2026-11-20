@@ -70,7 +70,7 @@ def verify_notice_bundle(folder, commit):
     return manifest
 
 
-def package(output, cargo_about):
+def package(output, cargo_about, iscc='ISCC.exe'):
     output = output.resolve()
     if output.exists():
         raise ValueError('Output already exists; choose a new directory')
@@ -122,17 +122,22 @@ def package(output, cargo_about):
         with zipfile.ZipFile(archive_path) as archive:
             if archive.testzip() is not None:
                 raise ValueError('Package ZIP failed its CRC check')
-        (stage / 'SHA256SUMS.txt').write_text(sha256(archive_path.read_bytes()).hexdigest() + '  ' + archive_path.name + '\n',
-                                           encoding='utf-8', newline='\n')
+        # The installer and the portable update archive carry the same verified payload.
+        notices.run(iscc, '/Q', f'/DProductVersion={version}', f'/DPayloadDir={folder}',
+                    f'/O{stage}', str(ROOT / 'packaging/windows-setup.iss'))
+        setup = stage / f'OkColorPicker-{version}-windows-x64-setup.exe'
+        checksums = [f'{sha256(path.read_bytes()).hexdigest()}  {path.name}' for path in (setup, archive_path)]
+        (stage / 'SHA256SUMS.txt').write_text('\n'.join(checksums) + '\n', encoding='utf-8', newline='\n')
         if notices.run('git', 'rev-parse', 'HEAD').decode().strip() != commit or notices.run('git', 'status', '--porcelain').strip():
             raise ValueError('Source changed during packaging')
         stage.rename(output)
-    print(f'Created candidate {name}.zip; no upload or publication performed')
+    print(f'Created Windows installer {setup.name} and portable update archive {archive_path.name}')
 
 
 if __name__ == '__main__':
     parser = ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--cargo-about', default='cargo-about')
+    parser.add_argument('--iscc', default='ISCC.exe', help='Inno Setup compiler')
     args = parser.parse_args()
-    package(args.output, args.cargo_about)
+    package(args.output, args.cargo_about, args.iscc)

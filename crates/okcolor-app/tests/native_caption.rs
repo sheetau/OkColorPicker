@@ -82,6 +82,9 @@ impl FrameProbe for Probe {
                 // SAFETY: the renderer's surface retains this test-owned HWND.
                 // Send only to this HWND; no global mouse or keyboard input is generated.
                 unsafe {
+                    for slot in [ICON_SMALL, ICON_BIG] {
+                        assert_ne!(SendMessageW(hwnd, WM_GETICON, slot as usize, 0), 0);
+                    }
                     assert_ne!(ClientToScreen(hwnd, &mut screen), 0);
                     let pack =
                         |p: POINT| (p.x as u16 as u32 | ((p.y as u16 as u32) << 16)) as isize;

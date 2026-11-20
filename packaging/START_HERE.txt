@@ -2,23 +2,17 @@ OkColorPicker — Windows x64
 
 START
 
-1. Extract the entire ZIP to a folder.
-2. Install the latest Microsoft Visual C++ v14 x64 Redistributable if needed:
-   https://aka.ms/vc14/vc_redist.x64.exe
-   Microsoft download information:
-   https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist
-3. Run OkColorPicker.exe. Keep update.ps1 and all notice and source files with the application.
+Run the Windows x64 setup executable and open OkColorPicker from the Start menu.
+Setup installs the app for your account. If required, it downloads and verifies
+the Microsoft Visual C++ v14 x64 runtime and installs it quietly. Windows may
+request administrator approval for this component. A DirectX 12-capable GPU
+and a current graphics driver are required.
 
 UPDATES
 
-Use a folder your Windows account can write to. When a newer Windows package
-is ready, choose Install now or Install on next launch. The picker restarts
-after installation. Your color library and settings stay in your user profile.
-
-A DirectX 12-capable GPU and a current graphics driver are required. Development
-testing currently uses Windows 11 x64; other Windows versions are not validated.
-If Windows reports missing MSVCP140/VCRUNTIME140 DLLs, install or repair the
-official x64 runtime above. This package does not install it automatically.
+When a newer release is ready, choose Install now or Install on next launch.
+The picker closes for the update and reopens after installation unless a restart
+is required. Your color library and settings stay in your profile.
 
 PICK COLORS
 
@@ -35,6 +29,9 @@ a mapped sRGB color. Check the preview status and Mapped/Clipped output setting.
 Wide-gamut output depends on the Windows display mode and the monitor.
 
 CONNECT A PAINTING APP
+
+The default install folder is %LOCALAPPDATA%\Programs\OkColorPicker. It contains
+Painting-plugins.zip and OkColorPicker.lua for the apps that need them.
 
 Right-click the status bar connection button to choose an app. Left-click the
 abbreviation to connect or disconnect. The selected app is saved.
@@ -81,8 +78,8 @@ SAVED COLORS
 
 Committed colors, recent colors and preferences are saved in:
 %LOCALAPPDATA%\OkColorPicker\state.json
-Undo history lasts for the current session. Removing the extracted application
-folder leaves saved colors intact. Back up the profile before removing it.
+Undo history lasts for the current session. Uninstall OkColorPicker through
+Windows Settings > Apps > Installed apps. Your colors stay in your profile.
 
 LICENSES AND SOURCE
 

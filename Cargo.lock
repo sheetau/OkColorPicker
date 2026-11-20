@@ -2589,6 +2589,7 @@ name = "okcolor-app"
 version = "0.1.0"
 dependencies = [
  "ab_glyph",
+ "find-msvc-tools",
  "futures",
  "half",
  "okcolor-core",

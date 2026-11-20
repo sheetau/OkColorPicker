@@ -355,6 +355,25 @@ impl Hook {
                 return Err(io::Error::other("Cannot install the caption callback"));
             }
             state.alive.set(true);
+            // The module owns these shared icons for the lifetime of the window.
+            let instance = GetWindowLongPtrW(hwnd, GWLP_HINSTANCE) as _;
+            let dpi = GetDpiForWindow(hwnd);
+            for (slot, width, height) in [
+                (ICON_SMALL, SM_CXSMICON, SM_CYSMICON),
+                (ICON_BIG, SM_CXICON, SM_CYICON),
+            ] {
+                let icon = LoadImageW(
+                    instance,
+                    std::ptr::without_provenance(1),
+                    IMAGE_ICON,
+                    GetSystemMetricsForDpi(width, dpi),
+                    GetSystemMetricsForDpi(height, dpi),
+                    LR_SHARED,
+                );
+                if !icon.is_null() {
+                    SendMessageW(hwnd, WM_SETICON, slot as usize, icon as isize);
+                }
+            }
             let mut before = RECT::default();
             GetClientRect(hwnd, &mut before);
             let dark = 1_i32;

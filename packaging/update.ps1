@@ -1,4 +1,4 @@
-# Portable package update service. The Rust UI owns the two choices.
+# Windows installer and portable package updates. The Rust UI owns the two choices.
 [CmdletBinding()]
 param([int]$ParentId, [string]$CurrentVersion)
 $ErrorActionPreference = 'Stop'
@@ -18,11 +18,18 @@ function Get-ChildPath([string]$Root, [string]$Name) {
     $path
 }
 
-function Get-ReleaseAsset($Release, [version]$Installed) {
+function Test-SetupInstall([string]$Root) {
+    $key = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\OkColorPicker_is1'
+    $location = Get-ItemPropertyValue -LiteralPath $key -Name InstallLocation -ErrorAction SilentlyContinue
+    $location -and $location.TrimEnd('\') -ieq $Root
+}
+
+function Get-ReleaseAsset($Release, [version]$Installed, [bool]$Setup = $false) {
     if ($Release.draft -or $Release.prerelease -or $Release.tag_name -cnotmatch '^v?(\d+\.\d+\.\d+)$') { return }
     $version = $Matches[1]
     if ([version]$version -le $Installed) { return }
     $pattern = '^OkColorPicker-' + [regex]::Escape($version) + '-windows-x64-[a-f0-9]{12}\.zip$'
+    if ($Setup) { $pattern = '^OkColorPicker-' + [regex]::Escape($version) + '-windows-x64-setup\.exe$' }
     $assets = @($Release.assets | Where-Object { $_.name -cmatch $pattern -and $_.state -eq 'uploaded' })
     if ($assets.Count -ne 1) { throw 'Expected one published Windows x64 package.' }
     $asset = $assets[0]
@@ -41,7 +48,7 @@ function Get-Sha256([string]$Path) {
 
 function Assert-Archive($Asset, [string]$Archive) {
     if ((Get-Item -LiteralPath $Archive).Length -ne $Asset.size -or (Get-Sha256 $Archive) -ine $Asset.sha256) {
-        throw 'Release ZIP checksum or size mismatch.'
+        throw 'Release download checksum or size mismatch.'
     }
 }
 
@@ -104,12 +111,18 @@ function Invoke-PackageUpdate {
     [void][IO.Directory]::CreateDirectory($cache)
     try { $lock = [IO.File]::Open((Get-ChildPath $cache 'update.lock'),'OpenOrCreate','ReadWrite','None') }
     catch [IO.IOException] { [Console]::WriteLine('CURRENT'); return }
+    $setup = Test-SetupInstall $root
+    $restartRequired = $false
     $stage = $null
     $closed = $false
     $keepStage = $false
     try {
         $pending = Get-ChildPath $cache 'pending.json'
         $archive = Get-ChildPath $cache 'release.zip'
+        if ($setup) {
+            $pending = Get-ChildPath $cache 'setup-pending.json'
+            $archive = Get-ChildPath $cache 'setup-update.exe'
+        }
         $deferred = [IO.File]::Exists($pending)
         if ($deferred) {
             $asset = Get-Content -LiteralPath $pending -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -125,7 +138,7 @@ function Invoke-PackageUpdate {
                 if ($_.Exception.Response -and [int]$_.Exception.Response.StatusCode -eq 404) { [Console]::WriteLine('CURRENT'); return }
                 throw
             }
-            $asset = Get-ReleaseAsset $release ([version]$CurrentVersion)
+            $asset = Get-ReleaseAsset $release ([version]$CurrentVersion) $setup
             if (!$asset) { [Console]::WriteLine('CURRENT'); return }
             $download = Get-ChildPath $cache 'download.tmp'
             try {
@@ -135,9 +148,14 @@ function Invoke-PackageUpdate {
                 [IO.File]::Move($download,$archive)
             } finally { [IO.File]::Delete($download) }
         }
-        $stage = Get-ChildPath $cache ('stage-'+[guid]::NewGuid().ToString('N'))
-        [void][IO.Directory]::CreateDirectory($stage)
-        Expand-Package $asset $archive $stage
+        if ($setup) {
+            if ($asset.name -cne "OkColorPicker-$($asset.version)-windows-x64-setup.exe") { throw 'Unexpected installer name.' }
+            Assert-Archive $asset $archive
+        } else {
+            $stage = Get-ChildPath $cache ('stage-'+[guid]::NewGuid().ToString('N'))
+            [void][IO.Directory]::CreateDirectory($stage)
+            Expand-Package $asset $archive $stage
+        }
         if (!$deferred) {
             [Console]::WriteLine('READY')
             $choice = [Console]::ReadLine()
@@ -153,10 +171,19 @@ function Invoke-PackageUpdate {
         [Console]::WriteLine('CLOSE')
         if (!$parent.WaitForExit(30000)) { throw 'Application did not close.' }
         $closed = $true
-        try { Install-Package $root $stage }
+        try {
+            if ($setup) {
+                $argsLine = '/SILENT /SUPPRESSMSGBOXES /NORESTART /RESTARTEXITCODE=3010 /DIR="' + $root + '"'
+                $result = Start-Process -FilePath $archive -ArgumentList $argsLine -PassThru -Wait
+                if ($result.ExitCode -notin 0,3010) { throw "Setup returned $($result.ExitCode)." }
+                $restartRequired = $result.ExitCode -eq 3010
+            } else {
+                Install-Package $root $stage
+            }
+        }
         catch {
             # Keep any remaining originals if a second I/O failure interrupted rollback.
-            $keepStage = @(Get-ChildItem -LiteralPath $stage -Filter '*.previous').Count -gt 0
+            $keepStage = $stage -and @(Get-ChildItem -LiteralPath $stage -Filter '*.previous').Count -gt 0
             throw
         }
         [IO.File]::Delete($pending)
@@ -176,7 +203,7 @@ function Invoke-PackageUpdate {
         $lock.Dispose()
         $parent.Dispose()
     }
-    if ($closed) { Start-Process -FilePath $exe -WorkingDirectory $root }
+    if ($closed -and !$restartRequired) { Start-Process -FilePath $exe -WorkingDirectory $root }
 }
 
 if ($MyInvocation.InvocationName -ne '.') {

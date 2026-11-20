@@ -39,6 +39,7 @@ class UpdateTests(unittest.TestCase):
             (self.root / name).write_bytes(("old " + name).encode())
         shutil.copyfile(SCRIPT, self.root / "update.ps1")
         (self.root / "user.txt").write_text("personal", encoding="utf-8")
+        self.setup_install = False
         self.publish()
 
     def publish(self):
@@ -57,6 +58,7 @@ class UpdateTests(unittest.TestCase):
 . (Join-Path $env:FIXTURE_ROOT update.ps1)
 $CurrentVersion = $env:FIXTURE_VERSION
 $ParentId = 100
+function Test-SetupInstall($Root) { $env:FIXTURE_SETUP -eq '1' }
 function Get-Process($Id,$Name) {
     if ($Id) {
         $proc = [pscustomobject]@{Id=$Id;Path=(Join-Path $env:FIXTURE_ROOT OkColorPicker.exe)}
@@ -72,7 +74,12 @@ function Invoke-RestMethod($Uri,$UserAgent,$TimeoutSec) {
 function Invoke-WebRequest($Uri,[switch]$UseBasicParsing,$UserAgent,$TimeoutSec,$OutFile) {
     [IO.File]::Copy($env:FIXTURE_ARCHIVE,$OutFile)
 }
-function Start-Process($FilePath,$WorkingDirectory) {
+function Start-Process($FilePath,$WorkingDirectory,$ArgumentList,[switch]$PassThru,[switch]$Wait) {
+    if ($PassThru) {
+        if (!$Wait -or $FilePath -ine (Join-Path $env:FIXTURE_ROOT '.okcolor-update\setup-update.exe') -or
+            !$ArgumentList.Contains('/DIR="' + $env:FIXTURE_ROOT + '"')) { throw 'Incorrect Setup invocation' }
+        return [pscustomobject]@{ExitCode=0}
+    }
     if ($FilePath -ine (Join-Path $env:FIXTURE_ROOT OkColorPicker.exe)) { throw 'Wrong relaunch path' }
     'RELAUNCH'
 }
@@ -82,7 +89,7 @@ function Start-Process($FilePath,$WorkingDirectory) {
             input=choice + "\n", capture_output=True, timeout=20, text=True, errors="replace",
             env={**os.environ, "FIXTURE_ROOT": str(self.root), "FIXTURE_VERSION": installed,
                  "FIXTURE_FEED": str(self.feed), "FIXTURE_ARCHIVE": str(self.archive),
-                 "FIXTURE_STAGE": str(self.stage), "FIXTURE_OFFLINE": str(int(offline))},
+                 "FIXTURE_SETUP": str(int(self.setup_install)), "FIXTURE_STAGE": str(self.stage), "FIXTURE_OFFLINE": str(int(offline))},
         )
 
     def assert_replies(self, result, *expected):
@@ -93,6 +100,25 @@ function Start-Process($FilePath,$WorkingDirectory) {
         for name, content in self.contents.items():
             self.assertEqual((self.root / name).read_bytes(), content)
         self.assertEqual((self.root / "user.txt").read_text(encoding="utf-8"), "personal")
+
+    def test_installed_copy_selects_setup_and_applies_verified_deferred_download(self):
+        self.setup_install = True
+        feed = json.loads(self.feed.read_text(encoding="utf-8"))
+        installer = dict(feed["assets"][0])
+        name = "OkColorPicker-0.2.0-windows-x64-setup.exe"
+        installer.update(name=name, browser_download_url=installer["browser_download_url"].replace(self.archive.name, name))
+        feed["assets"].append(installer)
+        self.feed.write_text(json.dumps(feed), encoding="utf-8")
+        self.assert_replies(self.run_helper("LATER"), "READY", "DEFERRED")
+        cached = self.root / ".okcolor-update/setup-update.exe"
+        self.assertEqual(cached.read_bytes(), self.archive.read_bytes())
+        self.assert_replies(self.run_helper(offline=True), "CLOSE", "RELAUNCH")
+        self.assertFalse(cached.exists())
+        self.assert_replies(self.run_helper("LATER"), "READY", "DEFERRED")
+        cached.write_bytes(b"damaged")
+        result = self.run_helper(offline=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn("CLOSE", result.stdout)
 
     def test_install_now(self):
         self.assert_replies(self.run_helper("NOW"), "READY", "CLOSE", "RELAUNCH")

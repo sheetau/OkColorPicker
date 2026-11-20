@@ -27,6 +27,9 @@ zgui-platform-winit = { git = "https://github.com/zortax/zgui", rev = "80baa3c7c
 # Prevent unrelated applications' dxcompiler.dll files on PATH from being loaded.
 wgpu = { version = "=29.0.4", features = ["static-dxc"] }
 
+[build-dependencies]
+find-msvc-tools = "=0.1.15"
+
 [dev-dependencies]
 half = "=2.7.1"
 zgui-platform-headless.workspace = true

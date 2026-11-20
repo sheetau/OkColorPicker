@@ -1,48 +1,67 @@
+![OkColorPicker preview](docs/images/okcolorpicker.png)
+
 # OkColorPicker
 
 OkColorPicker is an OKLCH color picker for Windows. Explore a lightness, chroma
-or hue slice, sample a color from the screen, and copy it as a CSS color. The
-chart shows the sRGB, Display P3 and Rec.2020 boundaries. Wide-gamut colors keep
-their original coordinates when you preview a mapped or clipped sRGB version.
+or hue slice, sample a color from the screen, and copy it as a CSS color.
+OKLCH lets you vary lightness while keeping hue and chroma fixed, which makes
+it easier to build a set of shades that look evenly spaced. Built in Rust with
+zgui, the picker syncs colors live with CLIP STUDIO PAINT and sends each
+committed color edit to Photoshop, Illustrator or InDesign.
 
-## Getting started
+**[Download OkColorPicker for Windows x64](https://github.com/sheetau/OkColorPicker/releases/latest)**
 
-Extract the Windows x64 ZIP to a writable folder and run **OkColorPicker.exe**.
-Use a DirectX 12-capable GPU. If Windows reports a missing runtime DLL, install
-the [Microsoft Visual C++ v14 x64 runtime](https://aka.ms/vc14/vc_redist.x64.exe).
+## Install
 
-- **Picker** edits two color slots with numeric fields, sliders and a two-dimensional chart.
-- **Harmony** builds variations and palettes from the selected color.
-- **APCA** generates text or background colors for a chosen contrast target.
+1. Download the Windows x64 file ending in `-setup.exe` from Releases.
+2. Run Setup. It installs OkColorPicker for your Windows account and downloads
+   the Microsoft Visual C++ runtime if needed. Windows may ask for administrator
+   approval for the runtime.
+3. Open **OkColorPicker** from the Start menu. A DirectX 12-capable GPU is required.
 
-All three tabs share your saved swatches and folders. The picker restores colors,
-recent selections and preferences between sessions. See the [color tools guide](docs/TOOLS.md).
+## Color tools
 
-## Connect a painting app
+- **Picker** — Edit main and sub colors in OKLCH, sample from the desktop, and
+  work in sRGB, Display P3 or Rec.2020.
+- **Harmony** — Explore variations and similar named colors. Lock the colors
+  you want to keep and generate a palette around them.
+- **APCA** — Choose a text or background color, set a contrast target, and
+  explore colors that reach it in your working gamut.
 
-Right-click the connection button in the status bar to choose an app. Left-click
-its abbreviation to connect or disconnect. The picker remembers the app you chose.
+All three tools share your recent colors and swatch folders. The picker restores
+them between sessions. [Color tools guide](docs/TOOLS.md)
 
-| App | Setup | Colors |
-| --- | --- | --- |
-| CLIP STUDIO PAINT | Open the Companion Mode QR code on screen, then click **CSP**. [Pairing guide](docs/CSP_PROTOCOL.md) | Main and sub colors, both directions |
-| Adobe Photoshop | Start Photoshop and click **PS**. | Foreground and background |
-| Adobe Illustrator | Open a document and click **Ai**. | Default fill and stroke, selected paths, shapes and text |
-| Adobe InDesign | Start InDesign and click **Id**. | Named foreground/background swatches and the fill/stroke of selected frames |
-| Krita | Install and enable the Python plugin from `Painting-plugins.zip`, open a document and click **Krita**. | Foreground and background, both directions |
-| Obsidian | Enable the included desktop plugin in your vault and click **Ob**. | Hex colors in notes, styled selections, Canvas cards and edges, both directions |
-| Aseprite 1.3+ | Copy the included `OkColorPicker.lua` to **File → Scripts → Open Scripts Folder**. Rescan the scripts folder, run **OkColorPicker** from the Scripts menu and click **Ase** in the picker. | Foreground and background, both directions |
-| Rebelle 8 Pro | Start Rebelle with `-websocket-server-enable -websocket-allowed-ip-addresses 127.0.0.1`, then click **Reb**. [Rebelle WebSocket settings](https://www.escapemotions.com/products/rebelle/manual/8.4/starting-painting/websocket/) | Selected picker color to the brush |
+## Connect another app
 
-In Harmony, **Send palette** exports the current palette to a connected Adobe
-app, Aseprite or Krita. In Picker or APCA, **Send swatches** exports the colors in the
-currently open folder. At the top level it exports unfiled colors. Adobe connections
-use Windows scripting and send color edits when you commit them. The other
-desktop plugins communicate over loopback. Follow the plugin installation
-steps in [the package guide](packaging/START_HERE.txt).
+Right-click the connection button in the status bar to choose an app, then
+left-click its abbreviation to connect. In Harmony, **Send palette** exports
+the current palette. In Picker or APCA, **Send swatches** exports the open
+folder. These exports are available for the Adobe apps, Krita and Aseprite.
 
-## License
+| App | Connection |
+| --- | --- |
+| CLIP STUDIO PAINT | Display the Companion Mode QR code to sync main and sub colors in both directions. [Pairing guide](docs/CSP_PROTOCOL.md) |
+| Photoshop | Send the foreground and background colors to Photoshop. |
+| Illustrator | Send fill and stroke to document defaults and selected artwork. |
+| InDesign | Update named swatches and the fill and stroke of selected frames. |
+| Krita and Aseprite | Use the included plugin or script to sync foreground and background colors in both directions. |
+| Obsidian | Use the included desktop plugin to sync colors in notes and Canvas. |
+| Rebelle 8 Pro | Enable its local WebSocket server to send the active picker color to the brush. |
+
+[Plugin installation and connection instructions](packaging/START_HERE.txt)
+
+## Useful shortcuts
+
+| Action | Shortcut |
+| --- | --- |
+| Open Picker, Harmony or APCA | Ctrl+1, Ctrl+2 or Ctrl+3 |
+| Cycle through tools | Ctrl+Tab or Ctrl+Shift+Tab |
+| Sample a color from the screen | Ctrl+Shift+C |
+| Edit lightness, chroma, hue or alpha | L, C, H or A |
+| Undo or redo a color edit | Ctrl+Z or Ctrl+Shift+Z |
+
+## License and source
 
 OkColorPicker is distributed under the [Apache License 2.0](LICENSE-APACHE).
-Open **Settings → Licenses and sources** for the notices and source archives
-included with the Windows package.
+Open **Settings → Licenses and sources** for the third-party notices and matching
+source archives installed with the app. [Development guide](docs/DEVELOPMENT.md)

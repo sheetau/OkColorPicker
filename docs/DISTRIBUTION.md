@@ -1,6 +1,6 @@
 # Windows distribution candidates
 
-Use Windows x64 with the pinned Rust/MSVC toolchain and cargo-about 0.9.3.
+Use Windows x64 with the pinned Rust/MSVC toolchain, cargo-about 0.9.3 and Inno Setup 6.4.1.
 Commit the source changes first: binary and source identifiers must refer to the
 same clean Git commit. See [license collection](../licenses/README.md) for setup
 and the source/notice review procedure.
@@ -11,43 +11,51 @@ python scripts/package_windows.py --output output/windows-candidate
 ```
 
 If cargo-about is outside PATH, pass `--cargo-about <path-to-cargo-about.exe>`.
-Choose a new output directory on every run. Outputs belong in ignored `output/`;
-never commit binaries, archives, logs or private validation profiles.
+Use `--iscc <path>` if ISCC.exe is outside PATH. Choose a new output directory
+on every run. Outputs belong in ignored `output/`. Do not
+commit binaries, archives, logs or private validation profiles.
 
 The command builds `okcolor-app` with `--release --locked`, verifies x64 and the
 Windows GUI subsystem, and records its imported DLLs. It collects the notice
 bundle, verifies its commit and checksums, and adds `OkColorPicker.exe`,
-`START_HERE.txt`, the Aseprite script, the Krita and Obsidian plugins, the update helper and `PACKAGE.json`. The output contains an unpacked package,
-a ZIP with the same files and `SHA256SUMS.txt` for the ZIP. The ZIP has fixed
-entry timestamps; reproducible binary builds are not guaranteed. Assembly
-neither signs nor uploads the candidate.
-
-The application requires the Microsoft Visual C++ v14 x64 runtime, including the
-runtime used by the statically linked DXC compiler. The package links the
-[official Microsoft runtime download](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist)
-in its start instructions; it does not redistribute or install the runtime DLLs.
-Use a runtime at least as recent as the MSVC tools used to build the application.
+`START_HERE.txt`, the Aseprite script, the Krita and Obsidian plugins, the update helper
+and `PACKAGE.json`. The output contains the per-user Setup executable, an unpacked payload,
+the ZIP used by portable installations and SHA256SUMS.txt covering both downloads.
+Setup installs the same payload and registers a Start menu shortcut and an uninstaller.
+When the x64 VC runtime is missing or old, Setup downloads the pinned Microsoft
+redistributable over HTTPS, verifies its SHA-256 and requests elevation for
+quiet installation. Runtime errors appear in Setup. Uninstall preserves the
+shared runtime and the color profile.
 
 ## Publish an updatable Windows package
 
-Use a stable GitHub release tag matching the Cargo package version (for example
-`v1.2.0`). Upload the ZIP from the packaging command with its original name.
-The updater reads the latest published release of `sheetau/OkColorPicker`,
-selects its Windows x64 ZIP and verifies its size and SHA-256 digest from
+Use a stable GitHub release tag matching the Cargo package version. Upload the
+Setup executable and the portable ZIP with their original names. Direct users to
+the Setup executable. The updater reads the latest published release of `sheetau/OkColorPicker`,
+selects Setup for a registered installation or the ZIP for a portable one,
+and verifies the size and SHA-256 digest from
 GitHub's release API. Drafts, prereleases and older or equal versions are skipped.
 The manifest inside the ZIP must match the release version, target, commit
 prefix and checksums of all package files.
 
-Extract the package into a writable folder and run `OkColorPicker.exe`.
+Run Setup and start OkColorPicker from the Start menu.
 Startup checks run in the background. **Install now** closes the picker,
 replaces the packaged files and reopens it. **Install on next launch** saves
-the verified ZIP and retries installation on the next launch, including
-offline. The helper stages files in `.okcolor-update` beside the executable,
+the verified download and retries installation on the next launch, including
+offline. Registered installations use Setup and its prerequisite check.
+For portable installs the helper stages files in `.okcolor-update` beside the executable,
 replaces the executable last and rolls back file replacement errors.
 Keep the package together and close other copies using the same installation.
 The Cargo development executable uses its normal build and launch workflow.
 
-## Validate the extracted candidate
+## Validate Setup and the portable payload
+
+Verify the Setup executable against SHA256SUMS.txt. Install it to a fresh directory
+and compare the installed payload with PACKAGE.json. Confirm that the Start menu
+shortcut resolves to the installed executable. Uninstall through Windows Settings
+and check that the user profile is preserved. Exercise prerequisite download,
+cancellation and restart on a disposable Windows system without the required runtime.
+
 
 Verify the ZIP against `SHA256SUMS.txt`, extract the entire archive into a fresh
 directory, and compare the extracted files against `PACKAGE.json`. Run the
