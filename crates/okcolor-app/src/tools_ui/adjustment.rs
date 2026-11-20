@@ -159,7 +159,7 @@ pub(super) fn AdjustmentMenu(
         drop((observe, pressed, clicked, moved, released, cancelled, key));
         finish(false);
     });
-    view! {MenuBand(page=refs.tool_page,trigger=refs.palette_adjust,node=refs.adjustment_menu,swatches=refs.tools[5]) {
+    view! {MenuBand(page=refs.tool_page,icon=refs.palette_adjust,node=refs.adjustment_menu,swatches=refs.tools[5]) {
         for i in move ||0..LABELS.len(),key=|i:&usize|*i {
             control(class="adjustment-row",node_ref=refs.adjustment_rows[i],a11y:label=LABELS[i]) {
                 text(class="adjustment-name") {{LABELS[i]}}

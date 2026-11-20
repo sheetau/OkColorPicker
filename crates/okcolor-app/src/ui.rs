@@ -627,6 +627,7 @@ fn Settings(model: PickerModel, refs: PickerRefs) -> impl IntoView {
     let menu = RwSignal::new(false);
     let popup = NodeRef::new();
     let trigger = refs.axis_trigger;
+    let chevron = NodeRef::new();
     dismiss_menu(menu, popup, trigger);
     let viewport = refs.settings_viewport;
     let scroll = viewport.observe_scroll();
@@ -678,10 +679,10 @@ fn Settings(model: PickerModel, refs: PickerRefs) -> impl IntoView {
                 control(class="setting-row folder-heading",class:open=move ||menu.get(),node_ref=trigger,tabindex=Focus::Sequential,
                     a11y:label="Gamut chart view",on:click=move |_|menu.update(|v| *v = !*v)) {
                     text {"Gamut"} spacer() text {{move ||model.tools.get().fixed_axis.view_name()}}
-                    box(class="folder-chevron") {{zgui::elements::vector().document(include_str!("../assets/chevron.svg")).class("chevron")}}
+                    box(class="folder-chevron",node_ref=chevron) {{zgui::elements::vector().document(include_str!("../assets/chevron.svg")).class("chevron")}}
                 }
                 if move ||menu.get() {
-                    MenuBand(page=viewport,trigger=trigger,node=popup) {
+                    MenuBand(page=viewport,icon=chevron,node=popup) {
                         for axis in move ||[FixedAxis::Hue,FixedAxis::Lightness,FixedAxis::Chroma],key=|axis:&FixedAxis|axis.view_name() {
                             control(node_ref=refs.axis_options[axis.bar() as usize-1],class:selected=move ||model.tools.get().fixed_axis==axis,tabindex=Focus::Sequential,
                                 on:click=move |_|{model.tools.update(|t|t.fixed_axis=axis);menu.set(false);trigger.focus();}) {text {{axis.view_name()}}}
@@ -1173,7 +1174,7 @@ fn CodeField(model: PickerModel, refs: PickerRefs, node: NodeRef, primary: bool)
             }
             CopyButton(text=UnsyncCallback::new(move |()|model.output_untracked(selected_format())),compact=false,label="Copy color")
             if move ||menu.get() {
-                MenuBand(page=refs.tool_page,trigger=trigger,node=popup) {
+                MenuBand(page=refs.tool_page,icon=trigger,node=popup) {
                 column(on:key_down=move |cx| {
                     let direction=match cx.key {Key::Named(NamedKey::ArrowDown)=>FocusMove::Next,Key::Named(NamedKey::ArrowUp)=>FocusMove::Prev,_=>return};
                     popup.focus_move(direction);cx.prevent_default();cx.stop_propagation();

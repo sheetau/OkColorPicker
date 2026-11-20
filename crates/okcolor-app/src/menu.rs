@@ -1,21 +1,28 @@
 use zgui::prelude::*;
 
-/// A dropdown aligns with the right edge of the page content, independent of its trigger's
-/// scroll container. The palette sets its lower edge at the swatch strip.
+/// The dropdown ends 12 CSS pixels left of its trigger icon's center.
+/// The palette sets its lower edge at the swatch strip.
 #[component]
 pub(crate) fn MenuBand(
     page: NodeRef,
-    trigger: NodeRef,
+    icon: NodeRef,
     node: NodeRef,
     #[prop(optional)] swatches: Option<NodeRef>,
     children: ChildrenFn,
 ) -> impl IntoView {
     let body = page.observe_border_box();
-    let anchor = trigger.observe_border_box();
+    let anchor = icon.observe_border_box();
     let edge = swatches.map(|node| node.observe_border_box());
     let items = NodeRef::new();
     let item_size = items.observe_border_size();
     let scale = use_window().scale();
+    let right = move || {
+        let body = body.get()?;
+        let icon = anchor.get()?;
+        let center = icon.origin.x.0 + icon.size.width.0 * 0.5;
+        let inset = (body.origin.x.0 + body.size.width.0 - center) / scale.get() + 12.0;
+        Some(format!("{inset}px"))
+    };
     let geometry = Memo::new(move |_| {
         let Some(body) = body.get() else {
             return (0.0, 0.0, 0.0);
@@ -40,7 +47,7 @@ pub(crate) fn MenuBand(
     });
     let children = StoredValue::new_local(children);
     view! {Portal {
-        box(class="menu-area",
+        box(class="menu-area",style:right=right,
             style:top=move ||Some(format!("{}px",geometry.get().0)),
             style:height=move ||Some(format!("{}px",geometry.get().1))) {
             column(class="menu-band",node_ref=node) {

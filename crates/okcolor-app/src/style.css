@@ -71,7 +71,7 @@ field:focus { color: var(--bright); }
 .format-trigger { width: var(--small-tile); min-width: var(--small-tile); height: var(--button); position: relative; }
 .chevron { width: var(--icon); height: var(--icon); --zgui-stroke: currentColor; pointer-events: none; }
 .copy { position: relative; width: var(--button); min-width: var(--button); height: var(--button); }
-.menu-area { position: absolute; left: var(--space-x); right: var(--space-x); pointer-events: none; }
+.menu-area { position: absolute; left: var(--space-x); pointer-events: none; }
 .menu-band { position: absolute; right: 0; height: 100%; min-width: var(--menu-width); width: max-content; max-width: 100%; background-color: var(--black); border-left: 1px solid var(--bright); border-right: 1px solid var(--bright); box-sizing: border-box; overflow-y: auto; pointer-events: auto; }
 .menu-items { flex-shrink: 0; }
 .menu-band control { height: var(--tile); min-height: var(--tile); padding: 0 7px; display: flex; align-items: center; justify-content: flex-start; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text); background-color: transparent; }

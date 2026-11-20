@@ -175,7 +175,7 @@ fn check_palette_adjustment(
     assert_eq!(menu.origin.y, body.origin.y);
     assert_eq!(
         menu.origin.x.0 + menu.size.width.0,
-        body.size.width.0 - 20.0
+        button.origin.x.0 + button.size.width.0 * 0.5 - 12.0
     );
     assert_eq!(menu.origin.y.0 + menu.size.height.0, strip.origin.y.0);
     let cancel = refs.adjustment_cancel.window_bounds().unwrap();
@@ -539,7 +539,7 @@ fn mounted_tabs_edit_recall_adjust_and_restore() {
                 let trigger=refs.format_trigger.window_bounds().unwrap();
                 assert_eq!(panel.origin.y,page.origin.y);
                 assert_eq!(panel.size.height,page.size.height);
-                assert_eq!(panel.origin.x.0+panel.size.width.0,page.size.width.0-20.0);
+                assert_eq!(panel.origin.x.0+panel.size.width.0,trigger.origin.x.0+trigger.size.width.0/2.0-12.0);
                 let rows=11.0*22.0;
                 let first=(trigger.origin.y.0+trigger.size.height.0/2.0-rows/2.0)
                     .clamp(page.origin.y.0,page.origin.y.0+page.size.height.0-rows);
@@ -584,7 +584,7 @@ fn mounted_tabs_edit_recall_adjust_and_restore() {
                 let body=refs.tool_page.window_bounds().unwrap();
                 assert_eq!(folder.origin.y,body.origin.y);
                 assert_eq!(folder.size.height,body.size.height);
-                assert_eq!(folder.origin.x.0+folder.size.width.0,body.origin.x.0+body.size.width.0-20.0);
+                assert_eq!(folder.origin.x.0+folder.size.width.0,anchor.origin.x.0+anchor.size.width.0-8.0-12.0);
                 assert_eq!(folder.size.width.0,100.0);
                 let mx=folder.origin.x.0.round() as i32;
                 let my=refs.library[4].window_bounds().unwrap().origin.y.0.round() as i32-22;
@@ -628,7 +628,7 @@ fn mounted_tabs_edit_recall_adjust_and_restore() {
                 assert!(wide_menu.size.width.0>short_width+20.0,"folder menu must fit its longest item: {short_width} -> {wide_menu:?}");
                 key(&mut h,KeyEvent::named(NamedKey::Escape,PhysicalKey::Unidentified(0)),Modifiers::NONE);
                 assert_eq!(wide_menu.origin.x.0,body.origin.x.0+20.0);
-                assert_eq!(wide_menu.size.width.0,body.size.width.0-40.0);
+                assert_eq!(wide_menu.origin.x.0+wide_menu.size.width.0,folder.origin.x.0+folder.size.width.0);
                 model.library.update(|lib|lib.remove(folder_id));
                 let original_library=model.library.get_untracked();
                 model.library.update(|lib|{

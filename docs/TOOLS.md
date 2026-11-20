@@ -6,8 +6,9 @@ page includes recent colors, main/sub slots, L/C/H/alpha fields, editable color
 codes and the swatch library. The window fits the active page. Resize the Picker
 vertically to change the chart height. Returning to Picker restores that height.
 Drag the title to move the window. Settings covers the current page and scrolls
-when its controls exceed the available height. Dropdowns end 20 px inside the right window edge
-and center their options on the trigger as far as the page permits.
+when its controls exceed the available height. Dropdowns end 12 px left of the center of the opening
+chevron or palette settings icon. Options align vertically with the trigger as far
+as the page permits.
 Palette adjustment options sit immediately above the palette swatches.
 
 ## Picker

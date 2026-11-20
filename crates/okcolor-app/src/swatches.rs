@@ -129,6 +129,7 @@ pub(crate) fn Swatches(model: PickerModel, refs: PickerRefs) -> impl IntoView {
     let heading = RwSignal::new(Heading::Browse);
     let menu = RwSignal::new(false);
     let trigger = refs.library[1];
+    let chevron = NodeRef::new();
     let popup = refs.folder_menu;
     let gestures = TileGestures::current();
     gestures.register(trigger, Destination::FolderMenu);
@@ -288,7 +289,7 @@ pub(crate) fn Swatches(model: PickerModel, refs: PickerRefs) -> impl IntoView {
                     on:pointer_leave=move |_|press.cancel(),on:pointer_cancel=move |_|press.cancel(),
                     on:click=move |_|{if !long_pressed.get_value(){menu.update(|v| *v = !*v);}}) {
                     text {{move ||model.library.with(|l|l.folders.iter().find(|f|Some(f.id)==folder.get()).map(|f|f.name.clone())).unwrap_or_else(||"Swatch Tiles".into())}}
-                    box(class="folder-chevron") {{zgui::elements::vector().document(include_str!("../assets/chevron.svg")).class("chevron")}}
+                    box(class="folder-chevron",node_ref=chevron) {{zgui::elements::vector().document(include_str!("../assets/chevron.svg")).class("chevron")}}
                 }
             } else { if move ||matches!(heading.get(),Heading::Delete(_)) {
                 row(class="folder-confirm") {
@@ -300,7 +301,7 @@ pub(crate) fn Swatches(model: PickerModel, refs: PickerRefs) -> impl IntoView {
                 NameField(model=model,node=refs.library[2],finish=finish,initial=initial_name())
             }}
             if move ||menu.get() {
-                MenuBand(page=refs.tool_page,trigger=trigger,node=popup) {
+                MenuBand(page=refs.tool_page,icon=chevron,node=popup) {
                     FolderOption(model=model,id=None,selected=folder,choose=choose)
                     for id in move ||model.library.with(|l|l.folders.iter().map(|f|f.id).collect::<Vec<_>>()),key=|id:&u64|*id {
                         FolderOption(model=model,id=Some(id),selected=folder,choose=choose)
