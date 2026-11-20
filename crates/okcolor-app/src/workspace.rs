@@ -4,6 +4,33 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PaintApp {
+    #[default]
+    ClipStudio,
+    Aseprite,
+    Rebelle,
+}
+impl PaintApp {
+    pub const ALL: [Self; 3] = [Self::ClipStudio, Self::Aseprite, Self::Rebelle];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::ClipStudio => "CLIP STUDIO PAINT",
+            Self::Aseprite => "Aseprite",
+            Self::Rebelle => "Rebelle 8 Pro",
+        }
+    }
+
+    pub fn short(self) -> &'static str {
+        match self {
+            Self::ClipStudio => "CSP",
+            Self::Aseprite => "Ase",
+            Self::Rebelle => "Reb",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Tab {
     #[default]
     Picker,
@@ -195,6 +222,8 @@ pub(crate) fn default_plot_height() -> f32 {
 #[serde(deny_unknown_fields)]
 pub struct ToolSettings {
     #[serde(default)]
+    pub paint_app: PaintApp,
+    #[serde(default)]
     pub last_tab: Tab,
     #[serde(default)]
     pub window: Option<WindowGeometry>,
@@ -229,6 +258,7 @@ pub struct WindowGeometry {
 impl Default for ToolSettings {
     fn default() -> Self {
         Self {
+            paint_app: PaintApp::default(),
             last_tab: Tab::Picker,
             window: None,
             folded_groups: [false; 3],

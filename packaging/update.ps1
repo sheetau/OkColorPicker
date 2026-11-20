@@ -6,7 +6,7 @@ $ProgressPreference = 'SilentlyContinue'
 $repository = 'sheetau/OkColorPicker'
 # All package members are regular files in one directory. Commit the executable last.
 $members = @('BUNDLE.json','DXC_SOURCES.json','SOURCE_INDEX.json','SOURCES.zip',
-    'THIRD_PARTY_NOTICES.html','START_HERE.txt','update.ps1','PACKAGE.json','OkColorPicker.exe')
+    'THIRD_PARTY_NOTICES.html','START_HERE.txt','OkColorPicker.lua','update.ps1','PACKAGE.json','OkColorPicker.exe')
 
 function Get-ChildPath([string]$Root, [string]$Name) {
     if ([IO.Path]::GetFileName($Name) -cne $Name -or $Name -in '.', '..') { throw 'Expected a single file name.' }

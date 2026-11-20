@@ -1,4 +1,5 @@
 //! Native application components, kept separate from the color calculation core.
+mod about;
 pub mod autosave;
 mod chart;
 pub mod companion;
@@ -37,6 +38,7 @@ mod frozen_desktop;
 #[cfg(windows)]
 mod frozen_hdr;
 mod menu;
+mod paint_link;
 mod swatches;
 mod tiles;
 mod tools_ui;

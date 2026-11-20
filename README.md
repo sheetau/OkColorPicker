@@ -1,36 +1,39 @@
 # OkColorPicker
 
-An OKLCH color picker for Windows, built in Rust with zgui.
+OkColorPicker is an OKLCH color picker for Windows. Explore a lightness, chroma
+or hue slice, sample a color from the screen, and copy it as a CSS color. The
+chart shows the sRGB, Display P3 and Rec.2020 boundaries. Wide-gamut colors keep
+their original coordinates when you preview a mapped or clipped sRGB version.
 
-Explore OKLCH slices at a fixed lightness, chroma or hue, adjust L/C/H/alpha, and edit or copy
-CSS color values. The picker preserves the original color while displaying
-sRGB, Display P3 and Rec.2020 boundaries. The preview uses the detected Windows
-display mode and falls back to sRGB when extended color output is unavailable.
+## Getting started
 
-Every tab includes a library of named colors and folders. Harmony generates
-variations and editable palettes. The APCA tab generates sRGB or Display P3
-colors for editable contrast targets.
-See [color tools](docs/TOOLS.md) for usage.
+Extract the Windows x64 ZIP to a writable folder and run **OkColorPicker.exe**.
+Use a DirectX 12-capable GPU. If Windows reports a missing runtime DLL, install
+the [Microsoft Visual C++ v14 x64 runtime](https://aka.ms/vc14/vc_redist.x64.exe).
 
-The application saves committed colors, recent colors, swatches and tool preferences
-between sessions. Undo history stays within the current session.
-Connect to CLIP STUDIO PAINT through Companion Mode to receive and send color
-edits while preserving the picker's alpha. See [CSP pairing and synchronization](docs/CSP_PROTOCOL.md)
-for the connection steps and behavior.
+- **Picker** edits two color slots with numeric fields, sliders and a two-dimensional chart.
+- **Harmony** builds variations and palettes from the selected color.
+- **APCA** generates text or background colors for a chosen contrast target.
 
-The application is in development; there is no release yet. Physical HDR/WCG
-monitor behavior and clean-machine installation remain unverified.
+All three tabs share your saved swatches and folders. The picker restores colors,
+recent selections and preferences between sessions. See the [color tools guide](docs/TOOLS.md).
 
-## Development
+## Connect a painting app
 
-From the repository root, build and launch the current source:
+Right-click the connection button in the status bar to choose an app. Left-click
+its abbreviation to connect or disconnect. The picker remembers the app you chose.
 
-```powershell
-cargo run -p okcolor-app --release
-```
+| App | Setup | Colors |
+| --- | --- | --- |
+| CLIP STUDIO PAINT | Open the Companion Mode QR code on screen, then click **CSP**. [Pairing guide](docs/CSP_PROTOCOL.md) | Main and sub colors, both directions |
+| Aseprite 1.3+ | Copy the included `OkColorPicker.lua` to **File → Scripts → Open Scripts Folder**. Rescan the scripts folder, run **OkColorPicker** from the Scripts menu and click **Ase** in the picker. | Foreground and background, both directions |
+| Rebelle 8 Pro | Start Rebelle with `-websocket-server-enable -websocket-allowed-ip-addresses 127.0.0.1`, then click **Reb**. [Rebelle WebSocket settings](https://www.escapemotions.com/products/rebelle/manual/8.4/starting-painting/websocket/) | Selected picker color to the brush |
 
-See [Development](docs/DEVELOPMENT.md) for the local toolchain and checks.
+Aseprite and Rebelle communicate on this computer using ports 9009 and 8265
+respectively. The first connection sends the current picker colors to the app.
 
 ## License
 
-Licensed under the [Apache License 2.0](LICENSE-APACHE).
+OkColorPicker is distributed under the [Apache License 2.0](LICENSE-APACHE).
+Open **Settings → Licenses and sources** for the notices and source archives
+included with the Windows package.

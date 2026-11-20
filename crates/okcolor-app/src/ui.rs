@@ -1,3 +1,4 @@
+use crate::about::AboutProps;
 use crate::eyedropper::EyedropperProps;
 use crate::menu::MenuBandProps;
 use crate::tiles::{ColorTileProps, Source, TileGestures};
@@ -56,6 +57,8 @@ pub struct PickerRefs {
     pub axis_options: [NodeRef; 3],
     pub always_snap: NodeRef,
     pub companion: NodeRef,
+    pub paint_menu: NodeRef,
+    pub paint_options: [NodeRef; 3],
     pub csp_pull: NodeRef,
     pub csp_send: NodeRef,
     pub maximize: NodeRef,
@@ -107,6 +110,8 @@ impl Default for PickerRefs {
             always_snap: NodeRef::new(),
             gamut_toggles: std::array::from_fn(|_| NodeRef::new()),
             companion: NodeRef::new(),
+            paint_menu: NodeRef::new(),
+            paint_options: std::array::from_fn(|_| NodeRef::new()),
             csp_pull: NodeRef::new(),
             csp_send: NodeRef::new(),
             maximize: NodeRef::new(),
@@ -313,11 +318,11 @@ pub fn Picker(model: PickerModel, refs: PickerRefs) -> impl IntoView {
             }
             Statusbar(model=model,refs=refs,settings=settings)
             if move ||!refs.sampling.get() && gestures.dragging.get().is_none() && !tips.text.get().is_empty() {
-                row(class="tooltip",node_ref=refs.tooltip,style:left=move ||Some(format!("{}px",tips.position.get().0)),style:top=move ||Some(format!("{}px",tips.position.get().1))) {
+                Portal(layer=OverlayLayer::Toast) { row(class="tooltip",node_ref=refs.tooltip,style:left=move ||Some(format!("{}px",tips.position.get().0)),style:top=move ||Some(format!("{}px",tips.position.get().1))) {
                     for part in move ||crate::tooltip::segments(&tips.text.get()),key=|part:&(bool,String)|part.clone() {
                         text(class:tooltip-hex=part.0) {{part.1.clone()}}
                     }
-                }
+                }}
             }
             ResizeEdges()
             if move ||refs.sampling.get() {
@@ -695,6 +700,7 @@ fn Settings(model: PickerModel, refs: PickerRefs) -> impl IntoView {
             SettingToggle(label="Show alpha slider",node=NodeRef::new(),checked=Memo::new(move |_|model.tools.get().show_alpha_slider),
                 toggle=UnsyncCallback::new(move |()|model.tools.update(|t|t.show_alpha_slider = !t.show_alpha_slider)))
             }
+            About(model=model)
         }
         }
         if move ||thumb().is_some() {
@@ -747,8 +753,20 @@ fn transient_message(source: impl Fn() -> String + 'static) -> RwSignal<String> 
 #[component]
 fn Statusbar(model: PickerModel, refs: PickerRefs, settings: RwSignal<bool>) -> impl IntoView {
     let notification = refs.status_notice;
+    use crate::{paint_link::PaintLink, workspace::PaintApp};
     use okcolor_csp::worker::State;
-    let failure = transient_message(move || match model.companion.state.get() {
+    let link = PaintLink::mount(model);
+    let target = Memo::new(move |_| model.tools.with(|tools| tools.paint_app));
+    let state = move || {
+        if target.get() == PaintApp::ClipStudio {
+            model.companion.state.get()
+        } else {
+            link.state()
+        }
+    };
+    let open = RwSignal::new(false);
+    dismiss_menu(open, refs.paint_menu, refs.companion);
+    let failure = transient_message(move || match state() {
         State::Failed(error) => error,
         _ => String::new(),
     });
@@ -762,17 +780,30 @@ fn Statusbar(model: PickerModel, refs: PickerRefs, settings: RwSignal<bool>) -> 
             .unwrap_or_else(|| model.display.get().label().into())
     };
     let failed = move || !failure.get().is_empty();
-    crate::tooltip::Tooltips::bind(refs.companion, move || {
-        let hint = model.companion.hint.get_untracked();
+    let action = move || {
+        let app = target.get();
         if failed() {
-            "Dismiss connection error".into()
-        } else if model.companion.active() && !hint.is_empty() {
-            format!("Disconnect CSP · {hint}")
-        } else if model.companion.active() {
-            "Disconnect CSP".into()
-        } else {
-            model.companion.label().into()
+            return "Dismiss connection error".into();
         }
+        match state() {
+            State::Idle | State::Failed(_) => format!("Connect {}", app.short()),
+            _ => format!("Disconnect {}", app.short()),
+        }
+    };
+    Tooltips::bind(refs.companion, move || {
+        let hint = match (target.get(), state()) {
+            (PaintApp::ClipStudio, _) => model.companion.hint.get_untracked(),
+            (PaintApp::Aseprite, State::Connecting) => "Waiting for the Aseprite script".into(),
+            (PaintApp::Rebelle, State::Connecting) => "Waiting for Rebelle on port 8265".into(),
+            _ => String::new(),
+        };
+        let mut text = action();
+        if !hint.is_empty() {
+            text.push_str(" · ");
+            text.push_str(&hint);
+        }
+        text.push_str(" · Right-click to choose app");
+        text
     });
     crate::tooltip::Tooltips::bind(notification, status);
     let tabs = [
@@ -804,17 +835,41 @@ fn Statusbar(model: PickerModel, refs: PickerRefs, settings: RwSignal<bool>) -> 
             control(node_ref=Tooltips::button(NodeRef::new(),"Retry saving"),tabindex=Focus::Sequential,on:click=move |_|model.save_request.update(|r|*r=r.wrapping_add(1))) {"Retry"}
         }
         control(class="csp-connect",node_ref=refs.companion,tabindex=Focus::Sequential,
-            class:warning=failed,class:linked=move ||model.companion.state.get()==State::Connected,
-            a11y:label=move ||if failed() {"Dismiss connection error"} else if model.companion.active() {"Disconnect CSP"} else {model.companion.label()},
-            on:click=move |_|{if failed() || model.companion.active(){model.companion.disconnect();}else{model.companion.scan();}}) {
-            if move ||failed() || matches!(model.companion.state.get(),State::Scanning|State::Connecting|State::Reconnecting) {
+            class:warning=failed,class:linked=move ||state()==State::Connected,
+            a11y:label=action,
+            on:pointer_down=move |cx|{if cx.button==Some(PointerButton::Secondary) {
+                open.update(|v| *v = !*v); cx.prevent_default(); cx.stop_propagation();
+            }},
+            on:click=move |_| {
+                open.set(false);
+                if target.get()==PaintApp::ClipStudio {
+                    if failed() || model.companion.active() {model.companion.disconnect();} else {model.companion.scan();}
+                } else if failed() || !matches!(state(),State::Idle | State::Failed(_)) {
+                    link.set(None);
+                } else {link.set(Some(target.get()));}
+            }) {
+            if move ||failed() || matches!(state(),State::Scanning|State::Connecting|State::Reconnecting) {
                 {zgui::elements::vector().document(include_str!("../assets/menu-close.svg")).class("status-icon")}
-            } else { if move ||model.companion.state.get()==State::Connected {
+            } else { if move ||state()==State::Connected {
                 {zgui::elements::vector().document(include_str!("../assets/link.svg")).class("status-icon")}
             } else {
                 {zgui::elements::vector().document(include_str!("../assets/unlinked.svg")).class("status-icon")}
             }}
-            text {"CSP"}
+            text {{move ||target.get().short()}}
+        }
+        if move ||open.get() {
+            MenuBand(page=if settings.get() {refs.settings_viewport} else {refs.tool_page},icon=refs.companion,node=refs.paint_menu,status_menu=true) {
+                for entry in move ||PaintApp::ALL.into_iter().enumerate(),key=|e:&(usize,PaintApp)|e.0 {
+                    control(class:selected=move ||target.get()==entry.1,node_ref=refs.paint_options[entry.0],tabindex=Focus::Sequential,
+                        on:click=move |_|{
+                            if target.get()!=entry.1 {
+                                if target.get()==PaintApp::ClipStudio {model.companion.disconnect();} else {link.set(None);}
+                                model.tools.update(|tools|tools.paint_app=entry.1);
+                            }
+                            open.set(false);refs.companion.focus();
+                        }) {text {{entry.1.name()}}}
+                }
+            }
         }
     }}
 }

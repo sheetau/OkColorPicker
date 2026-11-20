@@ -8,6 +8,7 @@ pub(crate) fn MenuBand(
     icon: NodeRef,
     node: NodeRef,
     #[prop(optional)] swatches: Option<NodeRef>,
+    #[prop(optional)] status_menu: bool,
     children: ChildrenFn,
 ) -> impl IntoView {
     let body = page.observe_border_box();
@@ -18,6 +19,9 @@ pub(crate) fn MenuBand(
     let scale = use_window().scale();
     let right = move || {
         let body = body.get()?;
+        if status_menu {
+            return Some("20px".into());
+        }
         let icon = anchor.get()?;
         let center = icon.origin.x.0 + icon.size.width.0 * 0.5;
         let inset = (body.origin.x.0 + body.size.width.0 - center) / scale.get() + 12.0;
@@ -35,7 +39,7 @@ pub(crate) fn MenuBand(
         });
         let rows = item_size.get().map_or(0.0, |size| size.height.0 / scale);
         let room = (height - rows).max(0.0);
-        let offset = if edge.is_some() {
+        let offset = if status_menu || edge.is_some() {
             room
         } else {
             anchor.get().map_or(0.0, |button| {

@@ -396,6 +396,15 @@ impl FrameProbe for Probe {
                 click(hwnd, refs.menu);
             }
             8 if fitted && refs.topmost.window_bounds().is_some() => {
+                let settings = refs.settings_content.text_content();
+                assert!(settings.contains(concat!(
+                    "OkColorPicker / Version ",
+                    env!("CARGO_PKG_VERSION")
+                )));
+                assert!(
+                    settings.ends_with("Licenses and sources"),
+                    "About ends the settings page"
+                );
                 assert_eq!(
                     client.bottom,
                     self.extent.get()[1] + 30,

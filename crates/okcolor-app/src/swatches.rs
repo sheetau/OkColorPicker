@@ -281,7 +281,7 @@ pub(crate) fn Swatches(model: PickerModel, refs: PickerRefs) -> impl IntoView {
     view! {column(class="swatch-library") {
         box(class="folder-anchor") {
             if move ||heading.get()==Heading::Browse {
-                control(class="folder-heading",class:open=move ||menu.get()||over_heading.get(),
+                control(class="folder-heading",class:open=move ||menu.get(),class:drop_target=move ||over_heading.get(),
                     node_ref=Tooltips::button(trigger,"Choose swatch folder"),tabindex=Focus::Sequential,a11y:label="Choose swatch folder",
                     on:pointer_down=begin_press,on:pointer_move=track_press,
                     on:key_down=move |_|long_pressed.set_value(false),

@@ -1,4 +1,4 @@
-OkColorPicker — Windows x64 development candidate
+OkColorPicker — Windows x64
 
 START
 
@@ -32,8 +32,25 @@ Ctrl+Shift+Z or Ctrl+Y redoes. Inside text entry, clipboard shortcuts edit the t
 
 The picker preserves the original numeric color even when previewing or copying
 a mapped sRGB color. Check the preview status and Mapped/Clipped output setting.
-Wide-gamut monitor output and CSP integration are experimental. This candidate
-does not establish compatibility with a particular monitor or CSP installation.
+Wide-gamut output depends on the Windows display mode and the monitor.
+
+CONNECT A PAINTING APP
+
+Right-click the status bar connection button to choose an app. Left-click the
+abbreviation to connect or disconnect. The selected app is saved.
+
+CSP: In CLIP STUDIO PAINT, display the Companion Mode QR code (Connect to
+smartphone). Click CSP in the picker while the code is visible.
+
+Ase: In Aseprite 1.3 or later, use File > Scripts > Open Scripts Folder.
+Copy OkColorPicker.lua from this package there, rescan the scripts folder,
+then choose File > Scripts > OkColorPicker. Click Ase in the picker and allow
+the script to connect locally if prompted. Both color slots are synchronized.
+Close the script dialog to stop the Aseprite connection.
+
+Reb: Start Rebelle 8 Pro with these command-line arguments:
+-websocket-server-enable -websocket-allowed-ip-addresses 127.0.0.1
+Click Reb in the picker to send the selected color to the brush on port 8265.
 
 SAVED COLORS
 

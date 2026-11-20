@@ -194,6 +194,11 @@ field:focus { color: var(--bright); }
 .fallback-button:hover, .fallback-button:focus-visible { color: var(--bright); }
 .fallback-tile { cursor: pointer; height: var(--small-tile); width: var(--small-tile); position: relative; }
 
+.about { align-items: flex-start; gap: 2px; font-size: var(--text-sm); line-height: 12px; color: var(--muted); }
+.about-version { color: var(--text); }
+.about-author { align-items: center; gap: 2px; }
+.settings .about-link { height: 12px; padding: 0; color: var(--muted); font-size: var(--text-sm); line-height: 12px; border-bottom: 1px solid currentColor; }
+.settings .about-link:hover, .settings .about-link:focus-visible { color: var(--bright); }
 .setting-row { display: flex; flex-direction: row; align-items: center; width: 100%; text-align: left; }
 .setting-check { width: var(--icon); height: var(--icon); opacity: 0; transform: scale(0.7); transition: transform 220ms ease, opacity 220ms ease; }
 .setting-check.checked { opacity: 1; transform: scale(1); }
@@ -261,8 +266,8 @@ field:focus { color: var(--bright); }
 .add-tile .add-icon { position: absolute; left: -1px; top: -1px; width: 21px; height: 21px; }
 .swatch-library .folder-heading { justify-content: space-between; }
 .settings .folder-heading { gap: var(--gap); }
-.format-trigger.open .chevron, .folder-heading.open .chevron { transform: scaleY(-1); }
-.folder-heading.open, .settings .folder-heading.open { color: var(--bright); }
+.format-trigger.open .chevron, .folder-heading.open .chevron { transform: rotate(90deg); transform-origin: center; }
+.folder-heading.open, .folder-heading.drop_target, .folder-heading.drop_target .folder-chevron, .settings .folder-heading.open { color: var(--bright); }
 
 .axis-l.left { right: auto; left: 2px; }
 .add-icon { width: var(--tile); height: var(--tile); --zgui-stroke: currentColor; pointer-events: none; }

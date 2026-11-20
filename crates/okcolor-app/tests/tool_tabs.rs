@@ -448,6 +448,23 @@ fn mounted_tabs_edit_recall_adjust_and_restore() {
                     Modifiers::NONE,
                 );
                 assert!(!refs.sampling.get_untracked());
+                let bounds=refs.companion.window_bounds().unwrap();
+                let pt=Point::new(CssPx(bounds.origin.x.0+5.0),CssPx(bounds.origin.y.0+5.0));
+                for n in [1,2,0] {
+                    for action in [PointerAction::Moved,PointerAction::Pressed,PointerAction::Released] {
+                        tile_pointer(&mut h,action,PointerButton::Secondary,pt);
+                    }
+                    let menu=refs.paint_menu.window_bounds().expect("right click opens target list");
+                    let window=refs.companion.window_root().unwrap().window_bounds().unwrap();
+                    assert!((window.size.width.0-(menu.origin.x.0+menu.size.width.0)-20.0).abs()<1.1);
+                    let bottom={let r=refs.paint_options[2].window_bounds().unwrap();r.origin.y.0+r.size.height.0};
+                    assert!((bottom-(menu.origin.y.0+menu.size.height.0)).abs()<1.1);
+                    click(&mut h,refs.paint_options[n]);
+                    assert_eq!(model.tools.get_untracked().paint_app,okcolor_app::workspace::PaintApp::ALL[n]);
+                    assert!(refs.paint_menu.window_bounds().is_none());
+                    assert_eq!(model.companion.state.get_untracked(),okcolor_csp::worker::State::Idle);
+                    assert!(refs.companion.text_content().contains(okcolor_app::workspace::PaintApp::ALL[n].short()));
+                }
                 check_slot_shadows(&mut h,model,refs,&frames);
                 for slot in 0..2 {
                     model.select_slot(slot);
@@ -540,6 +557,33 @@ fn mounted_tabs_edit_recall_adjust_and_restore() {
                 assert_eq!(panel.origin.y,page.origin.y);
                 assert_eq!(panel.size.height,page.size.height);
                 assert_eq!(panel.origin.x.0+panel.size.width.0,trigger.origin.x.0+trigger.size.width.0/2.0-12.0);
+                {
+                    let captured=frames.lock().unwrap();
+                    let frame=captured.last().unwrap();
+                    let (x,y)=(trigger.origin.x.0.round() as i32,trigger.origin.y.0.round() as i32);
+                    let mut ink=Vec::new();
+                    for dy in 2..14 {
+                        for dx in 2..14 {
+                            if frame.rgba(x+dx,y+dy)[0]>50 {ink.push((dx,dy));}
+                        }
+                    }
+                    let left=ink.iter().map(|p|p.0).min().expect("open chevron");
+                    let right=ink.iter().map(|p|p.0).max().unwrap();
+                    let top=ink.iter().map(|p|p.1).min().unwrap();
+                    let bottom=ink.iter().map(|p|p.1).max().unwrap();
+                    assert!(right-left < bottom-top && (left+right-15).abs()<=2 && (top+bottom-15).abs()<=2,
+                        "open chevron geometry {ink:?}");
+                    assert!(ink.iter().any(|&(x,y)| x==left && (6..=9).contains(&y)));
+                }
+                let center=Point::new(CssPx(trigger.origin.x.0+8.0),CssPx(trigger.origin.y.0+8.0));
+                tile_pointer(&mut h,PointerAction::Moved,PointerButton::Primary,center);
+                h.run_for(Duration::from_secs(2),Duration::from_millis(20));h.settle(32);
+                let tip=refs.tooltip.window_bounds().expect("tooltip above the open band");
+                let overlap_left=tip.origin.x.0.max(panel.origin.x.0);
+                let overlap_right=(tip.origin.x.0+tip.size.width.0).min(panel.origin.x.0+panel.size.width.0);
+                assert!(overlap_right-overlap_left>=3.0,"tooltip overlaps dropdown");
+                let pixel=frames.lock().unwrap().last().unwrap().rgba((overlap_right-2.0) as i32,(tip.origin.y.0+1.0) as i32);
+                assert_eq!(pixel[0],18,"tooltip background visible above menu");
                 let rows=11.0*22.0;
                 let first=(trigger.origin.y.0+trigger.size.height.0/2.0-rows/2.0)
                     .clamp(page.origin.y.0,page.origin.y.0+page.size.height.0-rows);
