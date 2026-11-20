@@ -574,7 +574,9 @@ fn GamutPanel(model: PickerModel, refs: PickerRefs) -> impl IntoView {
 #[component]
 fn ColorPanel(model: PickerModel, refs: PickerRefs) -> impl IntoView {
     let eyedropper = refs.eyedropper;
-    crate::tooltip::Tooltips::bind(eyedropper, || "Eyedropper · Ctrl+Shift+C".into());
+    crate::tooltip::Tooltips::bind(eyedropper, || {
+        "Eyedropper · Ctrl+Shift+C · Hold Alt to freeze the screen".into()
+    });
     view! {
                 row(class="adjustments") {
                     column(class="preview-column") {
@@ -657,6 +659,22 @@ fn Settings(model: PickerModel, refs: PickerRefs) -> impl IntoView {
     let trigger = refs.axis_trigger;
     let chevron = NodeRef::new();
     dismiss_menu(menu, popup, trigger);
+    for (node, tip) in [
+        (
+            refs.gamut_toggles[1],
+            "Show the Rec.2020 outline and work in Rec.2020.",
+        ),
+        (
+            refs.gamut_toggles[0],
+            "Show the Display P3 outline. Work in P3 unless Rec.2020 is on.",
+        ),
+        (
+            refs.always_snap,
+            "Snap to gamut edges while dragging. Hold Shift to reverse.",
+        ),
+    ] {
+        Tooltips::bind(node, move || tip.into());
+    }
     let viewport = refs.settings_viewport;
     let scroll = viewport.observe_scroll();
     let scale = use_window().scale();
@@ -750,7 +768,7 @@ fn SettingToggle(
     checked: Memo<bool>,
     toggle: UnsyncCallback<()>,
 ) -> impl IntoView {
-    view! {control(class="setting-row",node_ref=Tooltips::button(node,label),tabindex=Focus::Sequential,a11y:label=label,on:click=move |_|toggle.run(())) {
+    view! {control(class="setting-row",node_ref=node,tabindex=Focus::Sequential,a11y:label=label,on:click=move |_|toggle.run(())) {
         text {{label}} spacer()
         box(class="setting-check",class:checked=move ||checked.get()) {{zgui::elements::vector().document(include_str!("../assets/check.svg")).class("check-icon")}}
     }}
@@ -969,6 +987,7 @@ fn Channel(
     let dirty = RwSignal::new(false);
     let composing = RwSignal::new(false);
     let wheel_remainder = RwSignal::new((Modifiers::NONE, 0.0_f64));
+    let channel_name = ["Lightness", "Chroma", "Hue", "Alpha (opacity)"][index];
     let value = [model.l, model.c, model.h, model.alpha][index];
     let display = move |value: f64| {
         let v = if index == 3 { value * 100.0 } else { value };
@@ -1116,7 +1135,7 @@ fn Channel(
             }
         }) {
             text(class="channel-label") {{label}}
-            field(class="number",class:editing=move ||focused.get(),node_ref=number,a11y:label=label,
+            field(class="number",class:editing=move ||focused.get(),node_ref=Tooltips::button(number,channel_name),a11y:label=channel_name,
                 on:pointer_down=move |cx| {
                     if focused.get_untracked() || !cx.primary || cx.button!=Some(PointerButton::Primary) || composing.get_untracked() { return; }
                     let mut channels=model.current().components();

@@ -73,6 +73,22 @@ fn tile_pointer(
     });
     h.settle(32);
 }
+fn hover_tooltip(
+    h: &mut Harness<impl zgui::platform::AppHandler>,
+    node: NodeRef,
+    tooltip: NodeRef,
+) -> String {
+    let bounds = node.window_bounds().expect("mounted tooltip target");
+    let point = Point::new(
+        CssPx(bounds.origin.x.0 + bounds.size.width.0 * 0.5),
+        CssPx(bounds.origin.y.0 + bounds.size.height.0 * 0.5),
+    );
+    tile_pointer(h, PointerAction::Moved, PointerButton::Primary, point);
+    h.run_for(Duration::from_secs(2), Duration::from_millis(20));
+    h.settle(32);
+    tooltip.text_content()
+}
+
 fn key(h: &mut Harness<impl zgui::platform::AppHandler>, event: KeyEvent, modifiers: Modifiers) {
     h.deliver_to_first(SurfaceEvent::Key {
         state: KeyState::Pressed,
@@ -537,12 +553,11 @@ fn mounted_tabs_edit_recall_adjust_and_restore() {
                         }
                     }}
                 }
-                let eye=refs.eyedropper.window_bounds().unwrap();
-                let eye_center=Point::new(CssPx(eye.origin.x.0+8.0),CssPx(eye.origin.y.0+8.0));
-                tile_pointer(&mut h,PointerAction::Moved,PointerButton::Primary,eye_center);
-                h.run_for(Duration::from_secs(2),Duration::from_millis(20));h.settle(32);
-                assert!(refs.tooltip.window_bounds().is_some(),"eyedropper hover must mount a tooltip");
-                assert!(refs.tooltip.text_content().contains("Eyedropper"),"tooltip: {}",refs.tooltip.text_content());
+                let tip = hover_tooltip(&mut h, refs.eyedropper, refs.tooltip);
+                assert!(tip.contains("Hold Alt to freeze the screen"), "tooltip: {tip}");
+                for (node, name) in refs.numbers.into_iter().zip(["Lightness", "Chroma", "Hue", "Alpha (opacity)"]) {
+                    assert_eq!(hover_tooltip(&mut h, node, refs.tooltip), name);
+                }
                 for (i,shortcut) in ["l","c","h","a"].into_iter().enumerate() {
                     key(&mut h,KeyEvent::character(shortcut),Modifiers::NONE);
                     assert!(model.editing_text.get_untracked());
@@ -583,6 +598,14 @@ fn mounted_tabs_edit_recall_adjust_and_restore() {
                 key(&mut h, named(NamedKey::Tab), Modifiers::NONE);
                 key(&mut h, named(NamedKey::Enter), Modifiers::NONE);
                 assert!(refs.settings_content.window_bounds().is_some(), "Tab still reaches Settings");
+                for (node, phrase) in [
+                    (refs.gamut_toggles[1], "work in Rec.2020"),
+                    (refs.gamut_toggles[0], "unless Rec.2020 is on"),
+                    (refs.always_snap, "Hold Shift to reverse"),
+                ] {
+                    let tip = hover_tooltip(&mut h, node, refs.tooltip);
+                    assert!(tip.contains(phrase), "tooltip: {tip}");
+                }
                 key(&mut h, named(NamedKey::Escape), Modifiers::NONE);
                 key(&mut h, named(NamedKey::Enter), Modifiers::NONE);
                 assert!(refs.settings_content.window_bounds().is_none(), "Escape leaves no active button");
@@ -1024,7 +1047,7 @@ fn mounted_tabs_edit_recall_adjust_and_restore() {
                 key(&mut h, KeyEvent::character("v"), Modifiers::CONTROL);
                 assert_eq!(
                     model.output_untracked(okcolor_core::ColorFormat::Hex),
-                    "#4e83a3"
+                    "#ca006a"
                 );
                 tile_pointer(&mut h, PointerAction::Pressed, PointerButton::Middle, first);
                 tile_pointer(

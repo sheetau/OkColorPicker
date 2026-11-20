@@ -31,10 +31,9 @@ pub struct SavedState {
 
 impl Default for SavedState {
     fn default() -> Self {
-        let color = parse_color("#4e83a3", 0.0).expect("built-in color");
         Self {
-            main: color,
-            sub: parse_color("#fff", 0.0).expect("built-in color"),
+            main: parse_color("#ca006a", 0.0).expect("built-in color"),
+            sub: parse_color("#000", 0.0).expect("built-in color"),
             selected: 0,
             recent: Vec::new(),
             gamut: Gamut::Srgb,

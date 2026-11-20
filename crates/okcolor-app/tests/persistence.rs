@@ -164,7 +164,13 @@ fn atomic_replacement_reopens_exact_state_and_ignores_unfinished_temp_files() {
     let root = tempfile::tempdir().unwrap();
     {
         let store = StateStore::open(root.path()).unwrap();
-        assert_eq!(store.load().unwrap(), SavedState::default());
+        let initial = store.load().unwrap();
+        assert_eq!(
+            initial.main,
+            okcolor_core::parse_color("#ca006a", 0.0).unwrap()
+        );
+        assert_eq!(initial.sub, okcolor_core::parse_color("#000", 0.0).unwrap());
+        assert_eq!(initial, SavedState::default());
         assert!(!root.path().join("state.json").exists());
         store.save(&SavedState::default()).unwrap();
         store.save(&varied_state()).unwrap();
