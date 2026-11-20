@@ -30,6 +30,28 @@ mod float_pixels;
 #[path = "support/observe_renderer.rs"]
 mod observe_renderer;
 
+#[test]
+#[ignore = "requires DX12; probes every adapter to verify the fallback list"]
+fn lazy_selection_keeps_the_same_fallback_devices() {
+    use zgui_render_wgpu::gpu::adapter;
+    let mut descriptor = adapter::instance_descriptor(wgpu::Backends::DX12);
+    descriptor.backend_options.dx12.shader_compiler = wgpu::Dx12Compiler::StaticDxc;
+    let instance = wgpu::Instance::new(descriptor);
+    let identity = |adapter: wgpu::Adapter| {
+        let info = adapter.get_info();
+        (info.vendor, info.device, info.device_pci_bus_id, info.name)
+    };
+    let mut eager: Vec<_> = adapter::candidates(&instance, wgpu::Backends::DX12)
+        .into_iter()
+        .map(identity)
+        .collect();
+    let mut lazy: Vec<_> = graphics::dx12_candidates(&instance).map(identity).collect();
+    assert!(!eager.is_empty());
+    eager.sort_unstable();
+    lazy.sort_unstable();
+    assert_eq!(lazy, eager);
+}
+
 struct Snapshot {
     saved: SavedState,
     preview: Oklch,

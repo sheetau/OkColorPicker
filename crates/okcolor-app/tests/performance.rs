@@ -191,12 +191,14 @@ fn measure_picker_drag_workloads() {
     let instance = wgpu::Instance::new(descriptor);
     #[cfg(windows)]
     report_private_commit("after_instance");
-    let adapters = adapter::candidates(&instance, wgpu::Backends::DX12);
+    let mut adapters = okcolor_app::graphics::dx12_candidates(&instance);
+    let first = adapters.next();
     #[cfg(windows)]
-    report_private_commit("after_adapter_enumeration");
+    report_private_commit("after_first_adapter_probe");
     let gpu = Arc::new(
-        adapters
+        first
             .into_iter()
+            .chain(adapters)
             .find_map(|adapter| Gpu::open(instance.clone(), adapter, &[]).ok())
             .expect("DX12 device"),
     );

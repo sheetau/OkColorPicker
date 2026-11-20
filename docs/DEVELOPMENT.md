@@ -33,7 +33,15 @@ select a separate profile as described in [Saved state](STATE_FORMAT.md).
 The executable uses DX12, DirectComposition, `WS_EX_NOREDIRECTIONBITMAP`,
 premultiplied surface alpha and an opaque CSS background. A statically linked DXC
 avoids loading unrelated `dxcompiler.dll` files from PATH. It logs the
-selected adapter and actual surface formats; set `OKCOLOR_TRACE_FRAMES` to log
+selected adapter and actual surface formats. On DXGI 1.6 it enumerates adapter
+descriptions in high-performance order, then probes devices until one opens.
+`ZGUI_DEVICE_ID` gives a PCI device ID priority. Older DXGI factories use zgui's
+ranked adapter list. The vendored wgpu-hal 29.0.4 patch adds lazy probing to the
+DX12 backend and shares upstream's adapter exclusions and capability checks.
+It is based on the published crate at wgpu commit
+`e99f5305ded96ff7006f0714d043a7f735bd45c2`. Its two source changes are in
+`src/auxil/dxgi/factory.rs` and `src/dx12/instance.rs` under `vendor/wgpu-hal`.
+For diagnostics, set `OKCOLOR_TRACE_FRAMES` to log
 frame counts. It requires a working DX12 device. A device-loss callback marks the
 device unavailable and wakes the window; recovery runs on the UI thread.
 
@@ -130,7 +138,7 @@ its scope and update procedure. Do not replace this with a post-creation style c
 The [shader vocabulary patch](../vendor/zgui-wgsl/README.md) preserves extended
 RGB in custom paint while retaining upstream alpha clamping. The
 [renderer patch](../vendor/zgui-render-wgpu/README.md) exposes its offscreen GPU
-texture for the final conversion. All patches use the same pinned revision;
+texture for the final conversion. The zgui patches use the same pinned revision;
 their READMEs describe the limited changes. The
 [runtime patch](../vendor/zgui-runtime/README.md) invalidates dependent caches on
 `FrameOutcome::Recovered`; replaying old chunks alone cannot restore lost textures.
@@ -260,7 +268,7 @@ timed passes: it excludes the final scRGB pass and copies, and vector spans can
 include CPU submission gaps. Only timestamp data is read back, never pixels.
 The settled Picker reports renderer allocations by category and the extra scRGB
 target separately. On Windows the harness also samples process private commit
-around font registration, DX12 instance creation, adapter enumeration, device
+around font registration, DX12 instance creation, the first adapter probe, device
 opening and the first settled frames. Run it in a fresh process for each startup measurement.
 
 The harness uses the production picker and output shader on a headless surface.

@@ -1,6 +1,6 @@
 [workspace]
 members = ["crates/okcolor-core", "crates/okcolor-app", "crates/okcolor-csp"]
-exclude = ["vendor/zgui-platform-winit", "vendor/zgui-wgsl", "vendor/zgui-render-wgpu", "vendor/zgui-runtime"]
+exclude = ["vendor/zgui-platform-winit", "vendor/zgui-wgsl", "vendor/zgui-render-wgpu", "vendor/zgui-runtime", "vendor/wgpu-hal"]
 resolver = "3"
 
 [workspace.package]
@@ -20,3 +20,6 @@ zgui-platform-winit = { path = "vendor/zgui-platform-winit" }
 zgui-wgsl = { path = "vendor/zgui-wgsl" }
 zgui-render-wgpu = { path = "vendor/zgui-render-wgpu" }
 zgui-runtime = { path = "vendor/zgui-runtime" }
+
+[patch.crates-io]
+wgpu-hal = { path = "vendor/wgpu-hal" }

@@ -55,6 +55,26 @@ pub fn factory_with_display(
     })
 }
 
+/// Opens only the candidate the caller requests. Older DXGI factories use zgui's ranked list.
+pub fn dx12_candidates(instance: &wgpu::Instance) -> Box<dyn Iterator<Item = wgpu::Adapter> + '_> {
+    #[cfg(windows)]
+    {
+        type Dx12 = wgpu::hal::api::Dx12;
+        // SAFETY: borrow the instance to enumerate hardware. Every adapter passed
+        // back to wgpu comes from this exact HAL instance and backend.
+        if let Some(hal) = unsafe { instance.as_hal::<Dx12>() }
+            && let Some(candidates) = hal.lazy_adapters(adapter::preferred_device_id())
+        {
+            return Box::new(
+                candidates.map(|candidate| unsafe {
+                    instance.create_adapter_from_hal::<Dx12>(candidate)
+                }),
+            );
+        }
+    }
+    Box::new(adapter::candidates(instance, wgpu::Backends::DX12).into_iter())
+}
+
 /// Use the same compiler and presentation policy on startup and device replacement.
 pub(crate) fn open_gpu() -> Result<Arc<Gpu>, String> {
     let mut descriptor = adapter::instance_descriptor(wgpu::Backends::DX12);
@@ -62,7 +82,7 @@ pub(crate) fn open_gpu() -> Result<Arc<Gpu>, String> {
     descriptor.backend_options.dx12.presentation_system = wgpu::Dx12SwapchainKind::DxgiFromVisual;
     let instance = wgpu::Instance::new(descriptor);
     let mut errors = Vec::new();
-    for candidate in adapter::candidates(&instance, wgpu::Backends::DX12) {
+    for candidate in dx12_candidates(&instance) {
         let name = candidate.get_info().name;
         match Gpu::open(instance.clone(), candidate, &[]) {
             Ok(gpu) => {
