@@ -43,22 +43,25 @@ fn wheel_extrema([r, g, b]: [f64; 3], quantize: bool) -> (f64, f64) {
     (value * (1.0 - saturation), value)
 }
 
-/// Signed picker steps: lightness hundredths, chroma thousandths, hue degrees,
-/// and a percentage mix toward the warm or cool RGB endpoint.
+/// Signed lightness, chroma and temperature percentages, with hue in degrees.
+/// Chroma moves toward neutral or the boundary at the adjusted lightness and hue.
 pub fn adjust_palette_color(source: Oklch, gamut: Gamut, offsets: [i16; 4]) -> Oklch {
     let [lightness, chroma, hue, temperature] = offsets;
     let source = if lightness == 0 && chroma == 0 && hue % 360 == 0 {
         source
     } else {
         let [l, c, h, a] = source.components();
-        Oklch::new(
-            (l + f64::from(lightness) / 100.0).clamp(0.0, 1.0),
-            (c + f64::from(chroma) / 1000.0).max(0.0),
-            h + f64::from(hue),
-            a,
-        )
-        .expect("bounded palette adjustment")
-        .reduce_chroma(gamut)
+        let l = (l + f64::from(lightness) / 100.0).clamp(0.0, 1.0);
+        let h = h + f64::from(hue);
+        let at = |c| Oklch::new(l, c, h, a).expect("bounded palette adjustment");
+        let fraction = f64::from(chroma.clamp(-100, 100)) / 100.0;
+        let c = if chroma > 0 {
+            let max = at(1.0).reduce_chroma(gamut).components()[1];
+            c.min(max) + (max - c.min(max)) * fraction
+        } else {
+            c * (1.0 + fraction)
+        };
+        at(c).reduce_chroma(gamut)
     };
     if temperature == 0 {
         return source;

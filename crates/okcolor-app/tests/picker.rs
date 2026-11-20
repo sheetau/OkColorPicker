@@ -486,6 +486,12 @@ fn mounted_picker_draws_and_drag_is_one_undo() {
                 harness.deliver_to_first(SurfaceEvent::Resized(Size::new(DevicePx(330.0),DevicePx(560.0))));
                 harness.settle(64);
                 click(&mut harness,refs.axis_trigger);
+                let view=refs.settings_viewport.window_bounds().unwrap();
+                let trigger=refs.axis_trigger.window_bounds().unwrap();
+                let first=refs.axis_options[2].window_bounds().unwrap();
+                let group_top=(trigger.origin.y.0+trigger.size.height.0/2.0-33.0).clamp(view.origin.y.0,view.origin.y.0+view.size.height.0-66.0);
+                assert!((first.origin.y.0-group_top).abs()<=1.0);
+                assert_eq!(first.origin.x.0+first.size.width.0+1.0,view.origin.x.0+view.size.width.0);
                 harness.deliver_to_first(key(KeyEvent::named(NamedKey::Escape,PhysicalKey::Unidentified(0)),Modifiers::NONE));
                 harness.settle(32);
                 assert!(refs.axis_options[0].window_bounds().is_none() && refs.axis_trigger.window_bounds().is_some(),"Escape closes the chart menu first");

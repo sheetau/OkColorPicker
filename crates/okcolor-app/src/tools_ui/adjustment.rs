@@ -1,9 +1,9 @@
 use super::{PickerModel, PickerRefs};
+use crate::menu::MenuBandProps;
 use okcolor_core::adjust_palette_color;
 use zgui::{prelude::*, reactive::RenderEffect};
 
-const LABELS: [&str; 4] = ["L", "C", "H", "Temp"];
-const LIMITS: [i16; 4] = [100, 1000, 360, 100];
+const LABELS: [&str; 4] = ["L", "C", "H", "T"];
 
 #[component]
 pub(super) fn AdjustmentMenu(
@@ -42,7 +42,7 @@ pub(super) fn AdjustmentMenu(
         let Some((index, start, original)) = drag.get_value() else {
             return;
         };
-        let limit = f32::from(LIMITS[index]);
+        let limit = if index == 2 { 360.0 } else { 100.0 };
         let mut speed = 1.0;
         if modifiers.contains(Modifiers::SHIFT) {
             speed *= 10.0;
@@ -113,7 +113,10 @@ pub(super) fn AdjustmentMenu(
         }
     });
     let clicked = root.listen(events::CLICK, ListenerOptions::CAPTURE, move |cx| {
-        if editing.get_value() && !refs.adjustment_menu.contains(cx.target) {
+        if (editing.get_value() && !refs.adjustment_menu.contains(cx.target))
+            || refs.tools[5].contains(cx.target)
+            || refs.tools[0].contains(cx.target)
+        {
             cx.prevent_default();
             cx.stop_propagation();
         }
@@ -156,7 +159,7 @@ pub(super) fn AdjustmentMenu(
         drop((observe, pressed, clicked, moved, released, cancelled, key));
         finish(false);
     });
-    view! {column(class="folder-menu above",node_ref=refs.adjustment_menu) {
+    view! {MenuBand(page=refs.tool_page,trigger=refs.palette_adjust,node=refs.adjustment_menu,swatches=refs.tools[5]) {
         for i in move ||0..LABELS.len(),key=|i:&usize|*i {
             control(class="adjustment-row",node_ref=refs.adjustment_rows[i],a11y:label=LABELS[i]) {
                 text(class="adjustment-name") {{LABELS[i]}}

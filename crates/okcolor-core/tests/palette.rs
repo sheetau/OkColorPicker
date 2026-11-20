@@ -9,20 +9,21 @@ fn adjustments_preserve_working_gamut_and_alpha_and_have_neutral_zero() {
         assert_eq!(adjust_palette_color(base, gamut, [0; 4]), base);
         let inside = Oklch::new(0.52, 0.02, 352.0, 0.4).unwrap();
         assert_eq!(
-            adjust_palette_color(inside, gamut, [10, 20, 15, 0]),
-            Oklch::new(0.62, 0.04, 7.0, 0.4).unwrap()
+            adjust_palette_color(inside, gamut, [10, -50, 90, 0]),
+            Oklch::new(0.62, 0.01, 82.0, 0.4).unwrap()
         );
-        assert_eq!(adjust_palette_color(inside, gamut, [0, 0, 360, 0]), inside);
-        assert_eq!(adjust_palette_color(inside, gamut, [0, 0, -360, 0]), inside);
+        for hue in [-360, 360] {
+            assert_eq!(adjust_palette_color(inside, gamut, [0, 0, hue, 0]), inside);
+        }
         for delta in [-100, 100] {
             let [l, c, _, a] = adjust_palette_color(inside, gamut, [delta, 0, 0, 0]).components();
             assert_eq!((l, c, a), (if delta < 0 { 0.0 } else { 1.0 }, 0.0, 0.4));
         }
         assert_eq!(
-            adjust_palette_color(inside, gamut, [0, -1000, 0, 0]).components()[1],
+            adjust_palette_color(inside, gamut, [0, -100, 0, 0]).components()[1],
             0.0
         );
-        let peak = adjust_palette_color(inside, gamut, [0, 1000, 0, 0]);
+        let peak = adjust_palette_color(inside, gamut, [0, 100, 0, 0]);
         assert!(peak.in_gamut(gamut));
         let [l, c, h, a] = peak.components();
         assert_eq!((l, h, a), (0.52, 352.0, 0.4));

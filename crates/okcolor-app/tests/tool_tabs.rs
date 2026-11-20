@@ -120,11 +120,17 @@ fn check_palette_adjustment(
         }
         (peak, left)
     };
-    let closed_ink = ink_bounds(refs.palette_adjust).0;
     let before = model.palette.get_untracked();
     click(h, refs.palette_adjust);
     let menu = refs.adjustment_menu.window_bounds().unwrap();
-    assert!((menu.origin.y.0 + menu.size.height.0 - button.origin.y.0).abs() <= 1.0);
+    let body = refs.tool_page.window_bounds().unwrap();
+    let strip = refs.tools[5].window_bounds().unwrap();
+    assert_eq!(menu.origin.y, body.origin.y);
+    assert_eq!(menu.origin.x.0 + menu.size.width.0, body.size.width.0);
+    assert_eq!(menu.origin.y.0 + menu.size.height.0, strip.origin.y.0);
+    let cancel = refs.adjustment_cancel.window_bounds().unwrap();
+    assert_eq!(cancel.origin.y.0 + cancel.size.height.0, strip.origin.y.0);
+    assert_eq!(refs.adjustment_rows[3].text_content(), "T0");
     let first = refs.adjustment_rows[0].window_bounds().unwrap();
     let x = first.origin.x.0.round() as i32;
     let y = first.origin.y.0.round() as i32;
@@ -164,10 +170,6 @@ fn check_palette_adjustment(
     assert!(
         hovered[1] > normal[1] + 30,
         "hovered ink {hovered:?}, normal {normal:?}"
-    );
-    assert!(
-        ink_bounds(refs.palette_adjust).0 > closed_ink + 40,
-        "open trigger stays lit off hover"
     );
     for node in [refs.adjustment_apply, refs.adjustment_cancel] {
         let (normal, left) = ink_bounds(node);
@@ -217,9 +219,15 @@ fn check_palette_adjustment(
     tile_pointer(h, PointerAction::Released, primary, below);
     assert_eq!(model.palette.get_untracked(), after);
     assert!(refs.adjustment_menu.get().is_some());
-    // A click, including its activation on release, must not reach Generate.
-    click(h, refs.tools[0]);
-    click(h, refs.palette_adjust);
+    // The exposed swatches and the generation shortcut are inactive during preview.
+    let original_color = model.current();
+    click(h, refs.tools[6]);
+    key(
+        h,
+        KeyEvent::named(NamedKey::Space, PhysicalKey::Unidentified(0)),
+        Modifiers::NONE,
+    );
+    assert_eq!(model.current(), original_color);
     assert!(refs.adjustment_menu.get().is_some());
     assert_eq!(model.palette.get_untracked(), after);
     assert_eq!(
@@ -270,7 +278,7 @@ fn check_palette_adjustment(
         assert_eq!(model.palette.get_untracked(), after);
     }
     click(h, refs.palette_adjust);
-    for (row, limit) in refs.adjustment_rows.into_iter().zip([100, 1000, 360, 100]) {
+    for (row, limit) in refs.adjustment_rows.into_iter().zip([100, 100, 360, 100]) {
         let rect = row.window_bounds().unwrap();
         let p = Point::new(start.x, CssPx(rect.origin.y.0 + 8.0));
         for sign in [1, -1] {
@@ -288,10 +296,21 @@ fn check_palette_adjustment(
     click(h, refs.adjustment_cancel);
     assert_eq!(model.palette.get_untracked(), after);
     click(h, refs.palette_adjust);
-    click(h, refs.tools[0]);
+    let current = model.current();
+    let start = Point::new(
+        CssPx(strip.origin.x.0 + strip.size.width.0 * 0.5),
+        CssPx(strip.origin.y.0 + 10.0),
+    );
+    for action in [
+        PointerAction::Moved,
+        PointerAction::Pressed,
+        PointerAction::Released,
+    ] {
+        tile_pointer(h, action, PointerButton::Middle, start);
+    }
     assert!(refs.adjustment_menu.get().is_none());
-    assert_ne!(model.palette.get_untracked(), after);
-    model.undo();
+    assert_eq!(model.current(), current);
+    assert_eq!(model.palette.get_untracked(), after);
     model.undo();
     h.settle(32);
     assert_eq!(model.palette.get_untracked(), before);
@@ -462,6 +481,24 @@ fn mounted_tabs_edit_recall_adjust_and_restore() {
                 assert_eq!(model.tab.get_untracked(), Tab::Harmonies);
                 assert_eq!(refs.similar.focusables().len(), 6, "six mounted named-color tiles");
                 fit_page(&mut h,refs);
+                let original_format=model.format.get_untracked();
+                click(&mut h,refs.format_trigger);
+                let panel=refs.format_menu.window_bounds().expect("output format band");
+                let page=refs.tool_page.window_bounds().unwrap();
+                let trigger=refs.format_trigger.window_bounds().unwrap();
+                assert_eq!(panel.origin.y,page.origin.y);
+                assert_eq!(panel.size.height,page.size.height);
+                assert_eq!(panel.origin.x.0+panel.size.width.0,page.size.width.0);
+                let rows=11.0*22.0;
+                let first=(trigger.origin.y.0+trigger.size.height.0/2.0-rows/2.0)
+                    .clamp(page.origin.y.0,page.origin.y.0+page.size.height.0-rows);
+                let rgb=Point::new(CssPx(panel.origin.x.0+15.0),CssPx(first+55.0));
+                for action in [PointerAction::Moved,PointerAction::Pressed,PointerAction::Released] {
+                    tile_pointer(&mut h,action,PointerButton::Primary,rgb);
+                }
+                assert_eq!(model.format.get_untracked(),okcolor_core::ColorFormat::Rgb);
+                assert!(refs.format_menu.get_untracked().is_none());
+                model.format.set(original_format);
                 // Black in the variations uses the same inner edge as a dark swatch.
                 let shades = refs.tools[7].window_bounds().unwrap();
                 {
@@ -493,16 +530,22 @@ fn mounted_tabs_edit_recall_adjust_and_restore() {
                 let folder = refs.folder_menu.window_bounds().expect("mounted swatch menu");
                 let anchor = refs.library[1].window_bounds().unwrap();
                 assert!(anchor.size.width.0==strip.size.width.0,"full-width folder trigger {anchor:?}");
-                {
-                    let frames=frames.lock().unwrap();
-                    let image=frames.last().unwrap();
-                    let right=(anchor.origin.x.0+anchor.size.width.0).round() as i32;
-                    let y=anchor.origin.y.0.round() as i32;
-                    assert!((right-16..right).any(|x|(0..16).any(|dy|image.rgba(x,y+dy)[0]>64)),"chevron at trailing edge");
-                }
-                assert!(folder.size.height.0 >= 40.0 && folder.origin.y.0 + folder.size.height.0 <= anchor.origin.y.0+1.0,"folder {folder:?}, trigger {anchor:?}");
+                let body=refs.tool_page.window_bounds().unwrap();
+                assert_eq!(folder.origin.y,body.origin.y);
+                assert_eq!(folder.size.height,body.size.height);
+                assert_eq!(folder.origin.x.0+folder.size.width.0,body.origin.x.0+body.size.width.0);
+                assert_eq!(folder.size.width.0,100.0);
                 let mx=folder.origin.x.0.round() as i32;
-                let my=folder.origin.y.0.round() as i32;
+                let my=refs.library[4].window_bounds().unwrap().origin.y.0.round() as i32-22;
+                assert!((my as f32+22.0-anchor.origin.y.0-anchor.size.height.0/2.0).abs()<=1.0);
+                { let frames=frames.lock().unwrap(); let image=frames.last().unwrap();
+                  for dy in [0,1,35,folder.size.height.0 as i32-1] {
+                      let y=folder.origin.y.0 as i32+dy;
+                      assert_eq!(image.rgba(mx,y)[0],224,"left border");
+                      assert_eq!(image.rgba(mx+99,y)[0],224,"right border");
+                      assert_eq!(image.rgba(mx+50,y)[0],0,"black panel, no horizontal border");
+                  }
+                }
                 tile_pointer(&mut h,PointerAction::Moved,PointerButton::Primary,Point::new(CssPx(mx as f32+8.0),CssPx(my as f32+37.0)));
                 {
                     let captured=frames.lock().unwrap();
@@ -513,7 +556,7 @@ fn mounted_tabs_edit_recall_adjust_and_restore() {
                     for row in [0,22] {
                         let (mut left,mut right,mut top,mut bottom)=(100,0,22,0);
                         for y in 0..22 {
-                            assert_eq!(image.rgba(mx+1,my+row+y),[9,9,9,255],"selected and hovered rows share the panel background");
+                            assert_eq!(image.rgba(mx+1,my+row+y),[0,0,0,255],"selected and hovered rows share the panel background");
                             for x in 2..98 {
                                 if image.rgba(mx+x,my+row+y)[0]>60 {
                                     left=left.min(x);right=right.max(x);top=top.min(y);bottom=bottom.max(y);
@@ -534,6 +577,21 @@ fn mounted_tabs_edit_recall_adjust_and_restore() {
                 assert!(wide_menu.size.width.0>short_width+20.0,"folder menu must fit its longest item: {short_width} -> {wide_menu:?}");
                 key(&mut h,KeyEvent::named(NamedKey::Escape,PhysicalKey::Unidentified(0)),Modifiers::NONE);
                 model.library.update(|lib|lib.remove(folder_id));
+                let original_library=model.library.get_untracked();
+                model.library.update(|lib|{
+                    for i in 0..32 {lib.create_folder(&format!("Folder {i}")).unwrap();}
+                });
+                click(&mut h,refs.library[1]);
+                let band=refs.folder_menu;
+                assert_eq!(band.window_bounds().unwrap().size.height,body.size.height);
+                assert!(band.scroll_position().content_size.height.0>body.size.height.0);
+                band.scroll_to(ScrollTarget::Offset(Point::new(zgui::geom::DevicePx(0.0),zgui::geom::DevicePx(10000.0))),ScrollBehavior::Instant);
+                h.settle(32);
+                let last=refs.library[4].window_bounds().unwrap();
+                assert!((last.origin.y.0+last.size.height.0-body.origin.y.0-body.size.height.0).abs()<=1.0);
+                key(&mut h,KeyEvent::named(NamedKey::Escape,PhysicalKey::Unidentified(0)),Modifiers::NONE);
+                model.library.set(original_library);
+                h.settle(32);
                 let palette_start = Point::new(
                     CssPx(strip.origin.x.0 + 8.0),
                     CssPx(strip.origin.y.0 + 8.0),
@@ -991,7 +1049,7 @@ fn mounted_tabs_edit_recall_adjust_and_restore() {
                 click(&mut h, refs.title);
                 assert_eq!(model.tab.get_untracked(), Tab::Picker);
                 assert!(refs.slice.window_bounds().is_some());
-                // With more space below the heading, the menu opens down and its last entry is clickable.
+                // In a taller window the rows track the heading and the last entry remains clickable.
                 h.deliver_to_first(SurfaceEvent::Resized(zgui::geom::Size::new(zgui::geom::DevicePx(330.0),zgui::geom::DevicePx(840.0))));
                 h.settle(32);
                 refs.tool_page.scroll_to(ScrollTarget::Offset(Point::new(zgui::geom::DevicePx(0.0),zgui::geom::DevicePx(0.0))),ScrollBehavior::Instant);
@@ -999,8 +1057,10 @@ fn mounted_tabs_edit_recall_adjust_and_restore() {
                 click(&mut h,refs.library[1]);
                 let anchor=refs.library[1].window_bounds().unwrap();
                 let menu=refs.folder_menu.window_bounds().unwrap();
-                assert!(menu.origin.y.0>=anchor.origin.y.0+anchor.size.height.0-1.0);
-                let edit = Point::new(CssPx(menu.origin.x.0+20.0),CssPx(menu.origin.y.0+menu.size.height.0-13.0));
+                let item=refs.library[4].window_bounds().unwrap();
+                assert_eq!(menu.origin.y.0,32.0);
+                assert!((item.origin.y.0-anchor.origin.y.0-anchor.size.height.0/2.0).abs()<=1.0);
+                let edit = Point::new(CssPx(item.origin.x.0+20.0),CssPx(item.origin.y.0+10.0));
                 for action in [PointerAction::Pressed,PointerAction::Released] {tile_pointer(&mut h,action,primary,edit);}
                 assert!(refs.library[2].window_bounds().is_some(),"the overlaid menu receives clicks");
                 let input=refs.library[2];
@@ -1069,7 +1129,7 @@ fn mounted_tabs_edit_recall_adjust_and_restore() {
                 h.run_for(Duration::from_millis(240),Duration::from_millis(20));h.settle(32);
                 assert!(refs.folder_menu.window_bounds().is_none());
                 h.run_for(hold,Duration::from_millis(20));h.settle(32);
-                let unfiled=point_in(refs.folder_menu,12.0,10.0);
+                let unfiled=point_in(refs.library[4],12.0,10.0-44.0);
                 tile_pointer(&mut h,PointerAction::Moved,primary,unfiled);
                 tile_pointer(&mut h,PointerAction::Released,primary,unfiled);
                 let moved=model.library.get_untracked();
@@ -1097,7 +1157,7 @@ fn mounted_tabs_edit_recall_adjust_and_restore() {
                 tile_pointer(&mut h,PointerAction::Pressed,primary,outside_tile);
                 tile_pointer(&mut h,PointerAction::Moved,primary,center);
                 h.run_for(hold,Duration::from_millis(20));h.settle(32);
-                let folder_option=point_in(refs.folder_menu,12.0,33.0);
+                let folder_option=point_in(refs.library[4],12.0,10.0-22.0);
                 tile_pointer(&mut h,PointerAction::Released,primary,folder_option);
                 let after_drop=model.library.get_untracked();
                 assert_eq!(after_drop.swatches.len(),restored.swatches.len()+1);

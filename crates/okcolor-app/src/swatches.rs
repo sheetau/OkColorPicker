@@ -1,4 +1,5 @@
 //! Saved swatches and inline folder management.
+use crate::menu::MenuBandProps;
 use crate::{
     model::PickerModel,
     tiles::{ColorTileProps, Destination, Source, TileGestures},
@@ -204,27 +205,6 @@ pub(crate) fn Swatches(model: PickerModel, refs: PickerRefs) -> impl IntoView {
         drop(hover);
         drop(end_drag);
     });
-    let scroll = refs.tool_page.observe_scroll();
-    let size = refs.tool_page.observe_border_size();
-    let scale = use_window().scale();
-    let placement = Memo::new(move |_| {
-        scroll.get();
-        size.get();
-        if !menu.get() {
-            return (false, 0.0);
-        }
-        let (Some(button), Some(page)) = (trigger.window_bounds(), refs.tool_page.window_bounds())
-        else {
-            return (false, 0.0);
-        };
-        let below =
-            (page.origin.y.0 + page.size.height.0 - button.origin.y.0 - button.size.height.0)
-                .max(0.0)
-                / scale.get();
-        let above = (button.origin.y.0 - page.origin.y.0).max(0.0) / scale.get();
-        let up = below < (model.library.get().folders.len() + 2) as f32 * 22.0 && above > below;
-        (up, if up { above } else { below })
-    });
     let finish = UnsyncCallback::new(move |name: Option<String>| {
         let mode = heading.get_untracked();
         heading.set(Heading::Browse);
@@ -300,7 +280,7 @@ pub(crate) fn Swatches(model: PickerModel, refs: PickerRefs) -> impl IntoView {
     view! {column(class="swatch-library") {
         box(class="folder-anchor") {
             if move ||heading.get()==Heading::Browse {
-                control(class="folder-heading",class:up=move ||menu.get()&&placement.get().0,class:open=move ||menu.get()||over_heading.get(),
+                control(class="folder-heading",class:open=move ||menu.get()||over_heading.get(),
                     node_ref=Tooltips::button(trigger,"Choose swatch folder"),tabindex=Focus::Sequential,a11y:label="Choose swatch folder",
                     on:pointer_down=begin_press,on:pointer_move=track_press,
                     on:key_down=move |_|long_pressed.set_value(false),
@@ -320,7 +300,7 @@ pub(crate) fn Swatches(model: PickerModel, refs: PickerRefs) -> impl IntoView {
                 NameField(model=model,node=refs.library[2],finish=finish,initial=initial_name())
             }}
             if move ||menu.get() {
-                column(class="folder-menu",node_ref=popup,class:above=move ||placement.get().0,style:max-height=move ||Some(format!("{}px",placement.get().1))) {
+                MenuBand(page=refs.tool_page,trigger=trigger,node=popup) {
                     FolderOption(model=model,id=None,selected=folder,choose=choose)
                     for id in move ||model.library.with(|l|l.folders.iter().map(|f|f.id).collect::<Vec<_>>()),key=|id:&u64|*id {
                         FolderOption(model=model,id=Some(id),selected=folder,choose=choose)

@@ -242,10 +242,14 @@ fn Palette(model: PickerModel, refs: PickerRefs) -> impl IntoView {
     let gestures = TileGestures::current();
     let heading = crate::tiles::TileHeading::mount();
 
+    let menu = RwSignal::new(false);
     let hot = RwSignal::new(None::<usize>);
     let scale = use_window().scale();
     let len = Memo::new(move |_| model.palette.with(Vec::len));
     let palette_hover = move |cx: &mut EventCx<'_, events::PointerMove>| {
+        if menu.get_untracked() {
+            return;
+        }
         let Some(b) = refs.tools[5].window_bounds() else {
             return;
         };
@@ -271,8 +275,11 @@ fn Palette(model: PickerModel, refs: PickerRefs) -> impl IntoView {
     let tail = refs.tools[2];
     let end = Destination::Palette(usize::MAX);
     gestures.register(tail, end);
-    let menu = RwSignal::new(false);
-    let regenerate = move || model.generate_palette();
+    let regenerate = move || {
+        if !menu.get_untracked() {
+            model.generate_palette();
+        }
+    };
     let shortcut = RenderEffect::new(move |_| {
         refs.tools[0].get()?;
         Some(refs.tools[0].window_root()?.listen(
@@ -297,12 +304,12 @@ fn Palette(model: PickerModel, refs: PickerRefs) -> impl IntoView {
             text {"Palettes"} spacer() HoverLabel(heading=heading)
             row(class="palette-actions") {
                 box(class="folder-anchor") {
-                    control(class="generate-button",class:open=move ||menu.get(),node_ref=Tooltips::button(refs.palette_adjust,"Adjust palette"),a11y:label="Adjust palette",tabindex=Focus::Sequential,on:click=move |_|menu.update(|visible| *visible = !*visible)) {
+                    control(class="generate-button",class:open=move ||menu.get(),node_ref=Tooltips::button(refs.palette_adjust,"Adjust palette"),a11y:label="Adjust palette",tabindex=Focus::Sequential,on:click=move |_|{hot.set(None);menu.update(|visible| *visible = !*visible);}) {
                         {zgui::elements::vector().document(include_str!("../assets/adjust.svg")).class("generate-icon")}
                     }
                     if move ||menu.get() { AdjustmentMenu(model=model,refs=refs,open=menu) }
                 }
-                control(node_ref=Tooltips::button(refs.tools[0],"Generate palette · Space"),tabindex=Focus::Sequential,class="generate-button",a11y:label="Generate palette",on:click=move |_|regenerate()) {{zgui::elements::vector().document(include_str!("../assets/generate.svg")).class("generate-icon")}}
+                control(disabled=move ||menu.get(),node_ref=Tooltips::button(refs.tools[0],"Generate palette · Space"),tabindex=Focus::Sequential,class="generate-button",a11y:label="Generate palette",on:click=move |_|regenerate()) {{zgui::elements::vector().document(include_str!("../assets/generate.svg")).class("generate-icon")}}
             }
         }
         row(class="palette-strip",node_ref=refs.tools[5],on:pointer_move=palette_hover,on:pointer_leave=move |_|hot.set(None)) {
@@ -313,6 +320,7 @@ fn Palette(model: PickerModel, refs: PickerRefs) -> impl IntoView {
                 PaletteInsert(model=model,index=i,node=NodeRef::new(),hot=hot)
             }
             PaletteInsert(model=model,index=usize::MAX,node=tail,hot=hot)
+            if move ||menu.get() {box(class="palette-shield") {}}
             if move ||gestures.hovering.get()==Some(end) {box(class="palette-end-line",style:background-color=move ||Some(gestures.palette_boundary(usize::MAX))) {}}
         }
     }}

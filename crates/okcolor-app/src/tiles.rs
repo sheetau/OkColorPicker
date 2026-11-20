@@ -24,6 +24,7 @@ pub(crate) enum Destination {
 pub(crate) struct TileGestures {
     page: NodeRef,
     folder_menu: NodeRef,
+    adjustment_menu: NodeRef,
     zones: StoredValue<Vec<(NodeRef, Destination)>, LocalStorage>,
     pub hovering: RwSignal<Option<Destination>>,
     pub dragging: RwSignal<Option<NodeRef>, LocalStorage>,
@@ -31,10 +32,16 @@ pub(crate) struct TileGestures {
 }
 
 impl TileGestures {
-    pub fn mount(page: NodeRef, folder_menu: NodeRef, model: PickerModel) -> Self {
+    pub fn mount(
+        page: NodeRef,
+        folder_menu: NodeRef,
+        adjustment_menu: NodeRef,
+        model: PickerModel,
+    ) -> Self {
         let gestures = Self {
             page,
             folder_menu,
+            adjustment_menu,
             zones: StoredValue::new_local(Vec::new()),
             hovering: RwSignal::new(None),
             dragging: RwSignal::new_local(None),
@@ -68,13 +75,16 @@ impl TileGestures {
                 && y >= b.origin.y.0
                 && y < b.origin.y.0 + b.size.height.0
         });
+        let adjusting = self.adjustment_menu.get_untracked().is_some();
         self.zones.with_value(|zones| {
             zones
                 .iter()
                 .rev()
                 .filter_map(|(node, dest)| {
                     // Clip scrolled options and keep tiles under the open menu out of hit testing.
-                    if matches!(dest, Destination::Folder(_)) != in_menu {
+                    if matches!(dest, Destination::Folder(_)) != in_menu
+                        || (adjusting && matches!(dest, Destination::Palette(_)))
+                    {
                         return None;
                     }
                     let b = node.window_bounds()?;

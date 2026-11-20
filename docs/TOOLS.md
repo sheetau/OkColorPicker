@@ -6,7 +6,9 @@ page includes recent colors, main/sub slots, L/C/H/alpha fields, editable color
 codes and the swatch library. The window fits the active page. Resize the Picker
 vertically to change the chart height. Returning to Picker restores that height.
 Drag the title to move the window. Settings covers the current page and scrolls
-when its controls exceed the available height.
+when its controls exceed the available height. Dropdowns occupy the right edge of
+the page and center their options on the trigger as far as the page permits.
+Palette adjustment options sit immediately above the palette swatches.
 
 ## Picker
 
@@ -76,12 +78,13 @@ and the last eight generated palettes. Locked colors retain their positions and
 original components, including alpha. New colors fit the selected working gamut.
 
 Use the adjustment button to the left of Generate to edit the current palette.
-Drag L, C, H or Temp horizontally to preview offsets from the palette that opened
-the menu. One step adds 0.01 to OKLCH lightness, 0.001 to chroma, or one degree
-to hue, as in Picker. The signed ranges are ±100, ±1000 and ±360 respectively.
-Lightness stops at black or white. Chroma is reduced when necessary to fit the
-working gamut at the adjusted lightness and hue. Temp ranges from −100 (cool)
-to +100 (warm). Locked colors and alpha are preserved.
+Drag L, C, H or T horizontally. L, C and T display signed offsets from
+−100 to +100. H displays degrees from −360 to +360.
+L adds up to one unit of OKLCH lightness. C moves toward neutral at −100 or the
+working gamut boundary at +100, at the adjusted lightness and hue. H rotates up
+to one full turn in either direction. T mixes toward cool blue or warm red.
+Locked colors and alpha are preserved. Generation and palette tile actions are
+suspended while the menu is open.
 Choose **Apply** to keep all adjustments as one undo step, or **Cancel** or
 **Escape** to restore the original palette. Clicking outside closes an
 unmodified menu. After an adjustment, the menu stays open until you decide.

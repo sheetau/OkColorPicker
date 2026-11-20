@@ -1,4 +1,5 @@
 use crate::eyedropper::EyedropperProps;
+use crate::menu::MenuBandProps;
 use crate::tiles::{ColorTileProps, Source, TileGestures};
 use crate::tooltip::Tooltips;
 use crate::updates::{UpdatePromptProps, Updates};
@@ -41,6 +42,8 @@ pub struct PickerRefs {
     pub tabs: [NodeRef; 3],
     pub library: [NodeRef; 8],
     pub folder_menu: NodeRef,
+    pub format_menu: NodeRef,
+    pub format_trigger: NodeRef,
     pub tools: [NodeRef; 8],
     pub group_toggles: [NodeRef; 3],
     pub apca_reset: NodeRef,
@@ -89,6 +92,8 @@ impl Default for PickerRefs {
             title: NodeRef::new(),
             tabs: std::array::from_fn(|_| NodeRef::new()),
             folder_menu: NodeRef::new(),
+            format_menu: NodeRef::new(),
+            format_trigger: NodeRef::new(),
             library: std::array::from_fn(|_| NodeRef::new()),
             group_toggles: std::array::from_fn(|_| NodeRef::new()),
             apca_reset: NodeRef::new(),
@@ -123,7 +128,12 @@ impl Default for PickerRefs {
 #[component]
 pub fn Picker(model: PickerModel, refs: PickerRefs) -> impl IntoView {
     provide_context(model);
-    let gestures = TileGestures::mount(refs.tool_page, refs.folder_menu, model);
+    let gestures = TileGestures::mount(
+        refs.tool_page,
+        refs.folder_menu,
+        refs.adjustment_menu,
+        model,
+    );
     let app_root = NodeRef::new();
     provide_context(InputExit(app_root));
     let app_size = app_root.observe_border_size();
@@ -294,8 +304,8 @@ pub fn Picker(model: PickerModel, refs: PickerRefs) -> impl IntoView {
                     if move ||model.tab.get()==Tab::Harmonies {Harmonies(model=model,refs=refs)}
                     if move ||model.tab.get()==Tab::Apca {Contrast(model=model,refs=refs)}
                 column(class="formats") {
-                    CodeField(model=model,node=refs.codes[0],primary=true)
-                    CodeField(model=model,node=refs.codes[1],primary=false)
+                    CodeField(model=model,refs=refs,node=refs.codes[0],primary=true)
+                    CodeField(model=model,refs=refs,node=refs.codes[1],primary=false)
                 }
                     Swatches(model=model,refs=refs)
                 }
@@ -615,15 +625,6 @@ fn Settings(model: PickerModel, refs: PickerRefs) -> impl IntoView {
     let viewport = refs.settings_viewport;
     let scroll = viewport.observe_scroll();
     let scale = use_window().scale();
-    let above = move || {
-        scroll.get();
-        let Some((row, page)) = trigger.window_bounds().zip(viewport.window_bounds()) else {
-            return false;
-        };
-        let before = row.origin.y.0 - page.origin.y.0;
-        let after = page.size.height.0 - before - row.size.height.0;
-        after < 66.0 * scale.get() && before > after
-    };
     let thumb = move || {
         let pos = scroll.get();
         let page = pos.scrollport.height.0;
@@ -668,13 +669,13 @@ fn Settings(model: PickerModel, refs: PickerRefs) -> impl IntoView {
             }
             column(class="settings-group") {
             column(class="folder-anchor") {
-                control(class="setting-row folder-heading",class:up=move ||menu.get() && above(),class:open=move ||menu.get(),node_ref=trigger,tabindex=Focus::Sequential,
+                control(class="setting-row folder-heading",class:open=move ||menu.get(),node_ref=trigger,tabindex=Focus::Sequential,
                     a11y:label="Gamut chart view",on:click=move |_|menu.update(|v| *v = !*v)) {
                     text {"Gamut"} spacer() text {{move ||model.tools.get().fixed_axis.view_name()}}
                     box(class="folder-chevron") {{zgui::elements::vector().document(include_str!("../assets/chevron.svg")).class("chevron")}}
                 }
                 if move ||menu.get() {
-                    column(class="folder-menu",class:above=above,node_ref=popup) {
+                    MenuBand(page=viewport,trigger=trigger,node=popup) {
                         for axis in move ||[FixedAxis::Hue,FixedAxis::Lightness,FixedAxis::Chroma],key=|axis:&FixedAxis|axis.view_name() {
                             control(node_ref=refs.axis_options[axis.bar() as usize-1],class:selected=move ||model.tools.get().fixed_axis==axis,tabindex=Focus::Sequential,
                                 on:click=move |_|{model.tools.update(|t|t.fixed_axis=axis);menu.set(false);trigger.focus();}) {text {{axis.view_name()}}}
@@ -1091,12 +1092,12 @@ pub(crate) fn CopyButton(
 }
 
 #[component]
-fn CodeField(model: PickerModel, node: NodeRef, primary: bool) -> impl IntoView {
+fn CodeField(model: PickerModel, refs: PickerRefs, node: NodeRef, primary: bool) -> impl IntoView {
     let exit = expect_context::<InputExit>().0;
     let focused = RwSignal::new(false);
     let menu = RwSignal::new(false);
-    let popup = NodeRef::new();
-    let trigger = NodeRef::new();
+    let popup = refs.format_menu;
+    let trigger = refs.format_trigger;
     dismiss_menu(menu, popup, trigger);
     let draft = RwSignal::new(String::new());
     let dirty = RwSignal::new(false);
@@ -1166,7 +1167,8 @@ fn CodeField(model: PickerModel, node: NodeRef, primary: bool) -> impl IntoView 
             }
             CopyButton(text=UnsyncCallback::new(move |()|model.output_untracked(selected_format())),compact=false,label="Copy color")
             if move ||menu.get() {
-                column(class="format-menu",node_ref=popup,on:key_down=move |cx| {
+                MenuBand(page=refs.tool_page,trigger=trigger,node=popup) {
+                column(on:key_down=move |cx| {
                     let direction=match cx.key {Key::Named(NamedKey::ArrowDown)=>FocusMove::Next,Key::Named(NamedKey::ArrowUp)=>FocusMove::Prev,_=>return};
                     popup.focus_move(direction);cx.prevent_default();cx.stop_propagation();
                 }) {
@@ -1175,6 +1177,7 @@ fn CodeField(model: PickerModel, node: NodeRef, primary: bool) -> impl IntoView 
                             class:selected=move ||model.format.get()==option.1.0,
                             on:click=move |_|{model.format.set(option.1.0);menu.set(false);trigger.focus();}) {text {{option.1.1}}}
                     }
+                }
                 }
             }
         }

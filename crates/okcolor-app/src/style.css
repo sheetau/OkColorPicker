@@ -71,9 +71,9 @@ field:focus { color: var(--bright); }
 .format-trigger { width: var(--small-tile); min-width: var(--small-tile); height: var(--button); position: relative; }
 .chevron { width: var(--icon); height: var(--icon); --zgui-stroke: currentColor; pointer-events: none; }
 .copy { position: relative; width: var(--button); min-width: var(--button); height: var(--button); }
-.format-menu, .folder-menu { min-width: var(--menu-width); width: max-content; position: absolute; background-color: var(--surface); padding: 0; gap: 0; overflow-y: auto; box-sizing: border-box; }
-.format-menu { bottom: 28px; right: 28px; z-index: 20; }
-.format-menu control, .folder-menu control { height: var(--tile); min-height: var(--tile); padding: 0 7px; display: flex; align-items: center; justify-content: flex-start; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text); background-color: transparent; }
+.menu-band { position: absolute; right: 0; min-width: var(--menu-width); width: max-content; max-width: 100%; background-color: var(--black); border-left: 1px solid var(--bright); border-right: 1px solid var(--bright); box-sizing: border-box; overflow-y: auto; pointer-events: auto; }
+.menu-items { flex-shrink: 0; }
+.menu-band control { height: var(--tile); min-height: var(--tile); padding: 0 7px; display: flex; align-items: center; justify-content: flex-start; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text); background-color: transparent; }
 .csp-connect { padding: 0 var(--gap); display: flex; flex-direction: row; align-items: center; color: var(--text); }
 .csp-connect:hover { color: var(--bright); }
 .csp-connect:focus-visible { outline: 1px solid var(--text); }
@@ -141,18 +141,16 @@ field:focus { color: var(--bright); }
 .eyedropper-icon { width: var(--icon); height: var(--icon); --zgui-stroke: currentColor; pointer-events: none; }
 
 .folder-anchor { position: relative; height: var(--icon); z-index: 8; }
-.folder-menu { top: 100%; right: 0; }
 .settings .folder-anchor { height: var(--icon); }
-.settings .folder-menu control { height: var(--tile); }
-.folder-menu.above { top: auto; bottom: 100%; }
 
-.format-menu control.selected, .folder-menu control.selected, .format-menu control:hover, .folder-menu control:hover { color: var(--bright); background-color: transparent; }
+.menu-band control.selected, .menu-band control:hover { color: var(--bright); background-color: transparent; }
 .recent, .library-tile, .generated-color, .add-tile { position: relative; }
 .dragged { cursor: grabbing; }
 .dragged, .renaming { outline: 1px solid var(--bright); outline-offset: -1px; }
 .insertion-line { position: absolute; top: 0; left: -2px; width: var(--tile-gap); height: 100%; background-color: var(--bright); pointer-events: none; }
 .tile-check { position: absolute; pointer-events: none; background-color: transparent; color: var(--bright); top: 0; left: 0; width: 100%; height: 100%; text-align: center; display: flex; align-items: center; justify-content: center; opacity: 0; transform: scale(0.7); transition: opacity 220ms ease, transform 220ms ease; }
 
+.palette-shield { position: absolute; inset: 0; z-index: 10; }
 .palette-strip { position: relative; width: 100%; height: var(--sample); min-height: var(--sample); }
 .palette-cell { position: relative; flex-grow: 1; flex-shrink: 1; flex-basis: 0; min-width: 0; overflow: visible; }
 .palette-color { position: relative; width: 100%; height: 100%; }
@@ -250,18 +248,18 @@ field:focus { color: var(--bright); }
 .folder-input { width: 100%; min-width: 0; height: var(--icon); padding: 0 3px; box-sizing: border-box; background-color: transparent; color: var(--bright); font-size: var(--text-md); }
 .folder-confirm { align-items: center; gap: 20px; height: var(--icon); }
 .folder-confirm control { padding: 0; color: var(--text); }
-.folder-confirm control:hover, .folder-menu control.drag-over { color: var(--bright); }
-.folder-menu .adjustment-row { flex-direction: row; justify-content: space-between; gap: var(--space-y); cursor: ew-resize; }
-.adjustment-name { color: var(--muted); }
-.adjustment-value { width: 35px; min-width: 35px; text-align: right; color: var(--text); font-family: var(--mono); }
+.folder-confirm control:hover, .menu-band control.drag-over { color: var(--bright); }
+.menu-band .adjustment-row { flex-direction: row; justify-content: space-between; gap: var(--space-y); cursor: ew-resize; }
+.adjustment-name { font-family: var(--mono); color: var(--muted); }
+.adjustment-value { width: 28px; min-width: 28px; text-align: right; color: var(--text); font-family: var(--mono); }
 .adjustment-caption { color: var(--text); }
 .adjustment-action:hover .adjustment-caption, .adjustment-row:hover .adjustment-value { color: var(--bright); }
-.folder-menu .new-folder { flex-direction: row; gap: var(--gap); }
+.menu-band .new-folder { flex-direction: row; gap: var(--gap); }
 .new-folder .add-icon { align-self: flex-start; margin-left: -5px; width: 21px; height: 21px; }
 .add-tile .add-icon { position: absolute; left: -1px; top: -1px; width: 21px; height: 21px; }
 .swatch-library .folder-heading { justify-content: space-between; }
 .settings .folder-heading { gap: var(--gap); }
-.format-trigger.open .chevron, .folder-heading.up .chevron { transform: scaleY(-1); }
+.format-trigger.open .chevron, .folder-heading.open .chevron { transform: scaleY(-1); }
 .folder-heading.open, .settings .folder-heading.open { color: var(--bright); }
 
 .axis-l.left { right: auto; left: 2px; }

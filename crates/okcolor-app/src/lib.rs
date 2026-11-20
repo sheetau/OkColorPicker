@@ -36,6 +36,7 @@ mod eyedropper;
 mod frozen_desktop;
 #[cfg(windows)]
 mod frozen_hdr;
+mod menu;
 mod swatches;
 mod tiles;
 mod tools_ui;
