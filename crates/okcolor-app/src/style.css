@@ -203,7 +203,7 @@ field:focus { color: var(--bright); }
 .tile-check.visible { opacity: 1; transform: scale(1); }
 
 .contrast-heading { height: var(--icon); min-height: var(--icon); gap: var(--space-y); }
-.contrast-actions { align-items: center; gap: var(--gap); }
+.palette-actions, .contrast-actions { align-items: center; gap: var(--gap); }
 .contrast-actions .generate-button { color: var(--muted); }
 .contrast-actions .generate-button:hover { color: var(--bright); }
 .contrast-heading > .tool-action { padding: 0; font-size: var(--text-md); flex-shrink: 0; }
@@ -251,6 +251,10 @@ field:focus { color: var(--bright); }
 .folder-confirm { align-items: center; gap: 20px; height: var(--icon); }
 .folder-confirm control { padding: 0; color: var(--text); }
 .folder-confirm control:hover, .folder-menu control.drag-over { color: var(--bright); }
+.folder-menu .adjustment-row { flex-direction: row; justify-content: space-between; gap: var(--space-y); cursor: ew-resize; }
+.adjustment-name { color: var(--muted); }
+.adjustment-value { color: var(--text); font-family: var(--mono); }
+.adjustment-row:hover .adjustment-value { color: var(--bright); }
 .folder-menu .new-folder { flex-direction: row; gap: var(--gap); }
 .new-folder .add-icon { align-self: flex-start; margin-left: -5px; width: 21px; height: 21px; }
 .add-tile .add-icon { position: absolute; left: -1px; top: -1px; width: 21px; height: 21px; }

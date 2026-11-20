@@ -1,9 +1,11 @@
+mod adjustment;
 use crate::tiles::{ColorTileProps, Destination, Source, TileGestures};
 use crate::tooltip::Tooltips;
 use crate::{
     model::PickerModel,
     ui::{CopyButtonProps, PickerRefs},
 };
+use adjustment::AdjustmentMenuProps;
 use okcolor_core::{
     ColorFormat, Gamut, GamutMapping, Harmony, Oklch, Variation, apca_in, closest_current_contrast,
     closest_grid_sample, format_color, harmony, parse_color, variations,
@@ -18,12 +20,15 @@ fn Generated(
     colors: Memo<Vec<Oklch>>,
     node: NodeRef,
 ) -> impl IntoView {
+    let len = Memo::new(move |_| colors.with(Vec::len));
     view! {row(class="generated-colors",node_ref=node) {
-        for index in move ||0..colors.get().len(),key=|index:&usize|*index {
-            ColorTile(class="generated-color",node=NodeRef::new(),source=Source::Sample,destination=None,
-                color=Memo::new(move |_|colors.get().get(index).copied().unwrap_or(model.current())),
-                label=Memo::new(move |_|{let c=colors.get().get(index).copied().unwrap_or(model.current());format!("{name} {}",hex(c))}),
-                activate=UnsyncCallback::new(move |()|{if let Some(color)=colors.get_untracked().get(index){model.select(*color);}}))
+        for index in move ||0..len.get(),key=|index:&usize|*index {
+            {{
+                let color = Memo::new(move |_| colors.with(|all| all.get(index).copied()).unwrap_or_else(||model.current()));
+                view! {ColorTile(class="generated-color",node=NodeRef::new(),source=Source::Sample,destination=None,
+                    color=color,label=Memo::new(move |_|format!("{name} {}",hex(color.get()))),
+                    activate=UnsyncCallback::new(move |()|{model.select(color.get_untracked());}))}
+            }}
 
         }
     }}
@@ -42,78 +47,7 @@ fn Similar(model: PickerModel, node: NodeRef) -> impl IntoView {
 }
 
 fn swatch_name(color: Oklch) -> String {
-    let hex = format_color(
-        color,
-        ColorFormat::Hex,
-        okcolor_core::GamutMapping::LocalMinde,
-    )
-    .map_or_else(|_| String::new(), |value| value.text);
-    let mut rest = okcolor_core::color_name(color);
-    let mut name = String::new();
-    // CSS spells compound keywords without spaces, e.g. lightsteelblue.
-    const WORDS: &[&str] = &[
-        "medium",
-        "light",
-        "dark",
-        "pale",
-        "deep",
-        "alice",
-        "antique",
-        "blanched",
-        "blue",
-        "burly",
-        "cadet",
-        "cornflower",
-        "corn",
-        "dodger",
-        "floral",
-        "forest",
-        "ghost",
-        "green",
-        "honey",
-        "hot",
-        "indian",
-        "lavender",
-        "lawn",
-        "lemon",
-        "lime",
-        "midnight",
-        "mint",
-        "misty",
-        "navajo",
-        "old",
-        "olive",
-        "orange",
-        "papaya",
-        "peach",
-        "powder",
-        "rebecca",
-        "rosy",
-        "royal",
-        "saddle",
-        "sandy",
-        "sea",
-        "sky",
-        "slate",
-        "spring",
-        "steel",
-        "white",
-        "yellow",
-    ];
-    while !rest.is_empty() {
-        let word = WORDS
-            .iter()
-            .copied()
-            .find(|part| rest.starts_with(part))
-            .unwrap_or(rest);
-        if !name.is_empty() {
-            name.push(' ');
-        }
-        name.push_str(&word[..1].to_ascii_uppercase());
-        name.push_str(&word[1..]);
-        rest = &rest[word.len()..];
-    }
-    format!("{name} {hex}")
+    format!("{} {}", okcolor_core::color_name(color), hex(color))
 }
 
 #[component]
@@ -235,7 +169,7 @@ fn PaletteInsert(
     let update_count = move |y: f32| {
         if let Some(start) = origin_y.get_untracked() {
             let steps = ((start - y) / PIXELS_PER_COLOR).floor() as usize;
-            let available = MAX_PALETTE.saturating_sub(model.palette.get_untracked().len());
+            let available = MAX_PALETTE.saturating_sub(model.palette.with_untracked(Vec::len));
             if steps > 0 {
                 scrubbed.set(true);
             }
@@ -254,7 +188,7 @@ fn PaletteInsert(
     view! {control(class=if tail {"palette-tail"}else{"palette-insert"},
         class:tile-drag=move ||dragging_tile.get().is_some(),
         class:visible=move ||origin_y.get().is_some() || hot.get()==Some(index),
-        style:left=move ||(!tail).then(||if index==0 {"0px".into()} else {format!("{}%",100.0*index as f32/model.palette.get().len() as f32)}),
+        style:left=move ||(!tail).then(||if index==0 {"0px".into()} else {format!("{}%",100.0*index as f32/model.palette.with(Vec::len) as f32)}),
         class:interior=!tail&&index>0,node_ref=node,tabindex=Focus::Sequential,
         a11y:label=if tail {"Append palette color"}else{"Insert palette colors"},
         on:pointer_down=move |cx|{
@@ -289,12 +223,28 @@ fn PaletteInsert(
 }
 
 #[component]
+fn PaletteCell(model: PickerModel, refs: PickerRefs, i: usize) -> impl IntoView {
+    let entry = Memo::new(move |_| model.palette.with(|palette| palette.get(i).copied()));
+    let color = Memo::new(move |_| entry.get().map(|e| e.0).unwrap_or_else(|| model.current()));
+    view! {column(class="palette-cell",node_ref=if i==0{refs.tools[6]}else{NodeRef::new()}) {
+        ColorTile(class="palette-color",node=NodeRef::new(),source=Source::Palette(i),destination=Some(Destination::Palette(i)),
+            color=color,
+            label=Memo::new(move |_|swatch_name(color.get())),
+            activate=UnsyncCallback::new(move |()|{model.select(color.get_untracked());}))
+        if move ||entry.get().is_some_and(|entry|entry.1) {
+            box(class="palette-lock",node_ref=if i==0{refs.palette_dot}else{NodeRef::new()},style:background-color=move ||entry.get().map(|v|crate::tiles::contrast_ink(v.0).to_owned())) {}
+        }
+    }}
+}
+
+#[component]
 fn Palette(model: PickerModel, refs: PickerRefs) -> impl IntoView {
     let gestures = TileGestures::current();
     let heading = crate::tiles::TileHeading::mount();
 
     let hot = RwSignal::new(None::<usize>);
     let scale = use_window().scale();
+    let len = Memo::new(move |_| model.palette.with(Vec::len));
     let palette_hover = move |cx: &mut EventCx<'_, events::PointerMove>| {
         let Some(b) = refs.tools[5].window_bounds() else {
             return;
@@ -302,7 +252,7 @@ fn Palette(model: PickerModel, refs: PickerRefs) -> impl IntoView {
         let scale = scale.get_untracked();
         let width = b.size.width.0 / scale;
         let x = cx.position.x.0 - b.origin.x.0 / scale;
-        let count = model.palette.get_untracked().len();
+        let count = len.get_untracked();
         let cell = width / count as f32;
         let index = (x / cell).round() as usize;
         let next = if x < 21.0 {
@@ -314,11 +264,15 @@ fn Palette(model: PickerModel, refs: PickerRefs) -> impl IntoView {
         } else {
             None
         };
-        hot.set(next);
+        if hot.get_untracked() != next {
+            hot.set(next);
+        }
     };
     let tail = refs.tools[2];
     let end = Destination::Palette(usize::MAX);
     gestures.register(tail, end);
+    let menu = RwSignal::new(false);
+    crate::ui::dismiss_menu(menu, refs.adjustment_menu, refs.palette_adjust);
     let regenerate = move || model.generate_palette();
     let shortcut = RenderEffect::new(move |_| {
         refs.tools[0].get()?;
@@ -327,6 +281,7 @@ fn Palette(model: PickerModel, refs: PickerRefs) -> impl IntoView {
             ListenerOptions::CAPTURE,
             move |cx| {
                 if cx.modifiers == Modifiers::NONE
+                    && !menu.get_untracked()
                     && !model.editing_text.get_untracked()
                     && (cx.key == Key::Named(NamedKey::Space) || cx.key.as_str() == Some(" "))
                 {
@@ -341,21 +296,21 @@ fn Palette(model: PickerModel, refs: PickerRefs) -> impl IntoView {
     view! {column(class="tool-section palette-section") {
         row(class="section-heading") {
             text {"Palettes"} spacer() HoverLabel(heading=heading)
-            control(node_ref=Tooltips::button(refs.tools[0],"Generate palette · Space"),tabindex=Focus::Sequential,class="generate-button",a11y:label="Generate palette",on:click=move |_|regenerate()) {{zgui::elements::vector().document(include_str!("../assets/generate.svg")).class("generate-icon")}}
+            row(class="palette-actions") {
+                box(class="folder-anchor") {
+                    control(class="generate-button",node_ref=Tooltips::button(refs.palette_adjust,"Adjust palette"),a11y:label="Adjust palette",tabindex=Focus::Sequential,on:click=move |_|menu.update(|visible| *visible = !*visible)) {
+                        {zgui::elements::vector().document(include_str!("../assets/adjust.svg")).class("generate-icon")}
+                    }
+                    if move ||menu.get() { AdjustmentMenu(model=model,refs=refs,open=menu) }
+                }
+                control(node_ref=Tooltips::button(refs.tools[0],"Generate palette · Space"),tabindex=Focus::Sequential,class="generate-button",a11y:label="Generate palette",on:click=move |_|regenerate()) {{zgui::elements::vector().document(include_str!("../assets/generate.svg")).class("generate-icon")}}
+            }
         }
         row(class="palette-strip",node_ref=refs.tools[5],on:pointer_move=palette_hover,on:pointer_leave=move |_|hot.set(None)) {
-            for i in move ||0..model.palette.get().len(),key=|i:&usize|*i {
-                column(class="palette-cell",node_ref=if i==0{refs.tools[6]}else{NodeRef::new()}) {
-                    ColorTile(class="palette-color",node=NodeRef::new(),source=Source::Palette(i),destination=Some(Destination::Palette(i)),
-                        color=Memo::new(move |_|model.palette.get().get(i).map(|v|v.0).unwrap_or(model.current())),
-                        label=Memo::new(move |_|model.palette.get().get(i).map(|v|swatch_name(v.0)).unwrap_or_default()),
-                        activate=UnsyncCallback::new(move |()|{if let Some(v)=model.palette.get_untracked().get(i){model.select(v.0);}}))
-                    if move ||model.palette.get().get(i).is_some_and(|entry|entry.1) {
-                        box(class="palette-lock",node_ref=if i==0{refs.palette_dot}else{NodeRef::new()},style:background-color=move ||model.palette.get().get(i).map(|v|crate::tiles::contrast_ink(v.0).to_owned())) {}
-                    }
-                }
+            for i in move ||0..len.get(),key=|i:&usize|*i {
+                PaletteCell(model=model,refs=refs,i=i)
             }
-            for i in move ||0..model.palette.get().len(),key=|i:&usize|*i {
+            for i in move ||0..len.get(),key=|i:&usize|*i {
                 PaletteInsert(model=model,index=i,node=NodeRef::new(),hot=hot)
             }
             PaletteInsert(model=model,index=usize::MAX,node=tail,hot=hot)

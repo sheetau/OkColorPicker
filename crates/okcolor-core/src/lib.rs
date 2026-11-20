@@ -23,7 +23,8 @@ pub use contrast::{
     default_grid_target, lightness_for_contrast,
 };
 mod named;
-pub use named::{NamedColor, delta_e_2000, nearest_named};
+pub use named::{NamedColor, color_name, delta_e_2000, nearest_named};
 pub use related::{
-    Harmony, Ramp, Variation, color_name, harmony, ramp, ramp_steps, similar_named, variations,
+    Harmony, Ramp, Variation, adjust_palette_color, harmony, ramp, ramp_steps, similar_named,
+    variations,
 };

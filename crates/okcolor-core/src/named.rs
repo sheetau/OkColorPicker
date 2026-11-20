@@ -1,5 +1,5 @@
 //! Similar-color lookup in the vendored meodai/color-names dictionary.
-use crate::{Gamut, GamutMapping, Oklch};
+use crate::{Gamut, Oklch};
 use std::sync::LazyLock;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -8,47 +8,73 @@ pub struct NamedColor {
     pub color: Oklch,
 }
 
+const COLORS: &str = include_str!("color-names.tsv");
+
+fn rows() -> impl Iterator<Item = ([u8; 3], u32)> {
+    let mut offset = 0;
+    COLORS.split_inclusive('\n').map(move |line| {
+        let (hex, _) = line.split_once('\t').expect("dictionary row");
+        let name_offset = u32::try_from(offset + hex.len() + 1).expect("dictionary fits in 4 GiB");
+        offset += line.len();
+        let [_, r, g, b] = u32::from_str_radix(hex, 16)
+            .expect("dictionary hex")
+            .to_be_bytes();
+        ([r, g, b], name_offset)
+    })
+}
+
+fn from_bytes(rgb: [u8; 3]) -> Oklch {
+    Oklch::from_rgb(rgb.map(|v| f64::from(v) / 255.0), Gamut::Srgb, 1.0, 0.0).expect("sRGB color")
+}
+
 struct Entry {
-    sample: NamedColor,
     lab: [f64; 3],
+    name_offset: u32,
     rgb: [u8; 3],
 }
-static DICTIONARY: LazyLock<Vec<Entry>> = LazyLock::new(|| {
-    include_str!("color-names.tsv")
-        .lines()
-        .map(|line| {
-            let (hex, name) = line.split_once('\t').expect("dictionary row");
-            let rgb: [u8; 3] = std::array::from_fn(|i| {
-                u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16).expect("dictionary hex")
-            });
-            let color = Oklch::from_rgb(rgb.map(|v| f64::from(v) / 255.0), Gamut::Srgb, 1.0, 0.0)
-                .expect("sRGB color");
-            Entry {
-                sample: NamedColor { name, color },
-                lab: color.lab_d50(),
-                rgb,
-            }
+
+impl Entry {
+    fn sample(&self) -> NamedColor {
+        let name = COLORS[self.name_offset as usize..]
+            .lines()
+            .next()
+            .expect("dictionary name");
+        NamedColor {
+            name,
+            color: from_bytes(self.rgb),
+        }
+    }
+}
+
+static DICTIONARY: LazyLock<Box<[Entry]>> = LazyLock::new(|| {
+    let mut entries: Box<[_]> = rows()
+        .map(|(rgb, name_offset)| Entry {
+            lab: from_bytes(rgb).lab_d50(),
+            name_offset,
+            rgb,
         })
-        .collect()
+        .collect();
+    entries.sort_unstable_by(|a, b| a.lab[0].total_cmp(&b.lab[0]));
+    entries
 });
 
 /// Uniform sampling of occupied lightness, chroma and hue bands avoids favoring
 /// parts of sRGB with many nearly identical dictionary entries.
 pub(crate) fn palette_anchor(band: usize, entry: usize) -> Oklch {
-    static BANDS: LazyLock<Vec<Vec<usize>>> = LazyLock::new(|| {
+    static BANDS: LazyLock<Vec<Vec<[u8; 3]>>> = LazyLock::new(|| {
         let mut bands = vec![Vec::new(); 5 * 4 * 13];
-        for (index, item) in DICTIONARY.iter().enumerate() {
-            let [l, c, h, _] = item.sample.color.components();
+        for (rgb, _) in rows() {
+            let [l, c, h, _] = from_bytes(rgb).components();
             let light = ((l * 5.0) as usize).min(4);
             let chroma = ((c / 0.075) as usize).min(3);
             let hue = if c < 0.025 { 12 } else { (h / 30.0) as usize };
-            bands[(light * 4 + chroma) * 13 + hue].push(index);
+            bands[(light * 4 + chroma) * 13 + hue].push(rgb);
         }
         bands.retain(|band| !band.is_empty());
         bands
     });
     let choices = &BANDS[band % BANDS.len()];
-    DICTIONARY[choices[entry % choices.len()]].sample.color
+    from_bytes(choices[entry % choices.len()])
 }
 
 /// Perceptual distance using CIEDE2000 with unit weighting factors.
@@ -100,38 +126,66 @@ fn delta_e(a: [f64; 3], b: [f64; 3]) -> f64 {
 
 /// Closest distinct dictionary colors under ΔE00 30, excluding the input HEX.
 pub fn nearest_named(color: Oklch, count: usize) -> Vec<NamedColor> {
-    if count == 0 {
-        return Vec::new();
-    }
+    let exclude = color.in_gamut(Gamut::Srgb).then(|| {
+        color
+            .encoded_rgb(Gamut::Srgb)
+            .map(|v| (v * 255.0).round() as u8)
+    });
+    nearest(color, count, 30.0, exclude)
+}
+
+/// Display names include the exact dictionary color and have no distance cutoff.
+pub fn color_name(color: Oklch) -> &'static str {
+    nearest(color, 1, f64::INFINITY, None)
+        .first()
+        .map_or("", |sample| sample.name)
+}
+
+fn nearest(
+    color: Oklch,
+    count: usize,
+    mut limit: f64,
+    exclude: Option<[u8; 3]>,
+) -> Vec<NamedColor> {
     let lab = color.lab_d50();
-    if !lab.into_iter().all(f64::is_finite) {
+    if count == 0 || !lab.into_iter().all(f64::is_finite) {
         return Vec::new();
     }
-    let rgb = color
-        .in_gamut(Gamut::Srgb)
-        .then(|| color.mapped_rgb(Gamut::Srgb, GamutMapping::Clip).ok())
-        .flatten()
-        .map(|channels| channels.map(|v| (v * 255.0).round() as u8));
-    let mut matches: Vec<(f64, NamedColor)> = Vec::new();
-    let mut limit = 30.0;
-    for entry in DICTIONARY.iter() {
-        // The chroma/hue quadratic is nonnegative. S_L <= 1.75 for L* in [0,100].
-        if Some(entry.rgb) == rgb
-            || ((0.0..=100.0).contains(&lab[0]) && (entry.lab[0] - lab[0]).abs() > 1.76 * limit)
-        {
+    let split = DICTIONARY.partition_point(|entry| entry.lab[0] < lab[0]);
+    let mut left = DICTIONARY[..split].iter().rev().peekable();
+    let mut right = DICTIONARY[split..].iter().peekable();
+    let mut hits: Vec<(f64, &Entry)> = Vec::new();
+    loop {
+        let entry = match (left.peek(), right.peek()) {
+            (Some(a), Some(b)) if lab[0] - a.lab[0] <= b.lab[0] - lab[0] => left.next(),
+            (_, Some(_)) => right.next(),
+            _ => left.next(),
+        };
+        let Some(entry) = entry else {
+            break;
+        };
+        // For L* in [0,100], ΔE00 >= |ΔL*| / 1.76. Both tails are now farther away.
+        if (0.0..=100.0).contains(&lab[0]) && (entry.lab[0] - lab[0]).abs() > 1.76 * limit {
+            break;
+        }
+        if Some(entry.rgb) == exclude {
             continue;
         }
         let d = delta_e(lab, entry.lab);
-        if d < limit {
-            let i = matches.partition_point(|(score, _)| *score <= d);
-            matches.insert(i, (d, entry.sample));
-            if matches.len() >= count {
-                matches.truncate(count);
-                limit = matches[count - 1].0;
+        if d < limit || (d == limit && hits.len() == count) {
+            let i = hits.partition_point(|(score, other)| {
+                (*score, other.name_offset) <= (d, entry.name_offset)
+            });
+            if i < count {
+                hits.insert(i, (d, entry));
+                hits.truncate(count);
+                if hits.len() == count {
+                    limit = hits[count - 1].0;
+                }
             }
         }
     }
-    matches.into_iter().map(|(_, entry)| entry).collect()
+    hits.into_iter().map(|(_, entry)| entry.sample()).collect()
 }
 
 #[cfg(test)]
@@ -147,6 +201,34 @@ mod tests {
             assert!((delta_e(a, b) - expected).abs() < 0.0001);
         }
     }
+    #[test]
+    fn pruned_lookup_matches_exhaustive_dictionary_order() {
+        for (rgb, offset) in rows().step_by(4931) {
+            let color = from_bytes(rgb);
+            let lab = color.lab_d50();
+            let mut scores: Vec<_> = rows()
+                .filter(|(other, _)| *other != rgb)
+                .map(|(other, name)| (delta_e(lab, from_bytes(other).lab_d50()), name))
+                .filter(|(score, _)| *score < 30.0)
+                .collect();
+            scores.sort_by(|a, b| a.0.total_cmp(&b.0));
+            let name_at = |offset: u32| COLORS[offset as usize..].lines().next().unwrap();
+            let found: Vec<_> = nearest_named(color, 6)
+                .into_iter()
+                .map(|hit| hit.name)
+                .collect();
+            assert_eq!(
+                found,
+                scores
+                    .iter()
+                    .take(6)
+                    .map(|hit| name_at(hit.1))
+                    .collect::<Vec<_>>()
+            );
+            assert_eq!(color_name(color), name_at(offset));
+        }
+    }
+
     #[test]
     fn exact_match_excluded_and_distances_sorted() {
         let source = crate::parse_color("#c93f38", 0.0).unwrap();

@@ -21,7 +21,7 @@ pub enum SurfaceKind {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, Default, ShaderParams)]
+#[derive(Clone, Copy, Default, PartialEq, ShaderParams)]
 pub struct ColorParams {
     pub channels: [f32; 4],
     pub gamut: f32,
@@ -243,13 +243,9 @@ fn color_sample(
     outline_dark: bool,
     checker_offset: impl Fn() -> [f32; 2] + 'static,
 ) -> impl IntoView {
-    let (surface, handle) = zgui::custom::custom(ColorSurface::new(ColorParams {
-        kind,
-        ..Default::default()
-    }));
-    let effect = RenderEffect::new(move |_| {
+    reactive_surface(move || {
         let [l, c, h, alpha] = color.get().components();
-        let params = ColorParams {
+        ColorParams {
             channels: [l as f32, c.min(10000.0) as f32, h as f32, alpha as f32],
             kind,
             outline_dark: if outline_dark { 1.0 } else { 0.0 },
@@ -265,9 +261,19 @@ fn color_sample(
                 0.0
             },
             ..Default::default()
-        };
-        handle.update(|surface| surface.params = params);
-        handle.repaint();
+        }
+    })
+}
+
+fn reactive_surface(parameters: impl Fn() -> ColorParams + 'static) -> impl IntoView {
+    let (surface, handle) = zgui::custom::custom(ColorSurface::new(ColorParams::default()));
+    let effect = RenderEffect::new(move |previous| {
+        let next = parameters();
+        if previous != Some(next) {
+            handle.update(|surface| surface.params = next);
+            handle.repaint();
+        }
+        next
     });
     on_cleanup_local(move || drop(effect));
     surface.class("color-surface").into_view()
@@ -275,13 +281,7 @@ fn color_sample(
 
 #[component]
 pub fn ColorControl(model: PickerModel, kind: SurfaceKind, node: NodeRef) -> impl IntoView {
-    let (surface, handle) = zgui::custom::custom(ColorSurface::new(ColorParams::default()));
-    let effect = RenderEffect::new(move |_| {
-        let params = kind.params(model);
-        handle.update(|surface| surface.params = params);
-        handle.repaint();
-    });
-    on_cleanup_local(move || drop(effect));
+    let surface = reactive_surface(move || kind.params(model));
     let dragging = RwSignal::new(false);
     let projection = RwSignal::new_local(None::<ChartGesture>);
     let scale = use_window().scale();
@@ -431,7 +431,7 @@ pub fn ColorControl(model: PickerModel, kind: SurfaceKind, node: NodeRef) -> imp
             on:pointer_up=up,
             on:key_down=keys,
             on:pointer_cancel=move |_| { if dragging.get_untracked() {dragging.set(false);model.cancel();} }) {
-            {surface.class("color-surface").into_view()}
+            {surface}
             if move ||kind==SurfaceKind::Slice {
                 text(class="axis-l",class:left=move || extent.get().is_some_and(|size|(1.0-kind.marker(model)[0])*f64::from(size.width.0)<14.0*f64::from(scale.get())),style:top=move ||{
                     let height = extent.get().map_or(152.0,|s|s.height.0/scale.get());

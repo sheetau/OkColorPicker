@@ -31,19 +31,80 @@ fn byte_rgb(rgb: [f64; 3]) -> [f64; 3] {
     rgb.map(|v| (v * 255.0).round() / 255.0)
 }
 
+// The reference wheel rounds HSV percentages before converting back to sRGB.
+fn wheel_extrema([r, g, b]: [f64; 3], quantize: bool) -> (f64, f64) {
+    let high = r.max(g).max(b);
+    let low = r.min(g).min(b);
+    if !quantize || high == 0.0 {
+        return (low, high);
+    }
+    let value = (high * 100.0).round() / 100.0;
+    let saturation = ((1.0 - low / high) * 100.0).round() / 100.0;
+    (value * (1.0 - saturation), value)
+}
+
+/// Apply the generator's signed hue, saturation, brightness and temperature controls.
+/// Wide RGB gamuts retain their precision between wheel operations.
+pub fn adjust_palette_color(source: Oklch, gamut: Gamut, offsets: [i16; 4]) -> Oklch {
+    let [hue, saturation, brightness, temperature] = offsets;
+    if offsets == [0; 4] {
+        return source;
+    }
+    let Ok(mut rgb) = source.mapped_rgb(gamut, GamutMapping::LocalMinde) else {
+        return source;
+    };
+    let bounded = gamut == Gamut::Srgb;
+    let encode = |rgb| if bounded { byte_rgb(rgb) } else { rgb };
+    let hsl = |rgb| {
+        if bounded {
+            wheel_hsl(rgb)
+        } else {
+            rgb_to_hsl(rgb)
+        }
+    };
+    let towards_limit = |value: f64, offset: i16| {
+        let fraction = f64::from(offset.clamp(-100, 100)) / 100.0;
+        value
+            + if fraction < 0.0 {
+                value * fraction
+            } else {
+                (1.0 - value) * fraction
+            }
+    };
+    rgb = encode(rgb);
+    if hue != 0 {
+        let (low, high) = wheel_extrema(rgb, bounded);
+        // Coolors maps each half of the signed slider to a full revolution.
+        let angle = hsl(rgb)[0] + 2.0 * f64::from(hue);
+        rgb = encode(hsl_to_rgb([angle, 1.0, 0.5]).map(|v| low + (high - low) * v));
+    }
+    if saturation != 0 {
+        let [h, s, l] = hsl(rgb);
+        rgb = encode(hsl_to_rgb([h, towards_limit(s, saturation), l]));
+    }
+    if temperature != 0 {
+        let (low, high) = wheel_extrema(rgb, bounded);
+        let target = encode(if temperature < 0 {
+            [low, low, high]
+        } else {
+            [high, low, low]
+        });
+        let mix = f64::from(temperature.clamp(-100, 100)).abs() / 100.0;
+        rgb = encode(std::array::from_fn(|i| rgb[i] + (target[i] - rgb[i]) * mix));
+    }
+    if brightness != 0 {
+        let [h, s, l] = hsl(rgb);
+        rgb = encode(hsl_to_rgb([h, s, towards_limit(l, brightness)]));
+    }
+    let [_, _, remembered_hue, alpha] = source.components();
+    Oklch::from_rgb(rgb, gamut, alpha, remembered_hue).expect("bounded adjusted color")
+}
+
 fn srgb_ramp<const N: usize>(source: Oklch, kind: Ramp, rgb: [f64; 3]) -> [Oklch; N] {
     let rgb = byte_rgb(rgb);
     let [h, s, l] = wheel_hsl(rgb);
     let [_, _, neutral, alpha] = source.components();
-    let max = rgb.into_iter().fold(0.0, f64::max);
-    let min = rgb.into_iter().fold(1.0, f64::min);
-    let value = (max * 100.0).round() / 100.0;
-    let saturation = if max > 0.0 {
-        ((1.0 - min / max) * 100.0).round() / 100.0
-    } else {
-        0.0
-    };
-    let low = value * (1.0 - saturation);
+    let (low, value) = wheel_extrema(rgb, true);
     std::array::from_fn(|i| {
         let t = i as f64 / N.saturating_sub(1).max(1) as f64;
         if (kind == Ramp::Temperatures && t == 0.5) || (kind != Ramp::Temperatures && i == 0) {
@@ -142,40 +203,6 @@ pub enum Variation {
     Chroma,
     Hue,
     Temperature,
-}
-
-/// Nearest CSS named color by Euclidean distance in OKLab.
-fn named_colors() -> &'static [(&'static str, Oklch, [f64; 3])] {
-    use std::sync::LazyLock;
-    type Named = (&'static str, Oklch, [f64; 3]);
-    static TABLE: LazyLock<Vec<Named>> = LazyLock::new(|| {
-        let mut names: Vec<_> = cssparser::color::all_named_colors().collect();
-        names.sort_by_key(|(name, _)| *name);
-        let mut seen = std::collections::HashSet::new();
-        names
-            .into_iter()
-            .filter(|(_, rgb)| seen.insert(*rgb))
-            .map(|(name, (r, g, b))| {
-                let rgb = [r, g, b].map(|v| f64::from(v) / 255.0);
-                let c = Oklch::from_rgb(rgb, Gamut::Srgb, 1.0, 0.0).expect("named color");
-                (name, c, c.oklab())
-            })
-            .collect()
-    });
-    &TABLE
-}
-
-fn distance(a: [f64; 3], b: [f64; 3]) -> f64 {
-    a.into_iter().zip(b).map(|(x, y)| (x - y).powi(2)).sum()
-}
-
-pub fn color_name(color: Oklch) -> &'static str {
-    let lab = color.oklab();
-    named_colors()
-        .iter()
-        .min_by(|a, b| distance(a.2, lab).total_cmp(&distance(b.2, lab)))
-        .expect("named colors")
-        .0
 }
 
 /// Four nearest distinct named samples, in perceptual distance order.

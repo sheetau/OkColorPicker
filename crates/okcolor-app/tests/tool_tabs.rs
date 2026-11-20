@@ -89,6 +89,132 @@ fn type_text(h: &mut Harness<impl zgui::platform::AppHandler>, node: NodeRef, te
     key(h, KeyEvent::character(text), Modifiers::NONE);
 }
 
+fn check_palette_adjustment(
+    h: &mut Harness<impl zgui::platform::AppHandler>,
+    model: PickerModel,
+    refs: PickerRefs,
+    frames: &Mutex<Vec<zgui_render_wgpu::Pixels>>,
+) {
+    let button = refs.palette_adjust.window_bounds().unwrap();
+    let generate = refs.tools[0].window_bounds().unwrap();
+    assert_eq!(
+        generate.origin.x.0 - button.origin.x.0 - button.size.width.0,
+        5.0
+    );
+    assert_eq!(button.origin.y, generate.origin.y);
+    let before = model.palette.get_untracked();
+    click(h, refs.palette_adjust);
+    let menu = refs.adjustment_menu.window_bounds().unwrap();
+    assert!((menu.origin.y.0 + menu.size.height.0 - button.origin.y.0).abs() <= 1.0);
+    let first = refs.adjustment_rows[0].window_bounds().unwrap();
+    let x = first.origin.x.0.round() as i32;
+    let y = first.origin.y.0.round() as i32;
+    let width = first.size.width.0.round() as i32;
+    let height = first.size.height.0.round() as i32;
+    let ink = || {
+        let frames = frames.lock().unwrap();
+        let frame = frames.last().unwrap();
+        let mut peaks = [0u8; 2];
+        let mut text_edges = [0, width];
+        for dx in 0..width {
+            let side = usize::from(dx >= width - 30);
+            for dy in 2..height - 2 {
+                let gray = frame.rgba(x + dx, y + dy)[0];
+                peaks[side] = peaks[side].max(gray);
+                if gray > 32 {
+                    if side == 0 {
+                        text_edges[0] = text_edges[0].max(dx);
+                    } else {
+                        text_edges[1] = text_edges[1].min(dx);
+                    }
+                }
+            }
+        }
+        (peaks, text_edges)
+    };
+    let (normal, edges) = ink();
+    assert!(
+        (45..=67).contains(&normal[0]) && (75..=118).contains(&normal[1]),
+        "normal ink {normal:?}"
+    );
+    assert!(edges[1] - edges[0] >= 10);
+    let hover = Point::new(CssPx(x as f32 + 9.0), CssPx(y as f32 + 10.0));
+    tile_pointer(h, PointerAction::Moved, PointerButton::Primary, hover);
+    let (hovered, _) = ink();
+    assert_eq!(hovered[0], normal[0]);
+    assert!(
+        hovered[1] > normal[1] + 30,
+        "hovered ink {hovered:?}, normal {normal:?}"
+    );
+    for row in refs.adjustment_rows {
+        click(h, row);
+        assert!(refs.adjustment_menu.get().is_some());
+        assert_eq!(model.palette.get_untracked(), before);
+    }
+    let row = refs.adjustment_rows[2].window_bounds().unwrap();
+    let start = Point::new(CssPx(row.origin.x.0 + 10.0), CssPx(row.origin.y.0 + 10.0));
+    let end = Point::new(CssPx(start.x.0 + 40.0), start.y);
+    let primary = PointerButton::Primary;
+    tile_pointer(h, PointerAction::Pressed, primary, start);
+    tile_pointer(h, PointerAction::Moved, primary, end);
+    let after = model.palette.get_untracked();
+    assert_ne!(after, before);
+    for (&(source, locked), &entry) in before.iter().zip(&after) {
+        assert_eq!(
+            entry,
+            (
+                if locked {
+                    source
+                } else {
+                    okcolor_core::adjust_palette_color(
+                        source,
+                        model.gamut.get_untracked(),
+                        [0, 0, 10, 0],
+                    )
+                },
+                locked
+            )
+        );
+    }
+    let below = Point::new(end.x, CssPx(menu.origin.y.0 + menu.size.height.0 + 12.0));
+    tile_pointer(h, PointerAction::Moved, primary, below);
+    tile_pointer(h, PointerAction::Released, primary, below);
+    assert_eq!(model.palette.get_untracked(), after);
+    assert!(refs.adjustment_menu.get().is_some());
+    tile_pointer(h, PointerAction::Pressed, primary, end);
+    tile_pointer(h, PointerAction::Moved, primary, start);
+    assert_eq!(model.palette.get_untracked(), before);
+    let escape = || KeyEvent::named(NamedKey::Escape, PhysicalKey::Unidentified(0));
+    key(h, escape(), Modifiers::NONE);
+    assert!(refs.adjustment_menu.get().is_none());
+    assert_eq!(
+        model.palette.get_untracked(),
+        after,
+        "Escape cancels an unfinished drag"
+    );
+    tile_pointer(h, PointerAction::Released, primary, start);
+    model.undo();
+    h.settle(32);
+    assert_eq!(model.palette.get_untracked(), before);
+    model.redo();
+    h.settle(32);
+    assert_eq!(model.palette.get_untracked(), after);
+    click(h, refs.palette_adjust);
+    assert!(refs.adjustment_menu.get().is_some(), "reopen after Escape");
+    click(h, refs.tools[0]);
+    assert!(refs.adjustment_menu.get().is_none());
+    assert_ne!(
+        model.palette.get_untracked(),
+        after,
+        "Generate works while the menu is open"
+    );
+    model.undo();
+    assert_eq!(model.palette.get_untracked(), after);
+    model.undo();
+    h.settle(32);
+    assert_eq!(model.palette.get_untracked(), before);
+}
+
 #[test]
 #[ignore = "requires a graphics device; run with --ignored"]
 fn mounted_tabs_edit_recall_adjust_and_restore() {
@@ -348,6 +474,7 @@ fn mounted_tabs_edit_recall_adjust_and_restore() {
                 let cell=refs.tools[6].window_bounds().unwrap();
                 assert!((dot.origin.x.0+2.5-cell.origin.x.0-cell.size.width.0*0.5).abs()<=1.0);
                 assert!((cell.origin.y.0+cell.size.height.0-dot.origin.y.0-dot.size.height.0-5.0).abs()<=1.0);
+                check_palette_adjustment(&mut h, model, refs, &frames);
                 let before_generation=model.palette.get_untracked();
                 click(&mut h, refs.tools[0]);
                 let generated=model.palette.get_untracked();

@@ -2,6 +2,37 @@ use okcolor_core::{Gamut, Oklch, PaletteGenerator};
 use std::{collections::HashSet, time::Instant};
 
 #[test]
+fn adjustments_preserve_working_gamut_and_alpha_and_have_neutral_zero() {
+    use okcolor_core::adjust_palette_color;
+    for gamut in [Gamut::Srgb, Gamut::DisplayP3, Gamut::Rec2020] {
+        let base = Oklch::from_rgb([0.0, 1.0, 0.0], gamut, 0.4, 0.0).unwrap();
+        assert_eq!(adjust_palette_color(base, gamut, [0; 4]), base);
+        for (offsets, rgb) in [
+            ([60, 0, 0, 0], [0.0, 0.0, 1.0]),
+            ([0, -100, 0, 0], [0.5, 0.5, 0.5]),
+            ([0, 0, 50, 0], [0.5, 1.0, 0.5]),
+            ([0, 0, 0, -50], [0.0, 0.5, 0.5]),
+            ([0, 0, 0, 100], [1.0, 0.0, 0.0]),
+            ([0, 0, 50, -50], [0.25, 1.0, 1.0]),
+        ] {
+            let result = adjust_palette_color(base, gamut, offsets);
+            assert_eq!(result.components()[3], 0.4);
+            for (actual, expected) in result.encoded_rgb(gamut).into_iter().zip(rgb) {
+                assert!(
+                    (actual - expected).abs()
+                        < if gamut == Gamut::Srgb {
+                            0.5 / 255.0 + 0.00001
+                        } else {
+                            0.0001
+                        },
+                    "{gamut:?} {offsets:?}: {actual} versus {expected}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn palette_search_preserves_locks_and_fills_each_requested_gamut() {
     let outside = Oklch::new(0.6, 1.2, 235.0, 0.31).unwrap();
     let gray = Oklch::new(0.4, 0.0, 89.0, 0.0).unwrap();

@@ -547,6 +547,32 @@ impl PickerModel {
         }
     }
 
+    pub(crate) fn preview_palette(self, palette: Vec<(Oklch, bool)>) {
+        self.history.update(|history| {
+            history
+                .preview(Snapshot {
+                    palette: Arc::new(palette.clone()),
+                    ..history.current()
+                })
+                .expect("active palette gesture");
+        });
+        self.palette.set(palette);
+    }
+
+    pub(crate) fn finish_palette_drag(self, commit: bool) {
+        self.history.update(|history| {
+            if commit {
+                let _ = history.commit();
+            } else {
+                let _ = history.cancel();
+            }
+        });
+        if !commit {
+            self.restore_collections_and_contrast();
+        }
+        self.publish(commit);
+    }
+
     pub(crate) fn generate_palette(self) {
         self.edit_palette(|palette| {
             self.generator.update_value(|generator| {

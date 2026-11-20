@@ -75,13 +75,21 @@ accounts for near duplicates, neighboring colors, lightness range, accent streng
 and the last eight generated palettes. Locked colors retain their positions and
 original components, including alpha. New colors fit the selected working gamut.
 
+Use the adjustment button to the left of Generate to edit the current palette.
+Drag a row horizontally to rotate hue (−180 to +180, one full turn in either
+direction), adjust saturation or brightness (±100%), or mix toward a cooler
+blue or warmer red (±100%). Adjustments use the selected working gamut and
+preserve alpha. Locked tiles keep their exact colors. Zeroing all four rows
+restores the colors from when the menu opened. Each drag is one undo step.
+Click outside the menu or press Escape to close.
+
 Shift-click a palette tile to toggle its lock. A dot at the lower
 center marks a locked tile. Click **+** to insert one color. Drag **+** upward
 to choose the number of intermediate colors, one per 12 CSS pixels. Drag back
 down to reduce the count. Returning to **+** cancels the insertion on release.
 sRGB gradients interpolate the encoded RGB channels.
 Drag to reorder, middle-click to remove and use the trailing **+** to append.
-Hover a palette color to see its HEX value and closest CSS color name.
+Hover a palette color to see its HEX value and closest color-names dictionary entry.
 The generated palette stays in the current session.
 
 ## APCA
