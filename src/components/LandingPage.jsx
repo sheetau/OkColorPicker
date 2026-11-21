@@ -79,13 +79,24 @@ function Features({ copy }) {
 export default function LandingPage({ locale }) {
   const copy = locales[locale];
   const url = (lang) => siteUrl + (lang === "ja" ? "/ja/" : "/");
+  const shareImage = siteUrl + "/media/okcolorpicker.png";
   return <>
     <Head>
       <title>{copy.title}</title>
       <meta name="description" content={copy.description} />
+      <meta property="og:type" content="website" />
       <meta property="og:title" content={copy.title} />
       <meta property="og:description" content={copy.description} />
       <meta property="og:url" content={url(locale)} />
+      <meta property="og:image" content={shareImage} />
+      <meta property="og:image:secure_url" content={shareImage} />
+      <meta property="og:image:type" content="image/png" />
+      <meta property="og:image:width" content="1281" />
+      <meta property="og:image:height" content="739" />
+      <meta property="og:image:alt" content={copy.shareImageAlt} />
+      <meta name="twitter:card" content="summary_large_image" />
+      <meta name="twitter:image" content={shareImage} />
+      <meta name="twitter:image:alt" content={copy.shareImageAlt} />
       <link rel="canonical" href={url(locale)} />
       {["en", "ja", "x-default"].map(lang => <link key={lang} rel="alternate" hrefLang={lang} href={url(lang)} />)}
     </Head>

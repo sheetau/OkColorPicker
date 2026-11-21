@@ -1,6 +1,7 @@
 export const locales = {
   en: {
     title: "OkColorPicker — OKLCH color picker for Windows",
+    shareImageAlt: "The OkColorPicker window with a magenta OKLCH color selected.",
     features: "Features",
     headline: "Color, as you see it.",
     description:
@@ -25,6 +26,7 @@ export const locales = {
   },
   ja: {
     title: "OkColorPicker — Windows用OKLCHカラーピッカー",
+    shareImageAlt: "OKLCH色面でマゼンタを選択したOkColorPickerの画面。",
     features: "機能",
     headline: "調色を視覚のままに。",
     description:
