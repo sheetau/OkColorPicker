@@ -1,0 +1,21 @@
+.picker {
+  display: block;
+  width: 100%;
+  height: auto;
+  font-family: var(--sans);
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: normal;
+  fill: #818181;
+  user-select: none;
+}
+.label { fill: #555; }
+.mono, .caption { font-family: var(--mono); }
+.caption { font-size: 8px; }
+.muted { filter: brightness(0) invert(0.30); }
+.original { filter: none; }
+.surface { display: block; width: 100%; height: 100%; }
+.axes { mix-blend-mode: difference; stroke: #2c2a30; stroke-opacity: 0.4; }
+.planeControl, .hueControl { fill: transparent; touch-action: none; outline: none; }
+.planeControl { cursor: crosshair; }
+.hueControl { cursor: ew-resize; }
