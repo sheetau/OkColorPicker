@@ -1,7 +1,8 @@
 export const locales = {
   en: {
-    title: "OkColorPicker — OKLCH color picker for Windows",
-    shareImageAlt: "The OkColorPicker window with a magenta OKLCH color selected.",
+    title: "OkColorPicker | OKLCH color picker for Windows",
+    shareImageAlt:
+      "The OkColorPicker window with a magenta OKLCH color selected.",
     features: "Features",
     headline: "Color, as you see it.",
     description:
@@ -25,12 +26,12 @@ export const locales = {
     language: "Language",
   },
   ja: {
-    title: "OkColorPicker — Windows用OKLCHカラーピッカー",
+    title: "OkColorPicker | Windows用OKLCHカラーピッカー",
     shareImageAlt: "OKLCH色面でマゼンタを選択したOkColorPickerの画面。",
     features: "機能",
     headline: "調色を視覚のままに。",
     description:
-      "画面上の色を取得したり、アプリと連携して色を調整。OkColorPickerはOKLCHにより知覚的に均一な配色と調整を提供する、Rust製のWindows用カラーピッカーです。",
+      "画面上の色を取得したり、アプリと連携して色を調整。OkColorPickerはOKLCHにより知覚的に均一な配色と調色を可能とする、Rust製のWindows用カラーピッカーです。",
     download: "Windows版をダウンロード",
     tools: "3つのカラーツール",
     guide: "操作ガイド",
