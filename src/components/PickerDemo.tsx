@@ -16,7 +16,7 @@ function Icon({ name, x, y, size, ink = 'muted' }: {
   return <image aria-hidden="true" href={icons + name + '.svg'} x={x} y={y} width={size} height={size} className={styles[ink]} />;
 }
 
-export default function PickerDemo({ lang }: { lang: 'ja' | 'en' }) {
+export default function PickerDemo({ lang, onColorChange }: { lang: 'ja' | 'en'; onColorChange: (color: Color) => void }) {
   const [color, setColor] = useState<Color>(initialColor);
   const planeCanvas = useRef<HTMLCanvasElement>(null);
   const hueCanvas = useRef<HTMLCanvasElement>(null);
@@ -39,6 +39,7 @@ export default function PickerDemo({ lang }: { lang: 'ja' | 'en' }) {
   const initialPlane = h === initialColor.h;
   const initialHue = l === initialColor.l && c === initialColor.c;
 
+  useEffect(() => { onColorChange(color); }, [color, onColorChange]);
   useEffect(() => {
     if (planeCanvas.current) drawPlane(planeCanvas.current, direction, contours);
   }, [contours, direction]);

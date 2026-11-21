@@ -1,6 +1,6 @@
 // D65 matrices and local-MINDE preview policy from okcolor-core.
 export const MAX_CHROMA = 0.47;
-export const initialColor = { l: 0.6464, c: 0.2577, h: 360 };
+export const initialColor = { l: 0.741341, c: 0.126212, h: 190.854638 }; // sRGB #0ec4be
 export const clamp = (value, min = 0, max = 1) => Math.min(max, Math.max(min, value));
 export const decimal = (value) => String(Number(value.toFixed(4)));
 

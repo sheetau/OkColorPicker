@@ -5,9 +5,9 @@ import {
   makeContour, preview, project,
 } from "../src/components/picker-color.mjs";
 
-test("the native initial OKLCH readout and sRGB swatch describe the same color", () => {
+test("the initial OKLCH readout and sRGB swatch describe the same color", () => {
   const { l, c, h } = initialColor;
-  assert.equal(hex(preview(l, c, hueDirection(h))), "#fd0f88");
+  assert.equal(hex(preview(l, c, hueDirection(h))), "#0ec4be");
   assert.equal(hex(preview(l, c, hueDirection(0))), hex(preview(l, c, hueDirection(360))));
 });
 

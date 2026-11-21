@@ -1,11 +1,11 @@
 :root {
   color-scheme: dark;
-  --bg: #0d0d0f;
-  --card: #161619;
+  --bg: #0a0a0c;
+  --card: #121215;
   --ink: #ececef;
   --muted: #9698ac;
   --label: rgb(255 255 255 / 45%);
-  --border: rgb(255 255 255 / 10%);
+  --border: rgb(255 255 255 / 8%);
   --sans: "Martian Grotesk", "M PLUS 2", sans-serif;
   --mono: "Martian Mono", "M PLUS 2", monospace;
   --heading-tracking: -0.02em;
@@ -31,6 +31,23 @@ body {
   margin: 0;
   color: var(--ink);
   font: 400 16px/1.5 var(--sans);
+}
+#__next {
+  position: relative;
+  isolation: isolate;
+}
+.symbol-waves {
+  position: absolute;
+  inset: 0 0 auto;
+  width: 100%;
+  height: min(var(--hero-bottom, 100svh), 1080px);
+  --side-fade: clamp(18px, 8%, 112px);
+  mask-image:
+    linear-gradient(to bottom, transparent, black clamp(28px, 10%, 96px), black 72%, rgb(0 0 0 / 65%) 85%, transparent),
+    linear-gradient(to right, transparent, black var(--side-fade), black calc(100% - var(--side-fade)), transparent);
+  mask-composite: intersect;
+  z-index: -1;
+  pointer-events: none;
 }
 h1,
 h2,
@@ -88,11 +105,12 @@ a:focus-visible {
 .brand {
   gap: 8px;
   color: var(--ink);
-  font: 500 15px/1.5 var(--sans);
+  font: 500 20px/1.5 var(--sans);
 }
 .brand svg {
-  width: 18px;
-  height: 18px;
+  flex: none;
+  width: 24px;
+  height: 24px;
 }
 .languages {
   gap: 8px;
@@ -142,10 +160,10 @@ a:focus-visible {
   color: var(--bg);
   font: 500 12px/1.5 var(--mono);
   letter-spacing: var(--mono-tracking);
-  transition: opacity 0.15s ease;
+  transition: opacity 0.2s ease;
 }
 .download-button:hover {
-  opacity: 0.9;
+  opacity: 0.8;
 }
 .system-requirement {
   margin-top: 20px;
@@ -154,13 +172,7 @@ a:focus-visible {
 .system-requirement span {
   margin-inline: 4px;
 }
-.download-status:not(:empty) {
-  display: block;
-  margin-top: 12px;
-  color: var(--muted);
-  font-size: 12px;
-}
-.download-status a,
+.system-requirement a,
 .features a,
 .footer p a {
   text-decoration: underline;
@@ -305,6 +317,16 @@ a:focus-visible {
   }
   .masthead .features-link {
     display: none;
+  }
+}
+@media (max-width: 365px) {
+  .hero h1:lang(ja) {
+    word-break: normal;
+  }
+  .masthead nav {
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0;
   }
 }
 @media (prefers-reduced-motion: reduce) {

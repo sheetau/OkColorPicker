@@ -1,22 +1,16 @@
 import Head from "next/head";
+import { useCallback, useRef } from "react";
+import HeaderLogo from "./HeaderLogo";
 import PickerDemo from "./PickerDemo";
+import SymbolWaves from "./SymbolWaves";
+import { initialColor } from "./picker-color.mjs";
 import { DownloadLink } from "./DownloadLink";
 import { basePath, localePath, repository, siteUrl } from "../site/config.mjs";
 import { locales } from "../site/locales";
 
-function Brand({ locale }) {
-  return <a className="brand" href={localePath(locale)} aria-label="OkColorPicker">
-    <svg width="24" height="24" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-      <polygon points="1.07 12.01 8 16 2.14 16 0 13.86 0 2.14 2.14 0 8 0 1.07 4.01 1.07 12.01" />
-      <polygon points="16 2.14 16 13.86 13.86 16 8 16 14.93 12.01 14.93 4.01 8 0 13.86 0 16 2.14" />
-    </svg>
-    <span>OkColorPicker</span>
-  </a>;
-}
-
 function Header({ locale, copy }) {
   return <header className="masthead wrap">
-    <Brand locale={locale} />
+    <HeaderLogo locale={locale} />
     <nav aria-label={locale === "ja" ? "メインナビゲーション" : "Main navigation"}>
       <a className="features-link" href="#features">{copy.features}</a>
       <a href={repository}>GitHub</a>
@@ -29,8 +23,8 @@ function Header({ locale, copy }) {
   </header>;
 }
 
-function Hero({ locale, copy }) {
-  return <section className="hero wrap" aria-labelledby="hero-title">
+function Hero({ locale, copy, onColorChange, heroRef }) {
+  return <section ref={heroRef} className="hero wrap" aria-labelledby="hero-title">
     <div className="hero-copy">
       <h1 id="hero-title">{copy.headline}</h1>
       <p className="intro">{copy.description}</p>
@@ -41,10 +35,9 @@ function Hero({ locale, copy }) {
           </svg>
           {copy.download}
         </DownloadLink>
-        <p className="system-requirement">Windows x64 <span>·</span> DirectX 12</p>
       </div>
     </div>
-    <div className="demo-window"><PickerDemo lang={locale} /></div>
+    <div className="demo-window"><PickerDemo lang={locale} onColorChange={onColorChange} /></div>
   </section>;
 }
 
@@ -78,6 +71,9 @@ function Features({ copy }) {
 
 export default function LandingPage({ locale }) {
   const copy = locales[locale];
+  const heroRef = useRef(null);
+  const selectedColor = useRef(initialColor);
+  const onColorChange = useCallback(color => { selectedColor.current = color; }, []);
   const url = (lang) => siteUrl + (lang === "ja" ? "/ja/" : "/");
   const shareImage = siteUrl + "/media/okcolorpicker.png";
   return <>
@@ -100,8 +96,9 @@ export default function LandingPage({ locale }) {
       <link rel="canonical" href={url(locale)} />
       {["en", "ja", "x-default"].map(lang => <link key={lang} rel="alternate" hrefLang={lang} href={url(lang)} />)}
     </Head>
+    <SymbolWaves colorRef={selectedColor} heroRef={heroRef} />
     <Header locale={locale} copy={copy} />
-    <main><Hero locale={locale} copy={copy} /><Features copy={copy} /></main>
+    <main><Hero locale={locale} copy={copy} onColorChange={onColorChange} heroRef={heroRef} /><Features copy={copy} /></main>
     <footer className="footer wrap">
       <p lang="en">© 2026 OkColorPicker · Built by <a href="https://github.com/sheetau">sheeta</a></p>
       <div><a href={repository + "/blob/main/LICENSE-APACHE"}>Apache 2.0</a><a href={repository}>{copy.source}</a></div>

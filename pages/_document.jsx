@@ -16,7 +16,7 @@ export default function Document(props) {
       <Head>
         <link rel="icon" href={asset("favicon.ico")} />
         <meta name="color-scheme" content="dark" />
-        <meta name="theme-color" content="#0d0d0f" />
+        <meta name="theme-color" content="#0a0a0c" />
         <style>{fonts.map(([family, file, weight, stretch, opticalWeight]) =>
           `@font-face { font-family: "${family}"; src: url("${asset("fonts/" + file)}") format("truetype"); font-weight: ${weight}; font-stretch: ${stretch}; ${opticalWeight ? `font-variation-settings: "wght" ${opticalWeight};` : ""} font-display: swap; }`
         ).join("\n")}</style>
